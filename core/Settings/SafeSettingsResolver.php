@@ -102,6 +102,22 @@ final class SafeSettingsResolver {
 				);
 				continue;
 			}
+			if ( OptionKeys::SECTION_PICKUP === $section_key ) {
+				$tree[ $section_key ] = array(
+					'enable_point_selection' => false,
+					'map_slot_enabled'       => true,
+					'points'                 => array(
+						array(
+							'id'          => 'pickup_main',
+							'title'       => 'Основная точка самовывоза',
+							'address'     => 'г. Красноярск, ул. Примерная, 1',
+							'description' => 'Ежедневно с 10:00 до 20:00',
+							'map_hint'    => 'Слот карты/схемы будет подключен здесь.',
+						),
+					),
+				);
+				continue;
+			}
 
 			$tree[ $section_key ] = array();
 		}

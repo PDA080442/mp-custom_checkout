@@ -9,6 +9,7 @@ namespace MP\CustomCheckout\Routing;
 
 use MP\CustomCheckout\DependencyFailureGuard;
 use MP\CustomCheckout\Hooks\CheckoutRouteHooks;
+use MP\CustomCheckout\Routing\PickupPointRegistry;
 use MP\CustomCheckout\Settings\SafeSettingsResolver;
 use MP\CustomCheckout\Settings\ScenarioStepRegistry;
 
@@ -127,6 +128,11 @@ final class CheckoutSessionService {
 			'id'    => $scenario,
 			'label' => CheckoutScenarioRules::scenario_label( $scenario ),
 		);
+		if ( ScenarioStepRegistry::SCENARIO_PICKUP === $scenario ) {
+			$selected_point = isset( $answers['scenario']['pickup_point']['id'] ) ? sanitize_key( (string) $answers['scenario']['pickup_point']['id'] ) : '';
+			$point          = PickupPointRegistry::find_by_id( $selected_point );
+			$answers['scenario']['pickup_point'] = $point;
+		}
 		$flow['answers'] = $answers;
 		$flow['snapshot'] = self::build_snapshot();
 

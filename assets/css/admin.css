@@ -91,6 +91,33 @@
 	background: #fafafa;
 }
 
+.mp-cc-admin-preview__pickup {
+	margin-top: 12px;
+	padding: 12px;
+	border: 1px solid #e5e5e5;
+	border-radius: 8px;
+	background: #fcfcfc;
+}
+
+.mp-cc-admin-preview__pickup h3 {
+	margin-top: 0;
+}
+
+.mp-cc-admin-preview__pickup p {
+	margin: 6px 0;
+}
+
+.mp-cc-admin-preview__pickup-map {
+	margin-top: 10px;
+	border: 1px dashed #cfcfcf;
+	border-radius: 6px;
+	padding: 10px;
+	font-size: 12px;
+	color: #5f6368;
+	text-align: center;
+	background: #f8f9fb;
+}
+
 .mp-cc-admin-step1-row td {
 	position: relative;
 }

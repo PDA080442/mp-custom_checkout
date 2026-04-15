@@ -107,6 +107,30 @@
 		};
 	}
 
+	function getPickupConfig() {
+		var source = (window.mpCcCheckout && window.mpCcCheckout.pickupConfig && typeof window.mpCcCheckout.pickupConfig === 'object')
+			? window.mpCcCheckout.pickupConfig
+			: {};
+		return {
+			enablePointSelection: Boolean(source.enable_point_selection),
+			mapSlotEnabled: source.map_slot_enabled !== false,
+			points: Array.isArray(source.points) ? source.points : []
+		};
+	}
+
+	function getPickupPointById(pointId) {
+		var pickup = getPickupConfig();
+		var points = pickup.points || [];
+		var safeId = String(pointId || '');
+		var i;
+		for (i = 0; i < points.length; i += 1) {
+			if (String(points[i].id || '') === safeId) {
+				return points[i];
+			}
+		}
+		return points.length ? points[0] : null;
+	}
+
 	function normalizeScenarioId(scenarioId) {
 		var map = getScenarioMap();
 		var scenarios = map.scenarios || {};
@@ -263,6 +287,25 @@
 		};
 	}
 
+	function ensurePickupScenarioData(state) {
+		if (!state || !state.frontendStore || !state.frontendStore.fulfillment) {
+			return;
+		}
+		var scenario = normalizeScenarioId(state.frontendStore.fulfillment.scenario || 'pickup');
+		if (scenario !== 'pickup') {
+			return;
+		}
+		var existing = state.frontendStore.fulfillment.scenarioData || {};
+		var pickupPoint = existing.pickup_point && typeof existing.pickup_point === 'object' ? existing.pickup_point : null;
+		if (!pickupPoint) {
+			var fallback = getPickupPointById('');
+			if (fallback) {
+				existing.pickup_point = fallback;
+				state.frontendStore.fulfillment.scenarioData = existing;
+			}
+		}
+	}
+
 	function normalizeCartPayload(cartPayload) {
 		var safePayload = cartPayload && typeof cartPayload === 'object' ? cartPayload : {};
 		var safeSummary = (safePayload.summary && typeof safePayload.summary === 'object') ? safePayload.summary : {};
@@ -386,6 +429,12 @@
 			id: scenarioId,
 			rules: getScenarioRulesById(scenarioId)
 		};
+		if (scenarioId === 'pickup') {
+			var defaultPoint = getPickupPointById('');
+			if (defaultPoint) {
+				state.frontendStore.fulfillment.scenarioData.pickup_point = defaultPoint;
+			}
+		}
 
 		var rules = getScenarioRulesById(scenarioId);
 		var fieldRules = rules.field_rules && typeof rules.field_rules === 'object' ? rules.field_rules : {};
@@ -738,7 +787,59 @@
 			html += '</button>';
 		}
 		html += '</div>';
+		if (selectedGroup === 'pickup') {
+			html += buildPickupPointHtml(state);
+		}
 		html += '</section>';
+		return html;
+	}
+
+	function buildPickupPointHtml(state) {
+		var pickupConfig = getPickupConfig();
+		var points = pickupConfig.points || [];
+		var scenarioData = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenarioData || {}) : {};
+		var selectedPoint = scenarioData.pickup_point && typeof scenarioData.pickup_point === 'object' ? scenarioData.pickup_point : getPickupPointById('');
+		var selectedPointId = selectedPoint && selectedPoint.id ? String(selectedPoint.id) : '';
+		var html = '';
+
+		html += '<section class="mp-cc-pickup-point" aria-labelledby="mp-cc-pickup-title">';
+		html += '<h4 class="mp-cc-pickup-point__title" id="mp-cc-pickup-title">' + escapeHtml('Точка самовывоза') + '</h4>';
+		if (pickupConfig.enablePointSelection && points.length > 1) {
+			html += '<div class="mp-cc-pickup-point__choices" role="radiogroup" aria-label="Выбор точки самовывоза">';
+			for (var i = 0; i < points.length; i += 1) {
+				var point = points[i] || {};
+				var pointId = String(point.id || '');
+				var active = pointId === selectedPointId;
+				html += '<button type="button" class="mp-cc-pickup-point__choice' + (active ? ' is-active' : '') + '" role="radio"';
+				html += ' aria-checked="' + (active ? 'true' : 'false') + '"';
+				html += ' data-pickup-point="' + escapeHtml(pointId) + '">';
+				html += '<span class="mp-cc-pickup-point__choice-title">' + escapeHtml(String(point.title || pointId)) + '</span>';
+				if (point.address) {
+					html += '<span class="mp-cc-pickup-point__choice-address">' + escapeHtml(String(point.address)) + '</span>';
+				}
+				html += '</button>';
+			}
+			html += '</div>';
+		}
+
+		if (selectedPoint) {
+			html += '<div class="mp-cc-pickup-point__info">';
+			html += '<p class="mp-cc-pickup-point__name">' + escapeHtml(String(selectedPoint.title || '')) + '</p>';
+			if (selectedPoint.address) {
+				html += '<p class="mp-cc-pickup-point__address">' + escapeHtml(String(selectedPoint.address)) + '</p>';
+			}
+			if (selectedPoint.description) {
+				html += '<p class="mp-cc-pickup-point__description">' + escapeHtml(String(selectedPoint.description)) + '</p>';
+			}
+			html += '</div>';
+			if (pickupConfig.mapSlotEnabled) {
+				html += '<div class="mp-cc-pickup-point__map-slot" data-pickup-map-slot="1">';
+				html += '<p>' + escapeHtml(String(selectedPoint.map_hint || 'Слот карты будет подключен позже.')) + '</p>';
+				html += '</div>';
+			}
+		}
+		html += '</section>';
+
 		return html;
 	}
 
@@ -1138,6 +1239,28 @@
 				$next.trigger('focus');
 			}
 		});
+
+		$app.find('[data-pickup-point]').off('click').on('click', function () {
+			var pointId = String($(this).data('pickup-point') || '');
+			if (!pointId) {
+				return;
+			}
+			var point = getPickupPointById(pointId);
+			if (!point) {
+				return;
+			}
+			var scenarioData = state.frontendStore.fulfillment.scenarioData || {};
+			scenarioData.pickup_point = point;
+			state.frontendStore.fulfillment.scenarioData = scenarioData;
+			render(state, $app);
+			postCheckout('session_set_answers', {
+				step_id: 'scenario',
+				context_id: state.flowContextId,
+				answers: scenarioData
+			}).fail(function () {
+				notify('Не удалось сохранить точку самовывоза.', 'error');
+			});
+		});
 	}
 
 	function clampQuantity(nextQty, minQty, maxQty) {
@@ -1361,6 +1484,7 @@
 			state.frontendStore.fulfillment.scenario = 'pickup';
 		}
 		applyScenarioFieldAvailability(state);
+		ensurePickupScenarioData(state);
 		render(state, $app);
 
 		syncStoreWithBackend(state, $app).fail(function () {

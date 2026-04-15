@@ -26,6 +26,8 @@ final class EmailHooks {
 
 		add_action( 'woocommerce_email_order_meta', array( __CLASS__, 'render_email_order_meta' ), 10, 4 );
 		add_action( 'mp_custom_checkout_email_order_meta', array( __CLASS__, 'render_scenario_meta' ), 10, 4 );
+		add_action( 'mp_custom_checkout_email_order_meta', array( __CLASS__, 'render_pickup_point_meta' ), 12, 4 );
+		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'render_pickup_point_admin' ), 15, 1 );
 	}
 
 	/**
@@ -82,5 +84,65 @@ final class EmailHooks {
 		}
 
 		echo '<p><strong>' . esc_html( $title ) . ':</strong> ' . esc_html( $scenario_label ) . '</p>';
+	}
+
+	/**
+	 * Вывод точки самовывоза в email.
+	 *
+	 * @param \WC_Order $order Заказ.
+	 * @param bool      $sent_to_admin Админу.
+	 * @param bool      $plain_text Текстовый формат.
+	 * @param \WC_Email|false $email Письмо.
+	 */
+	public static function render_pickup_point_meta( $order, $sent_to_admin, $plain_text, $email = null ): void {
+		unset( $sent_to_admin, $email );
+		if ( ! $order instanceof \WC_Order ) {
+			return;
+		}
+
+		$title   = (string) $order->get_meta( '_mp_cc_pickup_point_title', true );
+		$address = (string) $order->get_meta( '_mp_cc_pickup_point_address', true );
+		if ( '' === $title && '' === $address ) {
+			return;
+		}
+
+		$label = __( 'Точка самовывоза', 'mp-custom-checkout' );
+		if ( $plain_text ) {
+			echo "\n" . sanitize_text_field( $label ) . ': ' . sanitize_text_field( trim( $title . ( '' !== $address ? ' — ' . $address : '' ) ) ) . "\n";
+			return;
+		}
+
+		echo '<p><strong>' . esc_html( $label ) . ':</strong> ' . esc_html( $title );
+		if ( '' !== $address ) {
+			echo '<br />' . esc_html( $address );
+		}
+		echo '</p>';
+	}
+
+	/**
+	 * Вывод точки самовывоза в админке заказа.
+	 *
+	 * @param \WC_Order $order Заказ.
+	 */
+	public static function render_pickup_point_admin( $order ): void {
+		if ( ! $order instanceof \WC_Order ) {
+			return;
+		}
+		$title   = (string) $order->get_meta( '_mp_cc_pickup_point_title', true );
+		$address = (string) $order->get_meta( '_mp_cc_pickup_point_address', true );
+		$desc    = (string) $order->get_meta( '_mp_cc_pickup_point_description', true );
+		if ( '' === $title && '' === $address && '' === $desc ) {
+			return;
+		}
+
+		echo '<p><strong>' . esc_html__( 'Точка самовывоза', 'mp-custom-checkout' ) . ':</strong><br />';
+		echo esc_html( $title );
+		if ( '' !== $address ) {
+			echo '<br />' . esc_html( $address );
+		}
+		if ( '' !== $desc ) {
+			echo '<br /><em>' . esc_html( $desc ) . '</em>';
+		}
+		echo '</p>';
 	}
 }
