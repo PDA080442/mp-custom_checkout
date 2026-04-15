@@ -47,8 +47,9 @@ final class SafeSettingsResolver {
 
 			if ( OptionKeys::SECTION_GENERAL === $section_key ) {
 				$tree[ $section_key ] = array(
-					'route_slug'         => 'mp-checkout',
-					'require_entry_gate' => true,
+					'route_slug'          => 'mp-checkout',
+					'require_entry_gate'  => true,
+					'success_route_slug'  => 'mp-checkout-success',
 				);
 				continue;
 			}

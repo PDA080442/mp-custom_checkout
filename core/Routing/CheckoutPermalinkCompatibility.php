@@ -57,6 +57,7 @@ final class CheckoutPermalinkCompatibility {
 		}
 
 		CheckoutRouteHooks::add_rewrite_rules();
+		CheckoutSuccessRouteHooks::add_rewrite_rules();
 		flush_rewrite_rules( false );
 	}
 }

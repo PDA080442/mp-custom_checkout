@@ -11,6 +11,9 @@ use MP\CustomCheckout\DependencyFailureGuard;
 use MP\CustomCheckout\Routing\CheckoutEntryService;
 use MP\CustomCheckout\Routing\CheckoutPermalinkCompatibility;
 use MP\CustomCheckout\Routing\CheckoutRouteController;
+use MP\CustomCheckout\Routing\CheckoutSuccessController;
+use MP\CustomCheckout\Routing\CheckoutSuccessOrderReceivedRedirect;
+use MP\CustomCheckout\Routing\CheckoutSuccessRouteHooks;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -27,7 +30,11 @@ final class PluginHooksRegistrar {
 		AdminAssetsHooks::register();
 		CheckoutPermalinkCompatibility::register();
 		CheckoutRouteHooks::register();
+		CheckoutSuccessRouteHooks::register();
 		CheckoutRouteController::register();
+		CheckoutSuccessOrderReceivedRedirect::register();
+		CheckoutSuccessController::register();
+		CheckoutSuccessFrontendHooks::register();
 		CheckoutAjaxHooks::register();
 		CheckoutEntryAjaxHooks::register();
 		CheckoutEntryFrontendHooks::register();
@@ -47,6 +54,5 @@ final class PluginHooksRegistrar {
 		CheckoutEntryService::register();
 		OrderMetaHooks::register();
 		EmailHooks::register();
-		SuccessScreenHooks::register();
 	}
 }
