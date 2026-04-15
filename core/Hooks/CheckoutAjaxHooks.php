@@ -117,11 +117,21 @@ final class CheckoutAjaxHooks {
 		}
 
 		if ( 'session_set_scenario' === $sub_action ) {
-			$scenario = isset( $_POST['scenario'] ) ? sanitize_key( wp_unslash( $_POST['scenario'] ) ) : '';
-			if ( '' === $scenario ) {
+			$scenario_raw = isset( $_POST['scenario'] ) ? sanitize_key( wp_unslash( $_POST['scenario'] ) ) : '';
+			if ( '' === $scenario_raw ) {
 				wp_send_json_error(
 					array( 'code' => 'invalid_scenario', 'message' => __( 'Не указан сценарий оформления.', 'mp-custom-checkout' ) ),
 					400
+				);
+			}
+
+			$scenario = \MP\CustomCheckout\Routing\CheckoutScenarioRules::sanitize_scenario( $scenario_raw );
+			if ( $scenario !== $scenario_raw ) {
+				do_action(
+					'mp_custom_checkout_log',
+					'warning',
+					'[scenario_switch] invalid_scenario_requested',
+					array( 'requested' => $scenario_raw, 'resolved' => $scenario )
 				);
 			}
 
@@ -130,6 +140,8 @@ final class CheckoutAjaxHooks {
 				array(
 					'sub_action' => $sub_action,
 					'scenario'   => $scenario,
+					'flow'       => self::build_flow_payload(),
+					'cart'       => CheckoutRouteContext::get_cart_data(),
 				)
 			);
 		}
@@ -138,7 +150,7 @@ final class CheckoutAjaxHooks {
 			wp_send_json_success(
 				array(
 					'sub_action' => $sub_action,
-					'flow'       => CheckoutSessionService::get_public_state(),
+					'flow'       => self::build_flow_payload(),
 					'cart'       => CheckoutRouteContext::get_cart_data(),
 				)
 			);
@@ -265,7 +277,7 @@ final class CheckoutAjaxHooks {
 					'line_subtotal' => (string) $line_subtotal,
 				),
 				'cart'       => CheckoutRouteContext::get_cart_data(),
-				'flow'       => CheckoutSessionService::get_public_state(),
+				'flow'       => self::build_flow_payload(),
 			)
 		);
 	}
@@ -314,9 +326,28 @@ final class CheckoutAjaxHooks {
 				'sub_action' => 'remove_item',
 				'item_key'   => $item_key,
 				'cart'       => CheckoutRouteContext::get_cart_data(),
-				'flow'       => CheckoutSessionService::get_public_state(),
+				'flow'       => self::build_flow_payload(),
 				'is_empty'   => 0 === (int) $cart->get_cart_contents_count(),
 			)
 		);
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private static function build_flow_payload(): array {
+		$flow = CheckoutSessionService::get_public_state();
+		if ( empty( $flow ) ) {
+			return array();
+		}
+
+		$step_manager = new CheckoutStepManager( $flow );
+		$scenario = isset( $flow['scenario'] ) ? (string) $flow['scenario'] : '';
+		$flow['current_step']   = (string) ( $step_manager->get_current_step_id() ?? '' );
+		$flow['steps']          = array_values( $step_manager->get_registered_steps() );
+		$flow['visible_steps']  = $step_manager->get_visible_step_ids();
+		$flow['scenario_rules'] = \MP\CustomCheckout\Routing\CheckoutScenarioRules::build( $scenario );
+
+		return $flow;
 	}
 }

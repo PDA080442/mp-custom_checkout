@@ -107,6 +107,23 @@
 		};
 	}
 
+	function normalizeScenarioId(scenarioId) {
+		var map = getScenarioMap();
+		var scenarios = map.scenarios || {};
+		var key = String(scenarioId || '');
+		if (key && Object.prototype.hasOwnProperty.call(scenarios, key)) {
+			return key;
+		}
+		return 'pickup';
+	}
+
+	function getScenarioRulesById(scenarioId) {
+		var map = getScenarioMap();
+		var rulesMap = map.rules || {};
+		var normalized = normalizeScenarioId(scenarioId);
+		return rulesMap[normalized] && typeof rulesMap[normalized] === 'object' ? rulesMap[normalized] : {};
+	}
+
 	function parseContext() {
 		var root = document.querySelector(selectors.root);
 		if (!root) {
@@ -223,7 +240,7 @@
 			fulfillment: {
 				scenario: flow.scenario || '',
 				date: answers.date_conditions || {},
-				scenarioData: answers.scenario || {}
+				scenarioData: $.extend({}, answers.scenario || {}, { rules: flow.scenario_rules || {} })
 			},
 			discounts: answers.discounts || { coupons: [], gift_card: [] },
 			payment: {
@@ -332,6 +349,60 @@
 		var contextCart = normalizeCartPayload(state.context && state.context.cart ? state.context.cart : {});
 		state.frontendStore.cart.items = contextCart.items;
 		state.frontendStore.cart.summary = contextCart.summary;
+		applyScenarioFieldAvailability(state);
+	}
+
+	function applyScenarioFieldAvailability(state) {
+		if (!state || !state.frontendStore || !state.frontendStore.fulfillment) {
+			return;
+		}
+		var scenarioId = normalizeScenarioId(state.frontendStore.fulfillment.scenario || 'pickup');
+		var rules = getScenarioRulesById(scenarioId);
+		var fieldRules = rules.field_rules && typeof rules.field_rules === 'object' ? rules.field_rules : {};
+		var contact = state.frontendStore.form && state.frontendStore.form.contact ? state.frontendStore.form.contact : {};
+		contact.__address_visibility = {
+			hide_address_fields: Boolean(fieldRules.hide_address_fields),
+			required_address_fields: Boolean(fieldRules.required_address_fields),
+			visible_groups: Array.isArray(fieldRules.visible_groups) ? fieldRules.visible_groups : []
+		};
+		state.frontendStore.form.contact = contact;
+		document.dispatchEvent(
+			new CustomEvent('mp_cc_address_visibility_changed', {
+				detail: {
+					scenario: scenarioId,
+					fieldRules: contact.__address_visibility
+				}
+			})
+		);
+	}
+
+	function resetDependentStateForScenario(state, scenarioId) {
+		if (!state || !state.frontendStore) {
+			return;
+		}
+		state.frontendStore.fulfillment.date = {};
+		state.frontendStore.fulfillment.scenario = scenarioId;
+		state.frontendStore.fulfillment.scenarioData = {
+			id: scenarioId,
+			rules: getScenarioRulesById(scenarioId)
+		};
+
+		var rules = getScenarioRulesById(scenarioId);
+		var fieldRules = rules.field_rules && typeof rules.field_rules === 'object' ? rules.field_rules : {};
+		if (fieldRules.hide_address_fields && state.frontendStore.form && state.frontendStore.form.contact) {
+			var contact = $.extend({}, state.frontendStore.form.contact);
+			delete contact.address_1;
+			delete contact.address_2;
+			delete contact.city;
+			delete contact.state;
+			delete contact.postcode;
+			delete contact.country;
+			delete contact.shipping_address;
+			delete contact.shipping_city;
+			delete contact.shipping_postcode;
+			state.frontendStore.form.contact = contact;
+		}
+		applyScenarioFieldAvailability(state);
 	}
 
 	function setRuntimeFlag(state, key, value) {
@@ -1030,10 +1101,11 @@
 			if (!targetScenario) {
 				return;
 			}
+			targetScenario = normalizeScenarioId(targetScenario);
 			if (String(state.frontendStore.fulfillment.scenario || '') === targetScenario) {
 				return;
 			}
-			state.frontendStore.fulfillment.scenario = targetScenario;
+			resetDependentStateForScenario(state, targetScenario);
 			render(state, $app);
 			document.dispatchEvent(
 				new CustomEvent('mp_cc_scenario_changed', {
@@ -1285,6 +1357,10 @@
 		var context = parseContext();
 		applyThemeVariant(context);
 		var state = buildState(context);
+		if (!state.frontendStore.fulfillment.scenario) {
+			state.frontendStore.fulfillment.scenario = 'pickup';
+		}
+		applyScenarioFieldAvailability(state);
 		render(state, $app);
 
 		syncStoreWithBackend(state, $app).fail(function () {
@@ -1296,11 +1372,20 @@
 			if (!nextScenario) {
 				return;
 			}
+			nextScenario = normalizeScenarioId(nextScenario);
 
 			withTransitionLock(state, $app, function () {
 				return postCheckout('session_set_scenario', { scenario: nextScenario, context_id: state.flowContextId })
 					.then(function () {
 						return syncStoreWithBackend(state, $app);
+					}).fail(function (xhr) {
+						var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
+						notify(payload.message || 'Не удалось переключить сценарий.', 'error');
+						document.dispatchEvent(
+							new CustomEvent('mp_cc_scenario_error', {
+								detail: { scenario: nextScenario, payload: payload }
+							})
+						);
 					});
 			});
 		});
