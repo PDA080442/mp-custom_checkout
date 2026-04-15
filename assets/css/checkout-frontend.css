@@ -316,9 +316,67 @@
 	text-align: right;
 }
 
+.mp-cc-cart-item__remove {
+	border: 1px solid transparent;
+	background: transparent;
+	color: var(--mp-cc-color-error);
+	font-size: 0.85rem;
+	font-weight: 600;
+	padding: 0.35rem 0.45rem;
+	border-radius: var(--mp-cc-radius-sm);
+	cursor: pointer;
+	transition: background var(--mp-cc-transition-duration) ease, border-color var(--mp-cc-transition-duration) ease;
+}
+
+.mp-cc-cart-item__remove:hover {
+	background: rgba(185, 28, 28, 0.08);
+	border-color: rgba(185, 28, 28, 0.2);
+}
+
+.mp-cc-cart-item__remove:focus-visible {
+	outline: 2px solid var(--mp-cc-color-error);
+	outline-offset: 1px;
+}
+
 .mp-cc-cart-item.is-updating {
 	opacity: 0.72;
 	pointer-events: none;
+}
+
+.mp-cc-cart-item.is-removing {
+	opacity: 0.45;
+	pointer-events: none;
+	filter: grayscale(0.1);
+}
+
+.mp-cc-cart-list__empty {
+	display: grid;
+	gap: 0.75rem;
+	justify-items: start;
+}
+
+.mp-cc-cart-list__cta {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0.65rem 1rem;
+	border-radius: var(--mp-cc-radius-sm);
+	background: var(--mp-cc-color-accent);
+	color: #fff;
+	text-decoration: none;
+	font-weight: 600;
+	transition: transform var(--mp-cc-transition-duration) ease, box-shadow var(--mp-cc-transition-duration) ease, background var(--mp-cc-transition-duration) ease;
+}
+
+.mp-cc-cart-list__cta:hover {
+	background: #2a2a2a;
+	box-shadow: 0 8px 22px rgba(0, 0, 0, 0.12);
+	transform: translateY(-1px);
+}
+
+.mp-cc-cart-list__cta:focus-visible {
+	outline: 2px solid var(--mp-cc-color-accent);
+	outline-offset: 2px;
 }
 
 .mp-cc-step-panel__hint {
