@@ -20,6 +20,7 @@ defined( 'ABSPATH' ) || exit;
 final class CheckoutSessionService {
 
 	public const SESSION_KEY = 'mp_cc_checkout_flow';
+	public const FLOW_TTL_SECONDS = 7200;
 
 	/**
 	 * Подписка на lifecycle checkout-flow.
@@ -41,6 +42,9 @@ final class CheckoutSessionService {
 		}
 
 		$flow = self::get_flow();
+		if ( self::is_flow_stale( $flow ) ) {
+			$flow = array();
+		}
 		if ( ! isset( $flow['context_id'] ) || ! is_string( $flow['context_id'] ) || '' === $flow['context_id'] ) {
 			$flow = self::build_initial_flow();
 			if ( empty( $flow ) ) {
@@ -49,6 +53,12 @@ final class CheckoutSessionService {
 			}
 		} else {
 			$flow['updated_at'] = time();
+		}
+
+		if ( ! isset( $flow['answers'] ) || ! is_array( $flow['answers'] ) ) {
+			$flow['answers'] = self::default_answers_structure();
+		} else {
+			$flow['answers'] = self::merge_answers_with_defaults( $flow['answers'] );
 		}
 
 		$step_manager = new CheckoutStepManager( $flow );
@@ -107,6 +117,13 @@ final class CheckoutSessionService {
 		$scenario = CheckoutScenarioRules::sanitize_scenario( $scenario );
 		$flow['scenario']  = $scenario;
 		$flow['updated_at'] = time();
+		$answers = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : self::default_answers_structure();
+		$answers = self::merge_answers_with_defaults( $answers );
+		$answers['scenario'] = array(
+			'id'    => $scenario,
+			'label' => CheckoutScenarioRules::scenario_label( $scenario ),
+		);
+		$flow['answers'] = $answers;
 
 		$step_manager = new CheckoutStepManager( $flow );
 		$current_step = $step_manager->get_current_step_id();
@@ -133,11 +150,11 @@ final class CheckoutSessionService {
 			return;
 		}
 
-		if ( ! isset( $flow['answers'] ) || ! is_array( $flow['answers'] ) ) {
-			$flow['answers'] = array();
-		}
-
-		$flow['answers'][ $step_id ] = self::sanitize_recursive( $answers );
+		$storage_key = self::normalize_answers_storage_key( $step_id );
+		$current     = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : self::default_answers_structure();
+		$current     = self::merge_answers_with_defaults( $current );
+		$current[ $storage_key ] = self::sanitize_recursive( $answers );
+		$flow['answers']         = $current;
 		$flow['updated_at']          = time();
 
 		self::persist_flow( $flow );
@@ -212,7 +229,7 @@ final class CheckoutSessionService {
 			'step_order'    => $step_order,
 			'scenario'      => $scenario,
 			'snapshot'      => self::build_snapshot(),
-			'answers'       => array(),
+			'answers'       => self::default_answers_structure(),
 		);
 
 		return (array) apply_filters( 'mp_custom_checkout_session_initial_flow', $flow );
@@ -355,5 +372,98 @@ final class CheckoutSessionService {
 		$known    = array_keys( ScenarioStepRegistry::scenarios() );
 
 		return in_array( $scenario, $known, true ) ? $scenario : ScenarioStepRegistry::SCENARIO_PICKUP;
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	public static function get_public_state(): array {
+		$flow = self::get_flow();
+		if ( empty( $flow ) || self::is_flow_stale( $flow ) ) {
+			return array();
+		}
+
+		$flow['answers'] = self::merge_answers_with_defaults(
+			isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : array()
+		);
+		$flow['expires_at'] = isset( $flow['updated_at'] ) && is_numeric( $flow['updated_at'] )
+			? ( (int) $flow['updated_at'] + self::FLOW_TTL_SECONDS )
+			: ( time() + self::FLOW_TTL_SECONDS );
+
+		return $flow;
+	}
+
+	/**
+	 * @param array<string, mixed> $flow
+	 */
+	public static function validate_context_id( array $flow, string $context_id ): bool {
+		$context_id = sanitize_text_field( $context_id );
+		if ( '' === $context_id ) {
+			return true;
+		}
+
+		$current = isset( $flow['context_id'] ) ? sanitize_text_field( (string) $flow['context_id'] ) : '';
+		return '' !== $current && hash_equals( $current, $context_id );
+	}
+
+	/**
+	 * @param array<string, mixed> $flow
+	 */
+	private static function is_flow_stale( array $flow ): bool {
+		if ( empty( $flow ) ) {
+			return false;
+		}
+
+		$updated_at = isset( $flow['updated_at'] ) ? (int) $flow['updated_at'] : 0;
+		if ( $updated_at <= 0 ) {
+			return true;
+		}
+
+		return ( time() - $updated_at ) > self::FLOW_TTL_SECONDS;
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private static function default_answers_structure(): array {
+		return array(
+			'step_one'         => array(),
+			'scenario'         => array(),
+			'date_conditions'  => array(),
+			'contact_billing'  => array(),
+			'discounts'        => array(
+				'coupons'   => array(),
+				'gift_card' => array(),
+			),
+		);
+	}
+
+	/**
+	 * @param array<string, mixed> $answers
+	 * @return array<string, mixed>
+	 */
+	private static function merge_answers_with_defaults( array $answers ): array {
+		return array_replace_recursive( self::default_answers_structure(), $answers );
+	}
+
+	private static function normalize_answers_storage_key( string $step_id ): string {
+		$step_id = sanitize_key( $step_id );
+		if ( ScenarioStepRegistry::STEP_CART === $step_id ) {
+			return 'step_one';
+		}
+		if ( ScenarioStepRegistry::STEP_DATE === $step_id || ScenarioStepRegistry::STEP_CONDITIONS === $step_id ) {
+			return 'date_conditions';
+		}
+		if ( ScenarioStepRegistry::STEP_CONTACT_PAYMENT === $step_id ) {
+			return 'contact_billing';
+		}
+		if ( 'scenario' === $step_id ) {
+			return 'scenario';
+		}
+		if ( 'discounts' === $step_id || 'coupons' === $step_id || 'gift_card' === $step_id ) {
+			return 'discounts';
+		}
+
+		return $step_id;
 	}
 }

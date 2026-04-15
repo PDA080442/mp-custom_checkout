@@ -61,6 +61,13 @@ final class CheckoutAjaxHooks {
 	 * Сохранение состояния checkout-flow между шагами.
 	 */
 	private static function handle_session_sub_action( string $sub_action ): bool {
+		if ( self::is_session_sub_action( $sub_action ) && ! self::validate_context_id() ) {
+			wp_send_json_error(
+				array( 'code' => 'stale_context', 'message' => __( 'Сессия checkout устарела. Обновите страницу.', 'mp-custom-checkout' ) ),
+				409
+			);
+		}
+
 		if ( 'session_set_step' === $sub_action ) {
 			$step_id = isset( $_POST['step_id'] ) ? sanitize_key( wp_unslash( $_POST['step_id'] ) ) : '';
 			if ( '' === $step_id ) {
@@ -130,7 +137,7 @@ final class CheckoutAjaxHooks {
 			wp_send_json_success(
 				array(
 					'sub_action' => $sub_action,
-					'flow'       => CheckoutSessionService::get_flow(),
+					'flow'       => CheckoutSessionService::get_public_state(),
 				)
 			);
 		}
@@ -146,5 +153,23 @@ final class CheckoutAjaxHooks {
 		}
 
 		return false;
+	}
+
+	private static function is_session_sub_action( string $sub_action ): bool {
+		return in_array(
+			$sub_action,
+			array( 'session_set_step', 'session_set_answers', 'session_set_scenario', 'session_get_state', 'session_abandon' ),
+			true
+		);
+	}
+
+	private static function validate_context_id(): bool {
+		$posted_context = isset( $_POST['context_id'] ) ? sanitize_text_field( wp_unslash( $_POST['context_id'] ) ) : '';
+		$flow           = CheckoutSessionService::get_public_state();
+		if ( empty( $flow ) ) {
+			return true;
+		}
+
+		return CheckoutSessionService::validate_context_id( $flow, $posted_context );
 	}
 }
