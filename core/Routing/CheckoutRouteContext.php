@@ -40,6 +40,7 @@ final class CheckoutRouteContext {
 				'current_step' => (string) ( $step_manager->get_current_step_id() ?? '' ),
 				'scenario'     => $scenario,
 				'answers'      => isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : array(),
+				'snapshot'     => isset( $flow['snapshot'] ) && is_array( $flow['snapshot'] ) ? $flow['snapshot'] : array(),
 				'expires_at'   => isset( $flow['expires_at'] ) ? (int) $flow['expires_at'] : 0,
 				'steps'        => array_values( $step_manager->get_registered_steps() ),
 				'visible_steps' => $step_manager->get_visible_step_ids(),
