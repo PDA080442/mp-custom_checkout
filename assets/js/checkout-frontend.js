@@ -182,6 +182,205 @@
 		return rulesMap[normalized] && typeof rulesMap[normalized] === 'object' ? rulesMap[normalized] : {};
 	}
 
+	function startOfDay(date) {
+		var value = new Date(date.getTime());
+		value.setHours(0, 0, 0, 0);
+		return value;
+	}
+
+	function addDays(date, days) {
+		var value = new Date(date.getTime());
+		value.setDate(value.getDate() + Number(days || 0));
+		return value;
+	}
+
+	function isoDate(date) {
+		return [
+			date.getFullYear(),
+			String(date.getMonth() + 1).padStart(2, '0'),
+			String(date.getDate()).padStart(2, '0')
+		].join('-');
+	}
+
+	function parseIsoDate(value) {
+		var raw = String(value || '');
+		var matched = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+		if (!matched) {
+			return null;
+		}
+		var year = Number(matched[1]);
+		var month = Number(matched[2]) - 1;
+		var day = Number(matched[3]);
+		var date = new Date(year, month, day);
+		if (date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) {
+			return null;
+		}
+		return startOfDay(date);
+	}
+
+	function monthKeyFromDate(date) {
+		return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0')].join('-');
+	}
+
+	function parseMonthKey(value) {
+		var raw = String(value || '');
+		var matched = raw.match(/^(\d{4})-(\d{2})$/);
+		if (!matched) {
+			return null;
+		}
+		var year = Number(matched[1]);
+		var month = Number(matched[2]) - 1;
+		if (!Number.isFinite(year) || !Number.isFinite(month) || month < 0 || month > 11) {
+			return null;
+		}
+		return new Date(year, month, 1);
+	}
+
+	function buildDateCalendarModel(state) {
+		var scenario = normalizeScenarioId(state.frontendStore.fulfillment.scenario || '');
+		var rules = getScenarioRulesById(scenario);
+		var dateRules = rules.date_rules && typeof rules.date_rules === 'object' ? rules.date_rules : {};
+		var leadTime = Math.max(0, Number(dateRules.lead_time_days || 0));
+		var maxDays = Math.max(1, Number(dateRules.max_days_ahead || 14));
+		var allowWeekends = dateRules.allow_weekends !== false;
+		var today = startOfDay(new Date());
+		var earliest = addDays(today, leadTime);
+		var latest = addDays(today, maxDays);
+		var firstAvailable = null;
+		var pointer = new Date(earliest.getTime());
+		while (pointer <= latest) {
+			var pointerWeekend = pointer.getDay() === 0 || pointer.getDay() === 6;
+			if (allowWeekends || !pointerWeekend) {
+				firstAvailable = new Date(pointer.getTime());
+				break;
+			}
+			pointer = addDays(pointer, 1);
+		}
+		if (!firstAvailable) {
+			firstAvailable = new Date(earliest.getTime());
+		}
+		var earliestMonth = new Date(earliest.getFullYear(), earliest.getMonth(), 1);
+		var latestMonth = new Date(latest.getFullYear(), latest.getMonth(), 1);
+		var dateStore = state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.date
+			? state.frontendStore.fulfillment.date
+			: {};
+		var preferredMonth = parseMonthKey(dateStore.calendar_month || '');
+		var monthStart = preferredMonth ? preferredMonth : new Date(earliestMonth.getTime());
+		if (monthStart < earliestMonth) {
+			monthStart = new Date(earliestMonth.getTime());
+		}
+		if (monthStart > latestMonth) {
+			monthStart = new Date(latestMonth.getTime());
+		}
+		var monthLabel = monthStart.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+		var selectedDate = String(dateStore.selected_date || '');
+		var selected = parseIsoDate(selectedDate);
+		if (!selected || selected < earliest || selected > latest || (!allowWeekends && (selected.getDay() === 0 || selected.getDay() === 6))) {
+			selected = firstAvailable;
+			selectedDate = isoDate(firstAvailable);
+		}
+
+		var gridStart = addDays(monthStart, -((monthStart.getDay() + 6) % 7));
+		var days = [];
+		var i;
+		for (i = 0; i < 42; i += 1) {
+			var date = addDays(gridStart, i);
+			var inMonth = date.getMonth() === monthStart.getMonth();
+			var weekend = date.getDay() === 0 || date.getDay() === 6;
+			var outOfRange = date < earliest || date > latest;
+			var disabled = outOfRange || (!allowWeekends && weekend);
+			var value = isoDate(date);
+			days.push({
+				value: value,
+				label: date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }),
+				dayOfMonth: date.getDate(),
+				inMonth: inMonth,
+				disabled: disabled,
+				selected: value === selectedDate,
+				weekend: weekend
+			});
+		}
+
+		var helper = rules.copy_rules && rules.copy_rules.hint
+			? String(rules.copy_rules.hint)
+			: getUiText('step_3.date_helper', 'Выберите дату из доступных слотов.');
+		return {
+			scenario: scenario,
+			selectedDate: selectedDate,
+			monthLabel: monthLabel,
+			monthKey: monthKeyFromDate(monthStart),
+			minMonthKey: monthKeyFromDate(earliestMonth),
+			maxMonthKey: monthKeyFromDate(latestMonth),
+			canGoPrevMonth: monthStart > earliestMonth,
+			canGoNextMonth: monthStart < latestMonth,
+			days: days,
+			helper: helper
+		};
+	}
+
+	function buildDateCalendarHtml(state) {
+		var model = buildDateCalendarModel(state);
+		var weekdays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+		var html = '';
+		var i;
+
+		html += '<section class="mp-cc-date-step" aria-labelledby="mp-cc-date-title">';
+		html += '<header class="mp-cc-date-step__header">';
+		html += '<h4 class="mp-cc-date-step__title" id="mp-cc-date-title">' + escapeHtml(getUiText('step_3.title', 'Выберите дату получения')) + '</h4>';
+		html += '<div class="mp-cc-date-step__month-nav">';
+		html += '<button type="button" class="mp-cc-date-step__month-btn" data-calendar-nav="-1" aria-label="' + escapeHtml(getUiText('step_3.prev_month', 'Предыдущий месяц')) + '"' + (model.canGoPrevMonth ? '' : ' disabled') + '>‹</button>';
+		html += '<p class="mp-cc-date-step__month" aria-live="polite" data-calendar-month="' + escapeHtml(model.monthKey) + '">' + escapeHtml(model.monthLabel) + '</p>';
+		html += '<button type="button" class="mp-cc-date-step__month-btn" data-calendar-nav="+1" aria-label="' + escapeHtml(getUiText('step_3.next_month', 'Следующий месяц')) + '"' + (model.canGoNextMonth ? '' : ' disabled') + '>›</button>';
+		html += '</div>';
+		html += '</header>';
+		html += '<div class="mp-cc-calendar" role="group" aria-label="' + escapeHtml(getUiText('step_3.title', 'Календарь выбора даты')) + '">';
+		html += '<div class="mp-cc-calendar__weekdays" aria-hidden="true">';
+		for (i = 0; i < weekdays.length; i += 1) {
+			html += '<span class="mp-cc-calendar__weekday">' + escapeHtml(weekdays[i]) + '</span>';
+		}
+		html += '</div>';
+		html += '<div class="mp-cc-calendar__grid" role="grid" aria-labelledby="mp-cc-date-title" data-calendar-grid="1">';
+		var focusAssigned = false;
+		for (i = 0; i < model.days.length; i += 1) {
+			var day = model.days[i];
+			var classes = ['mp-cc-calendar__day'];
+			if (!day.inMonth) {
+				classes.push('is-outside');
+			}
+			if (day.disabled) {
+				classes.push('is-disabled');
+			}
+			if (day.selected) {
+				classes.push('is-selected');
+			}
+			if (day.weekend) {
+				classes.push('is-weekend');
+			}
+			var isFocusable = !day.disabled && (day.selected || !focusAssigned);
+			var tabIndex = isFocusable ? '0' : '-1';
+			if (isFocusable) {
+				focusAssigned = true;
+			}
+			html += '<button type="button" class="' + classes.join(' ') + '"';
+			html += ' role="gridcell"';
+			html += ' data-calendar-date="' + escapeHtml(day.value) + '"';
+			html += ' aria-label="' + escapeHtml(day.label) + '"';
+			html += ' aria-selected="' + (day.selected ? 'true' : 'false') + '"';
+			html += ' tabindex="' + tabIndex + '"';
+			if (day.disabled) {
+				html += ' disabled aria-disabled="true"';
+			}
+			html += '>';
+			html += '<span>' + escapeHtml(day.dayOfMonth) + '</span>';
+			html += '</button>';
+		}
+		html += '</div>';
+		html += '</div>';
+		html += '<p class="mp-cc-date-step__helper" id="mp-cc-date-helper">' + escapeHtml(model.helper) + '</p>';
+		html += '</section>';
+		return html;
+	}
+
 	function parseContext() {
 		var root = document.querySelector(selectors.root);
 		if (!root) {
@@ -338,6 +537,34 @@
 				state.frontendStore.fulfillment.scenarioData = existing;
 			}
 		}
+	}
+
+	function ensureDateSelection(state) {
+		if (!state || !state.frontendStore || !state.frontendStore.fulfillment) {
+			return;
+		}
+		var dateBox = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+			? state.frontendStore.fulfillment.date
+			: {};
+		if (dateBox.selected_date) {
+			if (!dateBox.calendar_month) {
+				var parsedDate = parseIsoDate(dateBox.selected_date);
+				if (parsedDate) {
+					dateBox.calendar_month = monthKeyFromDate(parsedDate);
+					state.frontendStore.fulfillment.date = dateBox;
+				}
+			}
+			return;
+		}
+		var model = buildDateCalendarModel(state);
+		if (!model || !model.selectedDate) {
+			return;
+		}
+		dateBox.selected_date = model.selectedDate;
+		if (!dateBox.calendar_month) {
+			dateBox.calendar_month = model.monthKey;
+		}
+		state.frontendStore.fulfillment.date = dateBox;
 	}
 
 	function normalizeCartPayload(cartPayload) {
@@ -632,6 +859,15 @@
 			notify(getUiText('step_1.empty_cart', 'Cart is empty'), 'error');
 			return;
 		}
+		if (state.currentStepId === 'date') {
+			var selectedDate = state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.date
+				? String(state.frontendStore.fulfillment.date.selected_date || '')
+				: '';
+			if (!selectedDate) {
+				notify(getUiText('step_3.select_date_required', 'Выберите дату, чтобы продолжить.'), 'error');
+				return;
+			}
+		}
 		requestForwardValidation(state.currentStepId).then(function (valid) {
 			if (!valid) {
 				setRuntimeFlag(state, 'blocked', true);
@@ -846,6 +1082,7 @@
 		if (selectedGroup === 'pickup') {
 			html += buildPickupPointHtml(state);
 		}
+		html += buildDateCalendarHtml(state);
 		html += '</section>';
 		return html;
 	}
@@ -1179,6 +1416,7 @@
 			$summary.empty();
 			return;
 		}
+		ensureDateSelection(state);
 
 		$app.html(buildStepPanelHtml(state));
 		$summary.html(buildSummaryHtml(state));
@@ -1333,6 +1571,105 @@
 			}).fail(function () {
 				notify('Не удалось сохранить точку самовывоза.', 'error');
 			});
+		});
+
+		$app.find('[data-calendar-date]').off('click').on('click', function () {
+			var $btn = $(this);
+			if ($btn.is(':disabled')) {
+				return;
+			}
+			var value = String($btn.data('calendar-date') || '');
+			if (!value) {
+				return;
+			}
+			var dateBox = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+				? state.frontendStore.fulfillment.date
+				: {};
+			dateBox.selected_date = value;
+			var parsed = parseIsoDate(value);
+			if (parsed) {
+				dateBox.calendar_month = monthKeyFromDate(parsed);
+			}
+			state.frontendStore.fulfillment.date = dateBox;
+			render(state, $app);
+			postCheckout('session_set_answers', {
+				step_id: 'date',
+				context_id: state.flowContextId,
+				answers: dateBox
+			}).fail(function () {
+				notify(getUiText('step_3.date_save_failed', 'Не удалось сохранить выбранную дату.'), 'error');
+			});
+		});
+
+		$app.find('[data-calendar-nav]').off('click').on('click', function () {
+			var shift = Number($(this).data('calendar-nav') || 0);
+			if (!shift) {
+				return;
+			}
+			var dateBox = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+				? state.frontendStore.fulfillment.date
+				: {};
+			var model = buildDateCalendarModel(state);
+			var currentMonth = parseMonthKey(dateBox.calendar_month || model.monthKey);
+			if (!currentMonth) {
+				return;
+			}
+			var shiftedMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + shift, 1);
+			var minMonth = parseMonthKey(model.minMonthKey);
+			var maxMonth = parseMonthKey(model.maxMonthKey);
+			if (minMonth && shiftedMonth < minMonth) {
+				shiftedMonth = minMonth;
+			}
+			if (maxMonth && shiftedMonth > maxMonth) {
+				shiftedMonth = maxMonth;
+			}
+			dateBox.calendar_month = monthKeyFromDate(shiftedMonth);
+			state.frontendStore.fulfillment.date = dateBox;
+			render(state, $app);
+			postCheckout('session_set_answers', {
+				step_id: 'date',
+				context_id: state.flowContextId,
+				answers: dateBox
+			}).fail(function () {
+				notify(getUiText('step_3.date_save_failed', 'Не удалось сохранить выбранную дату.'), 'error');
+			});
+		});
+
+		$app.find('[data-calendar-grid]').off('keydown').on('keydown', function (event) {
+			var key = String(event.key || '');
+			var $cells = $app.find('[data-calendar-date]').filter(function () {
+				return !$(this).is(':disabled');
+			});
+			var current = document.activeElement;
+			var currentIndex = $cells.index(current);
+			if (currentIndex < 0) {
+				return;
+			}
+			var nextIndex = currentIndex;
+			if (key === 'ArrowRight') {
+				nextIndex = Math.min($cells.length - 1, currentIndex + 1);
+			} else if (key === 'ArrowLeft') {
+				nextIndex = Math.max(0, currentIndex - 1);
+			} else if (key === 'ArrowDown') {
+				nextIndex = Math.min($cells.length - 1, currentIndex + 7);
+			} else if (key === 'ArrowUp') {
+				nextIndex = Math.max(0, currentIndex - 7);
+			} else if (key === 'Home') {
+				nextIndex = 0;
+			} else if (key === 'End') {
+				nextIndex = $cells.length - 1;
+			} else if (key === 'Enter' || key === ' ') {
+				$(current).trigger('click');
+				event.preventDefault();
+				return;
+			} else {
+				return;
+			}
+			event.preventDefault();
+			var $target = $cells.eq(nextIndex);
+			if ($target.length) {
+				$target.trigger('focus');
+			}
 		});
 	}
 
@@ -1558,6 +1895,7 @@
 		}
 		applyScenarioFieldAvailability(state);
 		ensurePickupScenarioData(state);
+		ensureDateSelection(state);
 		render(state, $app);
 
 		syncStoreWithBackend(state, $app).fail(function () {
