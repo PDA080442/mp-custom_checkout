@@ -7,6 +7,9 @@
 
 namespace MP\CustomCheckout\Hooks;
 
+use MP\CustomCheckout\Settings\FeatureFlagResolver;
+use MP\CustomCheckout\Settings\SafeSettingsResolver;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
@@ -50,7 +53,26 @@ final class AdminAssetsHooks {
 			MP_CUSTOM_CHECKOUT_VERSION,
 			true
 		);
+		wp_localize_script(
+			self::HANDLE_SCRIPT,
+			'mpCcAdmin',
+			array(
+				'featureFlags' => FeatureFlagResolver::all(),
+				'stepOneConfig' => SafeSettingsResolver::get_section( 'step_1' ),
+				'stepOneDefaults' => self::step_one_defaults(),
+				'labels' => SafeSettingsResolver::get_section( 'labels' ),
+			)
+		);
 
 		do_action( 'mp_custom_checkout_enqueue_admin_assets', $hook_suffix );
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private static function step_one_defaults(): array {
+		$tree = SafeSettingsResolver::get_defaults_tree();
+		$defaults = isset( $tree['step_1'] ) && is_array( $tree['step_1'] ) ? $tree['step_1'] : array();
+		return $defaults;
 	}
 }

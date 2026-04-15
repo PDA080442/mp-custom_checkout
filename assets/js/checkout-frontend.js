@@ -36,6 +36,67 @@
 		return (typeof node === 'string' && node !== '') ? node : fallback;
 	}
 
+	function getStepOneConfig() {
+		var source = (window.mpCcCheckout && window.mpCcCheckout.stepOneConfig && typeof window.mpCcCheckout.stepOneConfig === 'object')
+			? window.mpCcCheckout.stepOneConfig
+			: {};
+		return $.extend(true, {
+			labels: {
+				title: '',
+				summary_title: '',
+				subtotal_label: '',
+				items_label: '',
+				continue_label: '',
+				return_label: '',
+				empty_title: ''
+			},
+			product_meta_visibility: {
+				show_image: true,
+				show_sku: true,
+				show_variation: true,
+				show_price: true,
+				show_subtotal: true
+			},
+			quantity_controls: {
+				enabled: true,
+				allow_manual_input: true,
+				show_increment: true,
+				show_decrement: true
+			},
+			empty_state: {
+				message: '',
+				cta_label: '',
+				cta_enabled: true
+			},
+			style_controls: {
+				card_compact: false,
+				card_emphasis: 'default',
+				summary_emphasis: 'default'
+			},
+			layout_order: {
+				secondary_order: ['price', 'sku', 'variation', 'quantity', 'subtotal', 'remove']
+			},
+			responsive: {
+				desktop_mode: 'comfortable',
+				tablet_mode: 'comfortable',
+				mobile_mode: 'compact',
+				hide_media_mobile: false
+			},
+			admin_preview: {
+				enabled: true
+			}
+		}, source);
+	}
+
+	function getStepOneLabel(state, key, fallbackPath, fallbackText) {
+		var configLabels = state && state.stepOneConfig && state.stepOneConfig.labels ? state.stepOneConfig.labels : {};
+		var value = configLabels && configLabels[key] ? String(configLabels[key]) : '';
+		if (value) {
+			return value;
+		}
+		return getUiText(fallbackPath, fallbackText);
+	}
+
 	function parseContext() {
 		var root = document.querySelector(selectors.root);
 		if (!root) {
@@ -121,7 +182,8 @@
 			maxReachedIndex: currentIndex,
 			isTransitioning: false,
 			frontendStore: createFrontendStore(flow, visible, allSteps, currentStep),
-			featureFlags: $.extend({}, contextFlags, localizedFlags)
+			featureFlags: $.extend({}, contextFlags, localizedFlags),
+			stepOneConfig: getStepOneConfig()
 		};
 	}
 
@@ -496,6 +558,9 @@
 		var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
 		var step = currentIndex >= 0 ? state.visibleSteps[currentIndex] : null;
 		var label = step ? (step.label || step.id) : '';
+		if (step && step.id === 'cart') {
+			label = getStepOneLabel(state, 'title', 'step_1.title', label || 'Cart');
+		}
 		var html = '';
 
 		html += '<section class="mp-cc-step-panel" data-step-panel="' + escapeHtml(step ? step.id : '') + '">';
@@ -526,17 +591,28 @@
 		var items = state.frontendStore && state.frontendStore.cart && Array.isArray(state.frontendStore.cart.items)
 			? state.frontendStore.cart.items
 			: [];
+		var config = state.stepOneConfig || {};
+		var visibility = config.product_meta_visibility || {};
+		var quantityControls = config.quantity_controls || {};
+		var layout = config.layout_order || {};
+		var order = Array.isArray(layout.secondary_order) ? layout.secondary_order : ['price', 'sku', 'variation', 'quantity', 'subtotal', 'remove'];
 		var html = '';
 
-		html += '<section class="mp-cc-cart-list" aria-label="' + escapeHtml(getUiText('step_1.title', 'Cart items')) + '">';
+		html += '<section class="mp-cc-cart-list" aria-label="' + escapeHtml(getStepOneLabel(state, 'title', 'step_1.title', 'Cart items')) + '">';
 		html += '<div class="mp-cc-cart-list__items" data-mp-cc-item-list="1">';
 
 		if (!items.length) {
 			var emptySummary = state.frontendStore && state.frontendStore.cart ? (state.frontendStore.cart.summary || {}) : {};
 			var catalogUrl = emptySummary.catalog_url ? String(emptySummary.catalog_url) : '/';
+			var emptyCtaEnabled = (config.empty_state && typeof config.empty_state.cta_enabled !== 'undefined') ? Boolean(config.empty_state.cta_enabled) : true;
 			html += '<div class="mp-cc-cart-list__empty">';
-			html += '<p class="mp-cc-empty">' + escapeHtml(getUiText('step_1.empty_cart', 'Cart is empty')) + '</p>';
-			html += '<a class="mp-cc-cart-list__cta" href="' + escapeHtml(catalogUrl) + '">' + escapeHtml(getUiText('step_1.btn_choose_gifts', 'Return to catalog')) + '</a>';
+			html += '<p class="mp-cc-empty">' + escapeHtml(getStepOneLabel(state, 'empty_title', 'step_1.empty_cart', 'Cart is empty')) + '</p>';
+			if (config.empty_state && config.empty_state.message) {
+				html += '<p class="mp-cc-cart-list__empty-message">' + escapeHtml(String(config.empty_state.message)) + '</p>';
+			}
+			if (emptyCtaEnabled) {
+				html += '<a class="mp-cc-cart-list__cta" href="' + escapeHtml(catalogUrl) + '">' + escapeHtml(getStepOneLabel(state, 'return_label', 'step_1.return_to_shop', 'Return to catalog')) + '</a>';
+			}
 			html += '</div>';
 			html += '</div></section>';
 			return html;
@@ -563,33 +639,61 @@
 			html += ' data-variation-id="' + escapeHtml(variationId) + '"';
 			html += '>';
 			html += '<div class="mp-cc-cart-item__media">';
-			if (imageUrl) {
+			if (visibility.show_image !== false && imageUrl) {
 				html += '<img src="' + escapeHtml(imageUrl) + '" alt="" loading="lazy" />';
-			} else {
+			} else if (visibility.show_image !== false) {
 				html += '<div class="mp-cc-cart-item__placeholder" aria-hidden="true"></div>';
 			}
 			html += '</div>';
 			html += '<div class="mp-cc-cart-item__body">';
 			html += '<h3 class="mp-cc-cart-item__title" title="' + escapeHtml(title) + '">' + escapeHtml(title) + '</h3>';
-			if (priceHtml) {
-				html += '<div class="mp-cc-cart-item__price">' + priceHtml + '</div>';
+			var topBlocks = {};
+			topBlocks.price = visibility.show_price !== false && priceHtml ? '<div class="mp-cc-cart-item__price" data-secondary-block="price">' + priceHtml + '</div>' : '';
+			topBlocks.sku = visibility.show_sku !== false && sku ? '<div class="mp-cc-cart-item__meta-row" data-secondary-block="sku"><dt>SKU</dt><dd>' + escapeHtml(sku) + '</dd></div>' : '';
+			topBlocks.variation = visibility.show_variation !== false && variationText ? '<div class="mp-cc-cart-item__meta-row" data-secondary-block="variation"><dt>' + escapeHtml(getUiText('step_1.positions_count', 'Details')) + '</dt><dd>' + escapeHtml(variationText) + '</dd></div>' : '';
+			for (var t = 0; t < order.length; t += 1) {
+				var topKey = String(order[t] || '');
+				if (topKey === 'price' && topBlocks.price) {
+					html += topBlocks.price;
+				}
 			}
-			html += '<dl class="mp-cc-cart-item__meta">';
-			if (sku) {
-				html += '<div class="mp-cc-cart-item__meta-row"><dt>SKU</dt><dd>' + escapeHtml(sku) + '</dd></div>';
+			var metaRows = '';
+			for (var m = 0; m < order.length; m += 1) {
+				var metaKey = String(order[m] || '');
+				if (metaKey === 'sku' || metaKey === 'variation') {
+					metaRows += topBlocks[metaKey] || '';
+				}
 			}
-			if (variationText) {
-				html += '<div class="mp-cc-cart-item__meta-row"><dt>' + escapeHtml(getUiText('step_1.positions_count', 'Details')) + '</dt><dd>' + escapeHtml(variationText) + '</dd></div>';
+			if (metaRows) {
+				html += '<dl class="mp-cc-cart-item__meta">' + metaRows + '</dl>';
 			}
-			html += '</dl>';
 			html += '<div class="mp-cc-cart-item__footer">';
-			html += '<div class="mp-cc-cart-item__qty-controls" role="group" aria-label="' + escapeHtml(getUiText('step_1.positions_count', 'Quantity')) + '">';
-			html += '<button type="button" class="mp-cc-qty-btn" data-qty-action="decrease" data-cart-qty-btn="-1" aria-label="Decrease quantity"' + (qty <= minQty ? ' disabled' : '') + '>−</button>';
-			html += '<input class="mp-cc-qty-input" type="number" inputmode="numeric" min="' + escapeHtml(minQty) + '" max="' + escapeHtml(maxQty) + '" step="1" value="' + escapeHtml(qty) + '" data-cart-qty-input="1" aria-label="Quantity" />';
-			html += '<button type="button" class="mp-cc-qty-btn" data-qty-action="increase" data-cart-qty-btn="+1" aria-label="Increase quantity"' + (qty >= maxQty ? ' disabled' : '') + '>+</button>';
-			html += '</div>';
-			html += '<button type="button" class="mp-cc-cart-item__remove" data-cart-remove="1" aria-label="Remove item">' + escapeHtml(getUiText('common.remove', 'Remove')) + '</button>';
-			html += '<span class="mp-cc-cart-item__subtotal">' + (subtotal || '—') + '</span>';
+			var secondaryBlocks = {};
+			secondaryBlocks.quantity = '';
+			if (quantityControls.enabled !== false) {
+				secondaryBlocks.quantity += '<div class="mp-cc-cart-item__qty-controls" data-secondary-block="quantity" role="group" aria-label="' + escapeHtml(getUiText('step_1.positions_count', 'Quantity')) + '">';
+				if (quantityControls.show_decrement !== false) {
+					secondaryBlocks.quantity += '<button type="button" class="mp-cc-qty-btn" data-qty-action="decrease" data-cart-qty-btn="-1" aria-label="Decrease quantity"' + (qty <= minQty ? ' disabled' : '') + '>−</button>';
+				}
+				if (quantityControls.allow_manual_input !== false) {
+					secondaryBlocks.quantity += '<input class="mp-cc-qty-input" type="number" inputmode="numeric" min="' + escapeHtml(minQty) + '" max="' + escapeHtml(maxQty) + '" step="1" value="' + escapeHtml(qty) + '" data-cart-qty-input="1" aria-label="Quantity" />';
+				} else {
+					secondaryBlocks.quantity += '<span class="mp-cc-qty-static">' + escapeHtml(qty) + '</span>';
+				}
+				if (quantityControls.show_increment !== false) {
+					secondaryBlocks.quantity += '<button type="button" class="mp-cc-qty-btn" data-qty-action="increase" data-cart-qty-btn="+1" aria-label="Increase quantity"' + (qty >= maxQty ? ' disabled' : '') + '>+</button>';
+				}
+				secondaryBlocks.quantity += '</div>';
+			}
+			secondaryBlocks.subtotal = visibility.show_subtotal !== false ? '<span class="mp-cc-cart-item__subtotal" data-secondary-block="subtotal">' + (subtotal || '—') + '</span>' : '';
+			secondaryBlocks.remove = '<button type="button" class="mp-cc-cart-item__remove" data-secondary-block="remove" data-cart-remove="1" aria-label="Remove item">' + escapeHtml(getUiText('common.remove', 'Remove')) + '</button>';
+
+			for (var o = 0; o < order.length; o += 1) {
+				var blockKey = String(order[o] || '');
+				if (secondaryBlocks[blockKey]) {
+					html += secondaryBlocks[blockKey];
+				}
+			}
 			html += '</div>';
 			html += '</div>';
 			html += '</article>';
@@ -642,26 +746,28 @@
 		var subtotalText = cartSummary.subtotal || '';
 		var totalText = snapshot.total || subtotalText || '';
 		var displayAmount = state.currentStepId === 'cart' ? subtotalText : totalText;
-		var amountLabel = state.currentStepId === 'cart' ? 'Subtotal' : 'Total';
+		var amountLabel = state.currentStepId === 'cart'
+			? getStepOneLabel(state, 'subtotal_label', 'step_1.subtotal', 'Subtotal')
+			: getUiText('order_review.total', 'Total');
 		var returnUrl = cartSummary.catalog_url ? String(cartSummary.catalog_url) : '/';
 		var html = '';
 
 		html += '<section class="mp-cc-summary-card" aria-label="Order summary panel">';
-		html += '<h3 class="mp-cc-summary-card__title">Order Summary</h3>';
+		html += '<h3 class="mp-cc-summary-card__title">' + escapeHtml(getStepOneLabel(state, 'summary_title', 'order_review.title', 'Order Summary')) + '</h3>';
 		html += '<p class="mp-cc-summary-card__meta">Step ' + (currentIndex + 1) + ' of ' + total + '</p>';
 		if (showPlaceholders) {
 			html += '<div class="mp-cc-summary-card__placeholder" aria-hidden="true"></div>';
 			html += '<div class="mp-cc-summary-card__placeholder mp-cc-summary-card__placeholder--sm" aria-hidden="true"></div>';
 		} else {
-			html += '<p class="mp-cc-summary-card__meta">Items: <strong>' + escapeHtml(itemsCount) + '</strong></p>';
+			html += '<p class="mp-cc-summary-card__meta">' + escapeHtml(getStepOneLabel(state, 'items_label', 'step_1.positions_count', 'Items')) + ': <strong>' + escapeHtml(itemsCount) + '</strong></p>';
 			if (displayAmount) {
 				html += '<p class="mp-cc-summary-card__meta"><span class="mp-cc-summary-card__amount-label">' + escapeHtml(amountLabel) + ':</span> <span class="mp-cc-summary-card__amount" data-summary-amount="1">' + displayAmount + '</span></p>';
 			}
 		}
 		if (state.currentStepId === 'cart') {
 			html += '<div class="mp-cc-summary-card__actions">';
-			html += '<button type="button" class="mp-cc-summary-card__btn mp-cc-summary-card__btn--primary" data-summary-action="continue">Continue</button>';
-			html += '<a href="' + escapeHtml(returnUrl) + '" class="mp-cc-summary-card__btn mp-cc-summary-card__btn--ghost">' + escapeHtml(getUiText('step_1.btn_choose_gifts', 'Return to shop')) + '</a>';
+			html += '<button type="button" class="mp-cc-summary-card__btn mp-cc-summary-card__btn--primary" data-summary-action="continue">' + escapeHtml(getStepOneLabel(state, 'continue_label', 'step_1.continue', 'Continue')) + '</button>';
+			html += '<a href="' + escapeHtml(returnUrl) + '" class="mp-cc-summary-card__btn mp-cc-summary-card__btn--ghost">' + escapeHtml(getStepOneLabel(state, 'return_label', 'step_1.return_to_shop', 'Return to shop')) + '</a>';
 			html += '</div>';
 		}
 		html += '<div class="mp-cc-summary-card__slot" data-mp-cc-summary-slot="1"></div>';
@@ -706,6 +812,32 @@
 		}, animationDurationMs);
 	}
 
+	function applyStepOnePresentation(state) {
+		var root = document.querySelector(selectors.root);
+		if (!root || !state || !state.stepOneConfig) {
+			return;
+		}
+		var cfg = state.stepOneConfig;
+		var styles = cfg.style_controls || {};
+		var responsive = cfg.responsive || {};
+		root.classList.toggle('mp-cc-step1-card-compact', Boolean(styles.card_compact));
+		root.classList.toggle('mp-cc-step1-hide-media-mobile', Boolean(responsive.hide_media_mobile));
+		root.classList.toggle('mp-cc-step1-card-emphasis-elevated', String(styles.card_emphasis || '') === 'elevated');
+		root.classList.toggle('mp-cc-step1-summary-emphasis-elevated', String(styles.summary_emphasis || '') === 'elevated');
+
+		var responsiveClasses = [
+			'mp-cc-step1-desktop-comfortable', 'mp-cc-step1-desktop-compact',
+			'mp-cc-step1-tablet-comfortable', 'mp-cc-step1-tablet-compact',
+			'mp-cc-step1-mobile-comfortable', 'mp-cc-step1-mobile-compact'
+		];
+		for (var i = 0; i < responsiveClasses.length; i += 1) {
+			root.classList.remove(responsiveClasses[i]);
+		}
+		root.classList.add('mp-cc-step1-desktop-' + (responsive.desktop_mode === 'compact' ? 'compact' : 'comfortable'));
+		root.classList.add('mp-cc-step1-tablet-' + (responsive.tablet_mode === 'compact' ? 'compact' : 'comfortable'));
+		root.classList.add('mp-cc-step1-mobile-' + (responsive.mobile_mode === 'comfortable' ? 'comfortable' : 'compact'));
+	}
+
 	function render(state, $app) {
 		var $progress = $(selectors.progress);
 		var $actions = $(selectors.actions);
@@ -721,6 +853,7 @@
 
 		$app.html(buildStepPanelHtml(state));
 		$summary.html(buildSummaryHtml(state));
+		applyStepOnePresentation(state);
 		animateSummaryUpdate(state, $summary);
 		if (isFlagEnabled(state, flagNames.multiStepFlow, true)) {
 			$progress.html(buildProgressHtml(state));
@@ -781,8 +914,8 @@
 			if (!$item.length) {
 				return;
 			}
-			var $input = $item.find('[data-cart-qty-input]');
-			var current = Number($input.val() || 0);
+			var localItem = getLocalCartItem(state, String($item.data('cart-item-key') || ''));
+			var current = Number(localItem && localItem.quantity ? localItem.quantity : 0);
 			var delta = Number($btn.data('cart-qty-btn') || 0);
 			if (!delta) {
 				return;
@@ -871,21 +1004,28 @@
 		var $input = $item.find('[data-cart-qty-input]');
 		var $decrease = $item.find('[data-qty-action="decrease"]');
 		var $increase = $item.find('[data-qty-action="increase"]');
-		if (!itemKey || !$input.length) {
+		if (!itemKey) {
 			return;
 		}
 
-		var minQty = Number($input.attr('min') || 1);
-		var maxQty = Number($input.attr('max') || 9999);
 		var localItem = getLocalCartItem(state, itemKey);
+		if (!localItem) {
+			return;
+		}
+		var minQty = Number(localItem.min_quantity || ($input.length ? $input.attr('min') : 1) || 1);
+		var maxQty = Number(localItem.max_quantity || ($input.length ? $input.attr('max') : 9999) || 9999);
 		var prevQty = Number(localItem && localItem.quantity ? localItem.quantity : minQty);
 		var nextQty = clampQuantity(requestedQty, minQty, maxQty);
 		if (nextQty === prevQty || state.isTransitioning) {
-			$input.val(nextQty);
+			if ($input.length) {
+				$input.val(nextQty);
+			}
 			return;
 		}
 		$item.addClass('is-updating');
-		$input.val(nextQty);
+		if ($input.length) {
+			$input.val(nextQty);
+		}
 		$decrease.prop('disabled', nextQty <= minQty);
 		$increase.prop('disabled', nextQty >= maxQty);
 		updateLocalCartItem(state, itemKey, nextQty, '');
