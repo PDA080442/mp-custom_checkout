@@ -8,6 +8,7 @@
 namespace MP\CustomCheckout\Hooks;
 
 use MP\CustomCheckout\DependencyFailureGuard;
+use MP\CustomCheckout\Routing\CheckoutRouteContext;
 use MP\CustomCheckout\Routing\CheckoutSessionService;
 use MP\CustomCheckout\Routing\CheckoutStepManager;
 
@@ -138,8 +139,17 @@ final class CheckoutAjaxHooks {
 				array(
 					'sub_action' => $sub_action,
 					'flow'       => CheckoutSessionService::get_public_state(),
+					'cart'       => CheckoutRouteContext::get_cart_data(),
 				)
 			);
+		}
+
+		if ( 'update_quantity' === $sub_action ) {
+			self::handle_update_quantity();
+		}
+
+		if ( 'remove_item' === $sub_action ) {
+			self::handle_remove_item();
 		}
 
 		if ( 'session_abandon' === $sub_action ) {
@@ -158,7 +168,7 @@ final class CheckoutAjaxHooks {
 	private static function is_session_sub_action( string $sub_action ): bool {
 		return in_array(
 			$sub_action,
-			array( 'session_set_step', 'session_set_answers', 'session_set_scenario', 'session_get_state', 'session_abandon' ),
+			array( 'session_set_step', 'session_set_answers', 'session_set_scenario', 'session_get_state', 'session_abandon', 'update_quantity', 'remove_item' ),
 			true
 		);
 	}
@@ -171,5 +181,142 @@ final class CheckoutAjaxHooks {
 		}
 
 		return CheckoutSessionService::validate_context_id( $flow, $posted_context );
+	}
+
+	private static function handle_update_quantity(): void {
+		$item_key = isset( $_POST['item_key'] ) ? wc_clean( wp_unslash( $_POST['item_key'] ) ) : '';
+		$qty_raw  = isset( $_POST['quantity'] ) ? wp_unslash( $_POST['quantity'] ) : null;
+		$qty      = is_numeric( $qty_raw ) ? (int) $qty_raw : 0;
+
+		if ( '' === $item_key || $qty <= 0 ) {
+			wp_send_json_error(
+				array( 'code' => 'invalid_quantity_payload', 'message' => __( 'Некорректные данные количества.', 'mp-custom-checkout' ) ),
+				400
+			);
+		}
+
+		if ( ! function_exists( 'WC' ) || ! WC()->cart instanceof \WC_Cart ) {
+			wp_send_json_error(
+				array( 'code' => 'cart_unavailable', 'message' => __( 'Корзина недоступна.', 'mp-custom-checkout' ) ),
+				503
+			);
+		}
+
+		$cart = WC()->cart;
+		$item = $cart->get_cart_item( $item_key );
+		if ( ! is_array( $item ) || empty( $item['data'] ) || ! $item['data'] instanceof \WC_Product ) {
+			wp_send_json_error(
+				array( 'code' => 'cart_item_not_found', 'message' => __( 'Позиция корзины не найдена.', 'mp-custom-checkout' ) ),
+				404
+			);
+		}
+
+		/** @var \WC_Product $product */
+		$product = $item['data'];
+		$min_qty = max( 1, (int) $product->get_min_purchase_quantity() );
+		$max_qty = (int) $product->get_max_purchase_quantity();
+		if ( $max_qty <= 0 ) {
+			$max_qty = 9999;
+		}
+
+		if ( $qty < $min_qty || $qty > $max_qty ) {
+			wp_send_json_error(
+				array(
+					'code'    => 'quantity_out_of_bounds',
+					'message' => sprintf(
+						/* translators: 1: min qty, 2: max qty */
+						__( 'Допустимое количество: от %1$d до %2$d.', 'mp-custom-checkout' ),
+						$min_qty,
+						$max_qty
+					),
+					'min'     => $min_qty,
+					'max'     => $max_qty,
+				),
+				400
+			);
+		}
+
+		$result = $cart->set_quantity( $item_key, $qty, true );
+		if ( false === $result ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'error',
+				'[cart_quantity] update_failed',
+				array( 'item_key' => $item_key, 'quantity' => $qty )
+			);
+			wp_send_json_error(
+				array( 'code' => 'update_failed', 'message' => __( 'Не удалось обновить количество.', 'mp-custom-checkout' ) ),
+				500
+			);
+		}
+
+		$updated_item = $cart->get_cart_item( $item_key );
+		$line_subtotal = '';
+		if ( is_array( $updated_item ) && isset( $updated_item['data'] ) && $updated_item['data'] instanceof \WC_Product ) {
+			$line_subtotal = $cart->get_product_subtotal( $updated_item['data'], (int) $qty );
+		}
+
+		wp_send_json_success(
+			array(
+				'sub_action' => 'update_quantity',
+				'item'       => array(
+					'key'           => $item_key,
+					'quantity'      => $qty,
+					'line_subtotal' => (string) $line_subtotal,
+				),
+				'cart'       => CheckoutRouteContext::get_cart_data(),
+				'flow'       => CheckoutSessionService::get_public_state(),
+			)
+		);
+	}
+
+	private static function handle_remove_item(): void {
+		$item_key = isset( $_POST['item_key'] ) ? wc_clean( wp_unslash( $_POST['item_key'] ) ) : '';
+		if ( '' === $item_key ) {
+			wp_send_json_error(
+				array( 'code' => 'invalid_remove_payload', 'message' => __( 'Не указан ключ позиции корзины.', 'mp-custom-checkout' ) ),
+				400
+			);
+		}
+
+		if ( ! function_exists( 'WC' ) || ! WC()->cart instanceof \WC_Cart ) {
+			wp_send_json_error(
+				array( 'code' => 'cart_unavailable', 'message' => __( 'Корзина недоступна.', 'mp-custom-checkout' ) ),
+				503
+			);
+		}
+
+		$cart = WC()->cart;
+		$item = $cart->get_cart_item( $item_key );
+		if ( ! is_array( $item ) ) {
+			wp_send_json_error(
+				array( 'code' => 'cart_item_not_found', 'message' => __( 'Позиция корзины не найдена.', 'mp-custom-checkout' ) ),
+				404
+			);
+		}
+
+		$removed = $cart->remove_cart_item( $item_key );
+		if ( false === $removed ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'error',
+				'[cart_remove] remove_failed',
+				array( 'item_key' => $item_key )
+			);
+			wp_send_json_error(
+				array( 'code' => 'remove_failed', 'message' => __( 'Не удалось удалить позицию из корзины.', 'mp-custom-checkout' ) ),
+				500
+			);
+		}
+
+		wp_send_json_success(
+			array(
+				'sub_action' => 'remove_item',
+				'item_key'   => $item_key,
+				'cart'       => CheckoutRouteContext::get_cart_data(),
+				'flow'       => CheckoutSessionService::get_public_state(),
+				'is_empty'   => 0 === (int) $cart->get_cart_contents_count(),
+			)
+		);
 	}
 }

@@ -86,6 +86,7 @@ final class FrontendAssetsHooks {
 					'entry'    => wp_create_nonce( 'mp_cc_checkout_entry' ),
 				),
 				'uiText' => self::ui_text_dictionaries(),
+				'stepOneConfig' => self::step_one_config(),
 				'scenarioStepMap' => self::scenario_step_map(),
 				'designTokens' => self::design_tokens_for_runtime(),
 			)
@@ -194,6 +195,14 @@ final class FrontendAssetsHooks {
 		}
 
 		return $result;
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private static function step_one_config(): array {
+		$config = SafeSettingsResolver::get_section( 'step_1' );
+		return is_array( $config ) ? $config : array();
 	}
 
 	private static function build_design_tokens_css(): string {

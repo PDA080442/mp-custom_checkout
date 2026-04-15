@@ -1,3 +1,109 @@
 /**
- * MP Custom Checkout — стили админки (заглушка).
+ * MP Custom Checkout — admin preview styles.
  */
+
+.mp-cc-admin-preview {
+	margin-top: 20px;
+	padding: 16px;
+	border: 1px solid #dcdcde;
+	border-radius: 8px;
+	background: #fff;
+}
+
+.mp-cc-admin-preview__toolbar {
+	display: flex;
+	justify-content: flex-end;
+	margin: 6px 0 10px;
+}
+
+.mp-cc-admin-preview[data-card-compact='1'] .mp-cc-admin-preview__card,
+.mp-cc-admin-preview[data-card-compact='1'] .mp-cc-admin-preview__summary {
+	padding: 8px;
+}
+
+.mp-cc-admin-preview[data-card-emphasis='elevated'] .mp-cc-admin-preview__card {
+	box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+}
+
+.mp-cc-admin-preview[data-summary-emphasis='elevated'] .mp-cc-admin-preview__summary {
+	box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+}
+
+.mp-cc-admin-preview__grid {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 260px;
+	gap: 14px;
+}
+
+.mp-cc-admin-preview__card,
+.mp-cc-admin-preview__summary {
+	border: 1px solid #e3e3e3;
+	border-radius: 8px;
+	padding: 12px;
+	background: #fcfcfc;
+}
+
+.mp-cc-admin-preview__item {
+	display: flex;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 6px 0;
+	border-bottom: 1px dashed #ececec;
+}
+
+.mp-cc-admin-preview__item:last-child {
+	border-bottom: 0;
+}
+
+.mp-cc-admin-preview__actions {
+	display: grid;
+	gap: 8px;
+	margin-top: 10px;
+}
+
+.mp-cc-admin-preview__actions button {
+	border: 1px solid #1f1f1f;
+	background: #1f1f1f;
+	color: #fff;
+	border-radius: 6px;
+	padding: 8px 10px;
+	cursor: default;
+}
+
+.mp-cc-admin-preview__actions a,
+.mp-cc-admin-preview__empty a {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border: 1px solid #d0d0d0;
+	border-radius: 6px;
+	padding: 8px 10px;
+	text-decoration: none;
+	color: #1f1f1f;
+	background: #fff;
+}
+
+.mp-cc-admin-preview__empty {
+	margin-top: 12px;
+	padding: 12px;
+	border: 1px dashed #d6d6d6;
+	border-radius: 8px;
+	background: #fafafa;
+}
+
+.mp-cc-admin-step1-row td {
+	position: relative;
+}
+
+.mp-cc-admin-step1-hint {
+	margin: 6px 0 0;
+	font-size: 12px;
+	line-height: 1.35;
+	color: #5f6368;
+}
+
+@media (max-width: 860px) {
+	.mp-cc-admin-preview__grid {
+		grid-template-columns: 1fr;
+	}
+}

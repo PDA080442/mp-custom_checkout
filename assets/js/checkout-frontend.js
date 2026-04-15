@@ -36,6 +36,67 @@
 		return (typeof node === 'string' && node !== '') ? node : fallback;
 	}
 
+	function getStepOneConfig() {
+		var source = (window.mpCcCheckout && window.mpCcCheckout.stepOneConfig && typeof window.mpCcCheckout.stepOneConfig === 'object')
+			? window.mpCcCheckout.stepOneConfig
+			: {};
+		return $.extend(true, {
+			labels: {
+				title: '',
+				summary_title: '',
+				subtotal_label: '',
+				items_label: '',
+				continue_label: '',
+				return_label: '',
+				empty_title: ''
+			},
+			product_meta_visibility: {
+				show_image: true,
+				show_sku: true,
+				show_variation: true,
+				show_price: true,
+				show_subtotal: true
+			},
+			quantity_controls: {
+				enabled: true,
+				allow_manual_input: true,
+				show_increment: true,
+				show_decrement: true
+			},
+			empty_state: {
+				message: '',
+				cta_label: '',
+				cta_enabled: true
+			},
+			style_controls: {
+				card_compact: false,
+				card_emphasis: 'default',
+				summary_emphasis: 'default'
+			},
+			layout_order: {
+				secondary_order: ['price', 'sku', 'variation', 'quantity', 'subtotal', 'remove']
+			},
+			responsive: {
+				desktop_mode: 'comfortable',
+				tablet_mode: 'comfortable',
+				mobile_mode: 'compact',
+				hide_media_mobile: false
+			},
+			admin_preview: {
+				enabled: true
+			}
+		}, source);
+	}
+
+	function getStepOneLabel(state, key, fallbackPath, fallbackText) {
+		var configLabels = state && state.stepOneConfig && state.stepOneConfig.labels ? state.stepOneConfig.labels : {};
+		var value = configLabels && configLabels[key] ? String(configLabels[key]) : '';
+		if (value) {
+			return value;
+		}
+		return getUiText(fallbackPath, fallbackText);
+	}
+
 	function parseContext() {
 		var root = document.querySelector(selectors.root);
 		if (!root) {
@@ -121,7 +182,8 @@
 			maxReachedIndex: currentIndex,
 			isTransitioning: false,
 			frontendStore: createFrontendStore(flow, visible, allSteps, currentStep),
-			featureFlags: $.extend({}, contextFlags, localizedFlags)
+			featureFlags: $.extend({}, contextFlags, localizedFlags),
+			stepOneConfig: getStepOneConfig()
 		};
 	}
 
@@ -141,7 +203,8 @@
 			},
 			cart: {
 				snapshot: flow.snapshot || {},
-				summary: {}
+				summary: {},
+				items: []
 			},
 			form: {
 				contact: contactBilling,
@@ -162,12 +225,34 @@
 				success: false,
 				blocked: false,
 				dirty: false,
-				lastSyncAt: Date.now()
+				lastSyncAt: Date.now(),
+				summaryHydrated: false
 			},
 			meta: {
 				contextId: flow.context_id || '',
-				expiresAt: flow.expires_at || 0
+				expiresAt: flow.expires_at || 0,
+				lastSummarySignature: ''
 			}
+		};
+	}
+
+	function normalizeCartPayload(cartPayload) {
+		var safePayload = cartPayload && typeof cartPayload === 'object' ? cartPayload : {};
+		var safeSummary = (safePayload.summary && typeof safePayload.summary === 'object') ? safePayload.summary : {};
+		var fallbackCatalogUrl = (window.mpCcCheckout && window.mpCcCheckout.checkoutUrl) ? String(window.mpCcCheckout.checkoutUrl) : '/';
+		if (safePayload && safePayload.home_url) {
+			fallbackCatalogUrl = String(safePayload.home_url);
+		}
+		return {
+			items: Array.isArray(safePayload.items) ? safePayload.items : [],
+			summary: $.extend(
+				{
+					items_count: 0,
+					subtotal: '',
+					catalog_url: fallbackCatalogUrl
+				},
+				safeSummary
+			)
 		};
 	}
 
@@ -216,9 +301,12 @@
 		return stepId;
 	}
 
-	function syncFromFlow(state, flow) {
+	function syncFromFlow(state, flow, cartPayload) {
 		var nextFlow = flow || {};
 		state.context.checkout_flow = nextFlow;
+		if (cartPayload && typeof cartPayload === 'object') {
+			state.context.cart = normalizeCartPayload(cartPayload);
+		}
 		state.flowContextId = nextFlow.context_id || state.flowContextId || '';
 		state.frontendStore = createFrontendStore(
 			nextFlow,
@@ -230,6 +318,10 @@
 		state.frontendStore.runtime.blocked = false;
 		state.frontendStore.runtime.dirty = false;
 		state.frontendStore.runtime.lastSyncAt = Date.now();
+		state.frontendStore.runtime.summaryHydrated = true;
+		var contextCart = normalizeCartPayload(state.context && state.context.cart ? state.context.cart : {});
+		state.frontendStore.cart.items = contextCart.items;
+		state.frontendStore.cart.summary = contextCart.summary;
 	}
 
 	function setRuntimeFlag(state, key, value) {
@@ -244,7 +336,7 @@
 			if (!response || !response.success || !response.data || !response.data.flow) {
 				return;
 			}
-			syncFromFlow(state, response.data.flow);
+			syncFromFlow(state, response.data.flow, response.data.cart || {});
 			var rehydrated = buildState(state.context);
 			state.visibleSteps = rehydrated.visibleSteps;
 			state.currentStepId = rehydrated.currentStepId;
@@ -371,6 +463,11 @@
 			return;
 		}
 		var target = state.visibleSteps[currentIndex + 1];
+		var cartSummary = state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart.summary || {} : {};
+		if (state.currentStepId === 'cart' && Number(cartSummary.items_count || 0) <= 0) {
+			notify(getUiText('step_1.empty_cart', 'Cart is empty'), 'error');
+			return;
+		}
 		requestForwardValidation(state.currentStepId).then(function (valid) {
 			if (!valid) {
 				setRuntimeFlag(state, 'blocked', true);
@@ -461,6 +558,9 @@
 		var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
 		var step = currentIndex >= 0 ? state.visibleSteps[currentIndex] : null;
 		var label = step ? (step.label || step.id) : '';
+		if (step && step.id === 'cart') {
+			label = getStepOneLabel(state, 'title', 'step_1.title', label || 'Cart');
+		}
 		var html = '';
 
 		html += '<section class="mp-cc-step-panel" data-step-panel="' + escapeHtml(step ? step.id : '') + '">';
@@ -468,7 +568,11 @@
 		html += '<p class="mp-cc-step-panel__meta">Step ' + (currentIndex + 1) + ' / ' + state.visibleSteps.length + '</p>';
 		html += '<h2 class="mp-cc-step-panel__title" id="mp-cc-step-heading" tabindex="-1">' + escapeHtml(label) + '</h2>';
 		html += '</header>';
-		html += '<div class="mp-cc-step-panel__content" data-mp-cc-step-slot="' + escapeHtml(step ? step.id : '') + '"></div>';
+		html += '<div class="mp-cc-step-panel__content" data-mp-cc-step-slot="' + escapeHtml(step ? step.id : '') + '">';
+		if (step && step.id === 'cart') {
+			html += buildCartItemsHtml(state);
+		}
+		html += '</div>';
 		if (!isFlagEnabled(state, flagNames.discountPlacement, true)) {
 			html += '<p class="mp-cc-step-panel__hint">Discount tools are rendered inline in payment step.</p>';
 		}
@@ -483,6 +587,122 @@
 		return html;
 	}
 
+	function buildCartItemsHtml(state) {
+		var items = state.frontendStore && state.frontendStore.cart && Array.isArray(state.frontendStore.cart.items)
+			? state.frontendStore.cart.items
+			: [];
+		var config = state.stepOneConfig || {};
+		var visibility = config.product_meta_visibility || {};
+		var quantityControls = config.quantity_controls || {};
+		var layout = config.layout_order || {};
+		var order = Array.isArray(layout.secondary_order) ? layout.secondary_order : ['price', 'sku', 'variation', 'quantity', 'subtotal', 'remove'];
+		var html = '';
+
+		html += '<section class="mp-cc-cart-list" aria-label="' + escapeHtml(getStepOneLabel(state, 'title', 'step_1.title', 'Cart items')) + '">';
+		html += '<div class="mp-cc-cart-list__items" data-mp-cc-item-list="1">';
+
+		if (!items.length) {
+			var emptySummary = state.frontendStore && state.frontendStore.cart ? (state.frontendStore.cart.summary || {}) : {};
+			var catalogUrl = emptySummary.catalog_url ? String(emptySummary.catalog_url) : '/';
+			var emptyCtaEnabled = (config.empty_state && typeof config.empty_state.cta_enabled !== 'undefined') ? Boolean(config.empty_state.cta_enabled) : true;
+			html += '<div class="mp-cc-cart-list__empty">';
+			html += '<p class="mp-cc-empty">' + escapeHtml(getStepOneLabel(state, 'empty_title', 'step_1.empty_cart', 'Cart is empty')) + '</p>';
+			if (config.empty_state && config.empty_state.message) {
+				html += '<p class="mp-cc-cart-list__empty-message">' + escapeHtml(String(config.empty_state.message)) + '</p>';
+			}
+			if (emptyCtaEnabled) {
+				html += '<a class="mp-cc-cart-list__cta" href="' + escapeHtml(catalogUrl) + '">' + escapeHtml(getStepOneLabel(state, 'return_label', 'step_1.return_to_shop', 'Return to catalog')) + '</a>';
+			}
+			html += '</div>';
+			html += '</div></section>';
+			return html;
+		}
+
+		for (var i = 0; i < items.length; i += 1) {
+			var item = items[i] || {};
+			var itemKey = String(item.key || 'item-' + i);
+			var productId = Number(item.product_id || 0);
+			var variationId = Number(item.variation_id || 0);
+			var title = item.name ? String(item.name) : getUiText('step_1.title', 'Product');
+			var priceHtml = item.price_html ? String(item.price_html) : '';
+			var sku = item.sku ? String(item.sku) : '';
+			var variationText = item.variation_text ? String(item.variation_text) : '';
+			var imageUrl = item.image_url ? String(item.image_url) : '';
+			var qty = Number(item.quantity || 0);
+			var minQty = Number(item.min_quantity || 1);
+			var maxQty = Number(item.max_quantity || 9999);
+			var subtotal = item.line_subtotal ? String(item.line_subtotal) : '';
+
+			html += '<article class="mp-cc-cart-item"';
+			html += ' data-cart-item-key="' + escapeHtml(itemKey) + '"';
+			html += ' data-product-id="' + escapeHtml(productId) + '"';
+			html += ' data-variation-id="' + escapeHtml(variationId) + '"';
+			html += '>';
+			html += '<div class="mp-cc-cart-item__media">';
+			if (visibility.show_image !== false && imageUrl) {
+				html += '<img src="' + escapeHtml(imageUrl) + '" alt="" loading="lazy" />';
+			} else if (visibility.show_image !== false) {
+				html += '<div class="mp-cc-cart-item__placeholder" aria-hidden="true"></div>';
+			}
+			html += '</div>';
+			html += '<div class="mp-cc-cart-item__body">';
+			html += '<h3 class="mp-cc-cart-item__title" title="' + escapeHtml(title) + '">' + escapeHtml(title) + '</h3>';
+			var topBlocks = {};
+			topBlocks.price = visibility.show_price !== false && priceHtml ? '<div class="mp-cc-cart-item__price" data-secondary-block="price">' + priceHtml + '</div>' : '';
+			topBlocks.sku = visibility.show_sku !== false && sku ? '<div class="mp-cc-cart-item__meta-row" data-secondary-block="sku"><dt>SKU</dt><dd>' + escapeHtml(sku) + '</dd></div>' : '';
+			topBlocks.variation = visibility.show_variation !== false && variationText ? '<div class="mp-cc-cart-item__meta-row" data-secondary-block="variation"><dt>' + escapeHtml(getUiText('step_1.positions_count', 'Details')) + '</dt><dd>' + escapeHtml(variationText) + '</dd></div>' : '';
+			for (var t = 0; t < order.length; t += 1) {
+				var topKey = String(order[t] || '');
+				if (topKey === 'price' && topBlocks.price) {
+					html += topBlocks.price;
+				}
+			}
+			var metaRows = '';
+			for (var m = 0; m < order.length; m += 1) {
+				var metaKey = String(order[m] || '');
+				if (metaKey === 'sku' || metaKey === 'variation') {
+					metaRows += topBlocks[metaKey] || '';
+				}
+			}
+			if (metaRows) {
+				html += '<dl class="mp-cc-cart-item__meta">' + metaRows + '</dl>';
+			}
+			html += '<div class="mp-cc-cart-item__footer">';
+			var secondaryBlocks = {};
+			secondaryBlocks.quantity = '';
+			if (quantityControls.enabled !== false) {
+				secondaryBlocks.quantity += '<div class="mp-cc-cart-item__qty-controls" data-secondary-block="quantity" role="group" aria-label="' + escapeHtml(getUiText('step_1.positions_count', 'Quantity')) + '">';
+				if (quantityControls.show_decrement !== false) {
+					secondaryBlocks.quantity += '<button type="button" class="mp-cc-qty-btn" data-qty-action="decrease" data-cart-qty-btn="-1" aria-label="Decrease quantity"' + (qty <= minQty ? ' disabled' : '') + '>−</button>';
+				}
+				if (quantityControls.allow_manual_input !== false) {
+					secondaryBlocks.quantity += '<input class="mp-cc-qty-input" type="number" inputmode="numeric" min="' + escapeHtml(minQty) + '" max="' + escapeHtml(maxQty) + '" step="1" value="' + escapeHtml(qty) + '" data-cart-qty-input="1" aria-label="Quantity" />';
+				} else {
+					secondaryBlocks.quantity += '<span class="mp-cc-qty-static">' + escapeHtml(qty) + '</span>';
+				}
+				if (quantityControls.show_increment !== false) {
+					secondaryBlocks.quantity += '<button type="button" class="mp-cc-qty-btn" data-qty-action="increase" data-cart-qty-btn="+1" aria-label="Increase quantity"' + (qty >= maxQty ? ' disabled' : '') + '>+</button>';
+				}
+				secondaryBlocks.quantity += '</div>';
+			}
+			secondaryBlocks.subtotal = visibility.show_subtotal !== false ? '<span class="mp-cc-cart-item__subtotal" data-secondary-block="subtotal">' + (subtotal || '—') + '</span>' : '';
+			secondaryBlocks.remove = '<button type="button" class="mp-cc-cart-item__remove" data-secondary-block="remove" data-cart-remove="1" aria-label="Remove item">' + escapeHtml(getUiText('common.remove', 'Remove')) + '</button>';
+
+			for (var o = 0; o < order.length; o += 1) {
+				var blockKey = String(order[o] || '');
+				if (secondaryBlocks[blockKey]) {
+					html += secondaryBlocks[blockKey];
+				}
+			}
+			html += '</div>';
+			html += '</div>';
+			html += '</article>';
+		}
+
+		html += '</div></section>';
+		return html;
+	}
+
 	function buildNavHtml(state) {
 		if (!isFlagEnabled(state, flagNames.multiStepFlow, true)) {
 			return '';
@@ -492,6 +712,8 @@
 		var isLast = currentIndex >= state.visibleSteps.length - 1;
 		var isLoading = !!(state.frontendStore && state.frontendStore.runtime && state.frontendStore.runtime.loading);
 		var isDirty = !!(state.frontendStore && state.frontendStore.runtime && state.frontendStore.runtime.dirty);
+		var cartSummary = state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart.summary || {} : {};
+		var isCartEmpty = (state.currentStepId === 'cart') && Number(cartSummary.items_count || 0) <= 0;
 		var backLabel = getUiText('common.back', 'Back');
 		var nextLabel = getUiText('common.next', 'Next');
 		var payLabel = getUiText('common.pay', 'Proceed to payment');
@@ -505,7 +727,7 @@
 
 		html += '<nav class="mp-cc-nav" aria-label="Step navigation">';
 		html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--back" data-nav="back"' + (isFirst || isLoading ? ' disabled' : '') + '>' + escapeHtml(backLabel) + '</button>';
-		html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--next" data-nav="next"' + (isLoading ? ' disabled' : '') + '>' + escapeHtml(nextText) + '</button>';
+		html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--next" data-nav="next"' + (isLoading || isCartEmpty ? ' disabled' : '') + '>' + escapeHtml(nextText) + '</button>';
 		html += '</nav>';
 		if (isDirty) {
 			html += '<p class="mp-cc-nav__dirty" role="status" aria-live="polite">' + escapeHtml('Unsaved changes') + '</p>';
@@ -517,16 +739,36 @@
 		var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
 		var total = state.visibleSteps.length;
 		var snapshot = state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart.snapshot || {} : {};
-		var itemsCount = snapshot.items_count || 0;
-		var totalText = snapshot.total || '';
+		var cartSummary = state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart.summary || {} : {};
+		var runtime = state.frontendStore && state.frontendStore.runtime ? state.frontendStore.runtime : {};
+		var showPlaceholders = !runtime.summaryHydrated;
+		var itemsCount = cartSummary.items_count || snapshot.items_count || 0;
+		var subtotalText = cartSummary.subtotal || '';
+		var totalText = snapshot.total || subtotalText || '';
+		var displayAmount = state.currentStepId === 'cart' ? subtotalText : totalText;
+		var amountLabel = state.currentStepId === 'cart'
+			? getStepOneLabel(state, 'subtotal_label', 'step_1.subtotal', 'Subtotal')
+			: getUiText('order_review.total', 'Total');
+		var returnUrl = cartSummary.catalog_url ? String(cartSummary.catalog_url) : '/';
 		var html = '';
 
 		html += '<section class="mp-cc-summary-card" aria-label="Order summary panel">';
-		html += '<h3 class="mp-cc-summary-card__title">Order Summary</h3>';
+		html += '<h3 class="mp-cc-summary-card__title">' + escapeHtml(getStepOneLabel(state, 'summary_title', 'order_review.title', 'Order Summary')) + '</h3>';
 		html += '<p class="mp-cc-summary-card__meta">Step ' + (currentIndex + 1) + ' of ' + total + '</p>';
-		html += '<p class="mp-cc-summary-card__meta">Items: ' + escapeHtml(itemsCount) + '</p>';
-		if (totalText) {
-			html += '<p class="mp-cc-summary-card__meta">Total: ' + escapeHtml(totalText) + '</p>';
+		if (showPlaceholders) {
+			html += '<div class="mp-cc-summary-card__placeholder" aria-hidden="true"></div>';
+			html += '<div class="mp-cc-summary-card__placeholder mp-cc-summary-card__placeholder--sm" aria-hidden="true"></div>';
+		} else {
+			html += '<p class="mp-cc-summary-card__meta">' + escapeHtml(getStepOneLabel(state, 'items_label', 'step_1.positions_count', 'Items')) + ': <strong>' + escapeHtml(itemsCount) + '</strong></p>';
+			if (displayAmount) {
+				html += '<p class="mp-cc-summary-card__meta"><span class="mp-cc-summary-card__amount-label">' + escapeHtml(amountLabel) + ':</span> <span class="mp-cc-summary-card__amount" data-summary-amount="1">' + displayAmount + '</span></p>';
+			}
+		}
+		if (state.currentStepId === 'cart') {
+			html += '<div class="mp-cc-summary-card__actions">';
+			html += '<button type="button" class="mp-cc-summary-card__btn mp-cc-summary-card__btn--primary" data-summary-action="continue">' + escapeHtml(getStepOneLabel(state, 'continue_label', 'step_1.continue', 'Continue')) + '</button>';
+			html += '<a href="' + escapeHtml(returnUrl) + '" class="mp-cc-summary-card__btn mp-cc-summary-card__btn--ghost">' + escapeHtml(getStepOneLabel(state, 'return_label', 'step_1.return_to_shop', 'Return to shop')) + '</a>';
+			html += '</div>';
 		}
 		html += '<div class="mp-cc-summary-card__slot" data-mp-cc-summary-slot="1"></div>';
 		html += '</section>';
@@ -570,6 +812,32 @@
 		}, animationDurationMs);
 	}
 
+	function applyStepOnePresentation(state) {
+		var root = document.querySelector(selectors.root);
+		if (!root || !state || !state.stepOneConfig) {
+			return;
+		}
+		var cfg = state.stepOneConfig;
+		var styles = cfg.style_controls || {};
+		var responsive = cfg.responsive || {};
+		root.classList.toggle('mp-cc-step1-card-compact', Boolean(styles.card_compact));
+		root.classList.toggle('mp-cc-step1-hide-media-mobile', Boolean(responsive.hide_media_mobile));
+		root.classList.toggle('mp-cc-step1-card-emphasis-elevated', String(styles.card_emphasis || '') === 'elevated');
+		root.classList.toggle('mp-cc-step1-summary-emphasis-elevated', String(styles.summary_emphasis || '') === 'elevated');
+
+		var responsiveClasses = [
+			'mp-cc-step1-desktop-comfortable', 'mp-cc-step1-desktop-compact',
+			'mp-cc-step1-tablet-comfortable', 'mp-cc-step1-tablet-compact',
+			'mp-cc-step1-mobile-comfortable', 'mp-cc-step1-mobile-compact'
+		];
+		for (var i = 0; i < responsiveClasses.length; i += 1) {
+			root.classList.remove(responsiveClasses[i]);
+		}
+		root.classList.add('mp-cc-step1-desktop-' + (responsive.desktop_mode === 'compact' ? 'compact' : 'comfortable'));
+		root.classList.add('mp-cc-step1-tablet-' + (responsive.tablet_mode === 'compact' ? 'compact' : 'comfortable'));
+		root.classList.add('mp-cc-step1-mobile-' + (responsive.mobile_mode === 'comfortable' ? 'comfortable' : 'compact'));
+	}
+
 	function render(state, $app) {
 		var $progress = $(selectors.progress);
 		var $actions = $(selectors.actions);
@@ -585,6 +853,8 @@
 
 		$app.html(buildStepPanelHtml(state));
 		$summary.html(buildSummaryHtml(state));
+		applyStepOnePresentation(state);
+		animateSummaryUpdate(state, $summary);
 		if (isFlagEnabled(state, flagNames.multiStepFlow, true)) {
 			$progress.html(buildProgressHtml(state));
 			$actions.html(buildNavHtml(state));
@@ -620,6 +890,12 @@
 			});
 		});
 
+		$(selectors.summary).find('[data-summary-action="continue"]').off('click').on('click', function () {
+			saveCurrentStepDraft(state).always(function () {
+				moveForward(state, $app);
+			});
+		});
+
 		$progress.find('.mp-cc-progress__btn').off('click').on('click', function () {
 			var target = $(this).data('step');
 			if (!target) {
@@ -631,6 +907,228 @@
 			}
 			setCurrentStep(state, $app, String(target));
 		});
+
+		$app.find('[data-cart-qty-btn]').off('click').on('click', function () {
+			var $btn = $(this);
+			var $item = $btn.closest('[data-cart-item-key]');
+			if (!$item.length) {
+				return;
+			}
+			var localItem = getLocalCartItem(state, String($item.data('cart-item-key') || ''));
+			var current = Number(localItem && localItem.quantity ? localItem.quantity : 0);
+			var delta = Number($btn.data('cart-qty-btn') || 0);
+			if (!delta) {
+				return;
+			}
+			applyQuantityChange(state, $app, $item, current + delta);
+		});
+
+		$app.find('[data-cart-qty-input]').off('change blur').on('change blur', function () {
+			var $input = $(this);
+			var $item = $input.closest('[data-cart-item-key]');
+			if (!$item.length) {
+				return;
+			}
+			applyQuantityChange(state, $app, $item, Number($input.val() || 0));
+		});
+
+		$app.find('[data-cart-remove]').off('click').on('click', function () {
+			var $btn = $(this);
+			var $item = $btn.closest('[data-cart-item-key]');
+			if (!$item.length) {
+				return;
+			}
+			applyRemoveItem(state, $app, $item);
+		});
+	}
+
+	function clampQuantity(nextQty, minQty, maxQty) {
+		var safeQty = Number(nextQty || 0);
+		if (!Number.isFinite(safeQty)) {
+			safeQty = minQty;
+		}
+		safeQty = Math.round(safeQty);
+		if (safeQty < minQty) {
+			safeQty = minQty;
+		}
+		if (safeQty > maxQty) {
+			safeQty = maxQty;
+		}
+		return safeQty;
+	}
+
+	function updateLocalCartItem(state, itemKey, quantity, lineSubtotal) {
+		if (!state || !state.frontendStore || !state.frontendStore.cart || !Array.isArray(state.frontendStore.cart.items)) {
+			return;
+		}
+		for (var i = 0; i < state.frontendStore.cart.items.length; i += 1) {
+			if (String(state.frontendStore.cart.items[i].key || '') === String(itemKey || '')) {
+				state.frontendStore.cart.items[i].quantity = quantity;
+				if (typeof lineSubtotal === 'string' && lineSubtotal !== '') {
+					state.frontendStore.cart.items[i].line_subtotal = lineSubtotal;
+				}
+				break;
+			}
+		}
+	}
+
+	function getLocalCartItem(state, itemKey) {
+		if (!state || !state.frontendStore || !state.frontendStore.cart || !Array.isArray(state.frontendStore.cart.items)) {
+			return null;
+		}
+		for (var i = 0; i < state.frontendStore.cart.items.length; i += 1) {
+			if (String(state.frontendStore.cart.items[i].key || '') === String(itemKey || '')) {
+				return state.frontendStore.cart.items[i];
+			}
+		}
+		return null;
+	}
+
+	function removeLocalCartItem(state, itemKey) {
+		if (!state || !state.frontendStore || !state.frontendStore.cart || !Array.isArray(state.frontendStore.cart.items)) {
+			return false;
+		}
+		var items = state.frontendStore.cart.items;
+		for (var i = 0; i < items.length; i += 1) {
+			if (String(items[i].key || '') === String(itemKey || '')) {
+				items.splice(i, 1);
+				state.frontendStore.cart.summary.items_count = Math.max(0, Number(state.frontendStore.cart.summary.items_count || 0) - 1);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	function applyQuantityChange(state, $app, $item, requestedQty) {
+		var itemKey = String($item.data('cart-item-key') || '');
+		var $input = $item.find('[data-cart-qty-input]');
+		var $decrease = $item.find('[data-qty-action="decrease"]');
+		var $increase = $item.find('[data-qty-action="increase"]');
+		if (!itemKey) {
+			return;
+		}
+
+		var localItem = getLocalCartItem(state, itemKey);
+		if (!localItem) {
+			return;
+		}
+		var minQty = Number(localItem.min_quantity || ($input.length ? $input.attr('min') : 1) || 1);
+		var maxQty = Number(localItem.max_quantity || ($input.length ? $input.attr('max') : 9999) || 9999);
+		var prevQty = Number(localItem && localItem.quantity ? localItem.quantity : minQty);
+		var nextQty = clampQuantity(requestedQty, minQty, maxQty);
+		if (nextQty === prevQty || state.isTransitioning) {
+			if ($input.length) {
+				$input.val(nextQty);
+			}
+			return;
+		}
+		$item.addClass('is-updating');
+		if ($input.length) {
+			$input.val(nextQty);
+		}
+		$decrease.prop('disabled', nextQty <= minQty);
+		$increase.prop('disabled', nextQty >= maxQty);
+		updateLocalCartItem(state, itemKey, nextQty, '');
+		render(state, $app);
+
+		postCheckout('update_quantity', {
+			context_id: state.flowContextId,
+			item_key: itemKey,
+			quantity: nextQty
+		}).then(function (response) {
+			if (!response || !response.success || !response.data) {
+				throw new Error('update_quantity_failed');
+			}
+			var payload = response.data;
+			var nextFlow = payload.flow || state.context.checkout_flow || {};
+			var nextCart = normalizeCartPayload(payload.cart || {});
+			syncFromFlow(state, nextFlow, nextCart);
+			if (payload.item && payload.item.key) {
+				updateLocalCartItem(state, payload.item.key, Number(payload.item.quantity || nextQty), String(payload.item.line_subtotal || ''));
+			}
+			render(state, $app);
+		}).fail(function (xhr) {
+			var errorPayload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
+			var message = errorPayload.message || 'Не удалось обновить количество. Попробуйте снова.';
+			updateLocalCartItem(state, itemKey, prevQty, '');
+			notify(message, 'error');
+			syncStoreWithBackend(state, $app);
+		}).always(function () {
+			$item.removeClass('is-updating');
+		});
+	}
+
+	function applyRemoveItem(state, $app, $item) {
+		var itemKey = String($item.data('cart-item-key') || '');
+		if (!itemKey || state.isTransitioning) {
+			return;
+		}
+
+		var existingItem = getLocalCartItem(state, itemKey);
+		if (!existingItem) {
+			return;
+		}
+		var snapshotItem = $.extend({}, existingItem);
+		var previousItemsCount = Number(state.frontendStore.cart.summary.items_count || 0);
+		var previousSubtotal = String(state.frontendStore.cart.summary.subtotal || '');
+		var previousFlowTotal = String(state.frontendStore.cart.snapshot && state.frontendStore.cart.snapshot.total ? state.frontendStore.cart.snapshot.total : '');
+
+		$item.addClass('is-removing');
+		removeLocalCartItem(state, itemKey);
+		if (Number(state.frontendStore.cart.summary.items_count || 0) === 0) {
+			state.frontendStore.cart.summary.subtotal = '';
+			if (state.frontendStore.cart.snapshot && typeof state.frontendStore.cart.snapshot === 'object') {
+				state.frontendStore.cart.snapshot.total = '';
+			}
+		}
+		render(state, $app);
+
+		postCheckout('remove_item', {
+			context_id: state.flowContextId,
+			item_key: itemKey
+		}).then(function (response) {
+			if (!response || !response.success || !response.data) {
+				throw new Error('remove_item_failed');
+			}
+			var payload = response.data;
+			var nextFlow = payload.flow || state.context.checkout_flow || {};
+			var nextCart = normalizeCartPayload(payload.cart || {});
+			syncFromFlow(state, nextFlow, nextCart);
+			render(state, $app);
+			if (payload.is_empty) {
+				notify(getUiText('step_1.empty_cart', 'Cart is empty'), 'info');
+			}
+		}).fail(function (xhr) {
+			var errorPayload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
+			var message = errorPayload.message || 'Не удалось удалить позицию. Попробуйте снова.';
+			state.frontendStore.cart.items.push(snapshotItem);
+			state.frontendStore.cart.summary.items_count = previousItemsCount;
+			state.frontendStore.cart.summary.subtotal = previousSubtotal;
+			if (state.frontendStore.cart.snapshot && typeof state.frontendStore.cart.snapshot === 'object') {
+				state.frontendStore.cart.snapshot.total = previousFlowTotal;
+			}
+			render(state, $app);
+			notify(message, 'error');
+			syncStoreWithBackend(state, $app);
+		});
+	}
+
+	function animateSummaryUpdate(state, $summary) {
+		if (!$summary || !$summary.length || !state || !state.frontendStore || !state.frontendStore.meta) {
+			return;
+		}
+		var cartSummary = state.frontendStore.cart && state.frontendStore.cart.summary ? state.frontendStore.cart.summary : {};
+		var snapshot = state.frontendStore.cart && state.frontendStore.cart.snapshot ? state.frontendStore.cart.snapshot : {};
+		var signature = String(cartSummary.items_count || 0) + '|' + String(cartSummary.subtotal || '') + '|' + String(snapshot.total || '');
+		var prevSignature = String(state.frontendStore.meta.lastSummarySignature || '');
+		state.frontendStore.meta.lastSummarySignature = signature;
+		if (!prevSignature || prevSignature === signature) {
+			return;
+		}
+		$summary.find('[data-summary-amount]').addClass('is-updated');
+		window.setTimeout(function () {
+			$summary.find('[data-summary-amount]').removeClass('is-updated');
+		}, 320);
 	}
 
 	function isFlagEnabled(state, flag, fallback) {
