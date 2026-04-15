@@ -174,9 +174,21 @@
 
 	function normalizeCartPayload(cartPayload) {
 		var safePayload = cartPayload && typeof cartPayload === 'object' ? cartPayload : {};
+		var safeSummary = (safePayload.summary && typeof safePayload.summary === 'object') ? safePayload.summary : {};
+		var fallbackCatalogUrl = (window.mpCcCheckout && window.mpCcCheckout.checkoutUrl) ? String(window.mpCcCheckout.checkoutUrl) : '/';
+		if (safePayload && safePayload.home_url) {
+			fallbackCatalogUrl = String(safePayload.home_url);
+		}
 		return {
 			items: Array.isArray(safePayload.items) ? safePayload.items : [],
-			summary: (safePayload.summary && typeof safePayload.summary === 'object') ? safePayload.summary : {}
+			summary: $.extend(
+				{
+					items_count: 0,
+					subtotal: '',
+					catalog_url: fallbackCatalogUrl
+				},
+				safeSummary
+			)
 		};
 	}
 
@@ -386,6 +398,11 @@
 			return;
 		}
 		var target = state.visibleSteps[currentIndex + 1];
+		var cartSummary = state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart.summary || {} : {};
+		if (state.currentStepId === 'cart' && Number(cartSummary.items_count || 0) <= 0) {
+			notify(getUiText('step_1.empty_cart', 'Cart is empty'), 'error');
+			return;
+		}
 		requestForwardValidation(state.currentStepId).then(function (valid) {
 			if (!valid) {
 				setRuntimeFlag(state, 'blocked', true);
@@ -512,8 +529,11 @@
 		html += '<div class="mp-cc-cart-list__items" data-mp-cc-item-list="1">';
 
 		if (!items.length) {
+			var emptySummary = state.frontendStore && state.frontendStore.cart ? (state.frontendStore.cart.summary || {}) : {};
+			var catalogUrl = emptySummary.catalog_url ? String(emptySummary.catalog_url) : '/';
 			html += '<div class="mp-cc-cart-list__empty">';
 			html += '<p class="mp-cc-empty">' + escapeHtml(getUiText('step_1.empty_cart', 'Cart is empty')) + '</p>';
+			html += '<a class="mp-cc-cart-list__cta" href="' + escapeHtml(catalogUrl) + '">' + escapeHtml(getUiText('step_1.btn_choose_gifts', 'Return to catalog')) + '</a>';
 			html += '</div>';
 			html += '</div></section>';
 			return html;
@@ -565,6 +585,7 @@
 			html += '<input class="mp-cc-qty-input" type="number" inputmode="numeric" min="' + escapeHtml(minQty) + '" max="' + escapeHtml(maxQty) + '" step="1" value="' + escapeHtml(qty) + '" data-cart-qty-input="1" aria-label="Quantity" />';
 			html += '<button type="button" class="mp-cc-qty-btn" data-qty-action="increase" data-cart-qty-btn="+1" aria-label="Increase quantity"' + (qty >= maxQty ? ' disabled' : '') + '>+</button>';
 			html += '</div>';
+			html += '<button type="button" class="mp-cc-cart-item__remove" data-cart-remove="1" aria-label="Remove item">' + escapeHtml(getUiText('common.remove', 'Remove')) + '</button>';
 			html += '<span class="mp-cc-cart-item__subtotal">' + (subtotal || '—') + '</span>';
 			html += '</div>';
 			html += '</div>';
@@ -584,6 +605,8 @@
 		var isLast = currentIndex >= state.visibleSteps.length - 1;
 		var isLoading = !!(state.frontendStore && state.frontendStore.runtime && state.frontendStore.runtime.loading);
 		var isDirty = !!(state.frontendStore && state.frontendStore.runtime && state.frontendStore.runtime.dirty);
+		var cartSummary = state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart.summary || {} : {};
+		var isCartEmpty = (state.currentStepId === 'cart') && Number(cartSummary.items_count || 0) <= 0;
 		var backLabel = getUiText('common.back', 'Back');
 		var nextLabel = getUiText('common.next', 'Next');
 		var payLabel = getUiText('common.pay', 'Proceed to payment');
@@ -597,7 +620,7 @@
 
 		html += '<nav class="mp-cc-nav" aria-label="Step navigation">';
 		html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--back" data-nav="back"' + (isFirst || isLoading ? ' disabled' : '') + '>' + escapeHtml(backLabel) + '</button>';
-		html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--next" data-nav="next"' + (isLoading ? ' disabled' : '') + '>' + escapeHtml(nextText) + '</button>';
+		html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--next" data-nav="next"' + (isLoading || isCartEmpty ? ' disabled' : '') + '>' + escapeHtml(nextText) + '</button>';
 		html += '</nav>';
 		if (isDirty) {
 			html += '<p class="mp-cc-nav__dirty" role="status" aria-live="polite">' + escapeHtml('Unsaved changes') + '</p>';
@@ -748,6 +771,15 @@
 			}
 			applyQuantityChange(state, $app, $item, Number($input.val() || 0));
 		});
+
+		$app.find('[data-cart-remove]').off('click').on('click', function () {
+			var $btn = $(this);
+			var $item = $btn.closest('[data-cart-item-key]');
+			if (!$item.length) {
+				return;
+			}
+			applyRemoveItem(state, $app, $item);
+		});
 	}
 
 	function clampQuantity(nextQty, minQty, maxQty) {
@@ -790,6 +822,21 @@
 			}
 		}
 		return null;
+	}
+
+	function removeLocalCartItem(state, itemKey) {
+		if (!state || !state.frontendStore || !state.frontendStore.cart || !Array.isArray(state.frontendStore.cart.items)) {
+			return false;
+		}
+		var items = state.frontendStore.cart.items;
+		for (var i = 0; i < items.length; i += 1) {
+			if (String(items[i].key || '') === String(itemKey || '')) {
+				items.splice(i, 1);
+				state.frontendStore.cart.summary.items_count = Math.max(0, Number(state.frontendStore.cart.summary.items_count || 0) - 1);
+				return true;
+			}
+		}
+		return false;
 	}
 
 	function applyQuantityChange(state, $app, $item, requestedQty) {
@@ -841,6 +888,61 @@
 			syncStoreWithBackend(state, $app);
 		}).always(function () {
 			$item.removeClass('is-updating');
+		});
+	}
+
+	function applyRemoveItem(state, $app, $item) {
+		var itemKey = String($item.data('cart-item-key') || '');
+		if (!itemKey || state.isTransitioning) {
+			return;
+		}
+
+		var existingItem = getLocalCartItem(state, itemKey);
+		if (!existingItem) {
+			return;
+		}
+		var snapshotItem = $.extend({}, existingItem);
+		var previousItemsCount = Number(state.frontendStore.cart.summary.items_count || 0);
+		var previousSubtotal = String(state.frontendStore.cart.summary.subtotal || '');
+		var previousFlowTotal = String(state.frontendStore.cart.snapshot && state.frontendStore.cart.snapshot.total ? state.frontendStore.cart.snapshot.total : '');
+
+		$item.addClass('is-removing');
+		removeLocalCartItem(state, itemKey);
+		if (Number(state.frontendStore.cart.summary.items_count || 0) === 0) {
+			state.frontendStore.cart.summary.subtotal = '';
+			if (state.frontendStore.cart.snapshot && typeof state.frontendStore.cart.snapshot === 'object') {
+				state.frontendStore.cart.snapshot.total = '';
+			}
+		}
+		render(state, $app);
+
+		postCheckout('remove_item', {
+			context_id: state.flowContextId,
+			item_key: itemKey
+		}).then(function (response) {
+			if (!response || !response.success || !response.data) {
+				throw new Error('remove_item_failed');
+			}
+			var payload = response.data;
+			var nextFlow = payload.flow || state.context.checkout_flow || {};
+			var nextCart = normalizeCartPayload(payload.cart || {});
+			syncFromFlow(state, nextFlow, nextCart);
+			render(state, $app);
+			if (payload.is_empty) {
+				notify(getUiText('step_1.empty_cart', 'Cart is empty'), 'info');
+			}
+		}).fail(function (xhr) {
+			var errorPayload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
+			var message = errorPayload.message || 'Не удалось удалить позицию. Попробуйте снова.';
+			state.frontendStore.cart.items.push(snapshotItem);
+			state.frontendStore.cart.summary.items_count = previousItemsCount;
+			state.frontendStore.cart.summary.subtotal = previousSubtotal;
+			if (state.frontendStore.cart.snapshot && typeof state.frontendStore.cart.snapshot === 'object') {
+				state.frontendStore.cart.snapshot.total = previousFlowTotal;
+			}
+			render(state, $app);
+			notify(message, 'error');
+			syncStoreWithBackend(state, $app);
 		});
 	}
 

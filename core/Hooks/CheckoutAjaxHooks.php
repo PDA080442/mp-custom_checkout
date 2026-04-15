@@ -148,6 +148,10 @@ final class CheckoutAjaxHooks {
 			self::handle_update_quantity();
 		}
 
+		if ( 'remove_item' === $sub_action ) {
+			self::handle_remove_item();
+		}
+
 		if ( 'session_abandon' === $sub_action ) {
 			CheckoutSessionService::clear_on_abandoned_flow();
 			wp_send_json_success(
@@ -164,7 +168,7 @@ final class CheckoutAjaxHooks {
 	private static function is_session_sub_action( string $sub_action ): bool {
 		return in_array(
 			$sub_action,
-			array( 'session_set_step', 'session_set_answers', 'session_set_scenario', 'session_get_state', 'session_abandon', 'update_quantity' ),
+			array( 'session_set_step', 'session_set_answers', 'session_set_scenario', 'session_get_state', 'session_abandon', 'update_quantity', 'remove_item' ),
 			true
 		);
 	}
@@ -262,6 +266,56 @@ final class CheckoutAjaxHooks {
 				),
 				'cart'       => CheckoutRouteContext::get_cart_data(),
 				'flow'       => CheckoutSessionService::get_public_state(),
+			)
+		);
+	}
+
+	private static function handle_remove_item(): void {
+		$item_key = isset( $_POST['item_key'] ) ? wc_clean( wp_unslash( $_POST['item_key'] ) ) : '';
+		if ( '' === $item_key ) {
+			wp_send_json_error(
+				array( 'code' => 'invalid_remove_payload', 'message' => __( 'Не указан ключ позиции корзины.', 'mp-custom-checkout' ) ),
+				400
+			);
+		}
+
+		if ( ! function_exists( 'WC' ) || ! WC()->cart instanceof \WC_Cart ) {
+			wp_send_json_error(
+				array( 'code' => 'cart_unavailable', 'message' => __( 'Корзина недоступна.', 'mp-custom-checkout' ) ),
+				503
+			);
+		}
+
+		$cart = WC()->cart;
+		$item = $cart->get_cart_item( $item_key );
+		if ( ! is_array( $item ) ) {
+			wp_send_json_error(
+				array( 'code' => 'cart_item_not_found', 'message' => __( 'Позиция корзины не найдена.', 'mp-custom-checkout' ) ),
+				404
+			);
+		}
+
+		$removed = $cart->remove_cart_item( $item_key );
+		if ( false === $removed ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'error',
+				'[cart_remove] remove_failed',
+				array( 'item_key' => $item_key )
+			);
+			wp_send_json_error(
+				array( 'code' => 'remove_failed', 'message' => __( 'Не удалось удалить позицию из корзины.', 'mp-custom-checkout' ) ),
+				500
+			);
+		}
+
+		wp_send_json_success(
+			array(
+				'sub_action' => 'remove_item',
+				'item_key'   => $item_key,
+				'cart'       => CheckoutRouteContext::get_cart_data(),
+				'flow'       => CheckoutSessionService::get_public_state(),
+				'is_empty'   => 0 === (int) $cart->get_cart_contents_count(),
 			)
 		);
 	}
