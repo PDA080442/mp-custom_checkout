@@ -28,6 +28,7 @@ final class PluginHooksRegistrar {
 	public static function register(): void {
 		FrontendAssetsHooks::register();
 		AdminAssetsHooks::register();
+		CheckoutNoJsFallbackHooks::register();
 		CheckoutPermalinkCompatibility::register();
 		CheckoutRouteHooks::register();
 		CheckoutSuccessRouteHooks::register();
