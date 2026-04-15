@@ -6,7 +6,11 @@
 
 	var selectors = {
 		root: '#mp-cc-checkout',
-		app: '#mp-cc-checkout-app'
+		app: '#mp-cc-checkout-app',
+		progress: '#mp-cc-progress-container',
+		actions: '#mp-cc-navigation-actions',
+		summary: '#mp-cc-summary-sidebar',
+		notifications: '#mp-cc-notifications'
 	};
 	var flagNames = {
 		multiStepFlow: 'multi_step_flow',
@@ -351,23 +355,53 @@
 		return html;
 	}
 
+	function buildSummaryHtml(state) {
+		var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
+		var total = state.visibleSteps.length;
+		var html = '';
+
+		html += '<section class="mp-cc-summary-card" aria-label="Order summary panel">';
+		html += '<h3 class="mp-cc-summary-card__title">Order Summary</h3>';
+		html += '<p class="mp-cc-summary-card__meta">Step ' + (currentIndex + 1) + ' of ' + total + '</p>';
+		html += '<div class="mp-cc-summary-card__slot" data-mp-cc-summary-slot="1"></div>';
+		html += '</section>';
+
+		return html;
+	}
+
+	function notify(message, level) {
+		var container = document.querySelector(selectors.notifications);
+		if (!container) {
+			return;
+		}
+		var safeMessage = escapeHtml(message || '');
+		var safeLevel = level === 'error' ? 'error' : 'info';
+		container.innerHTML = '<div class="mp-cc-notice mp-cc-notice--' + safeLevel + '" role="alert">' + safeMessage + '</div>';
+	}
+
 	function render(state, $app) {
+		var $progress = $(selectors.progress);
+		var $actions = $(selectors.actions);
+		var $summary = $(selectors.summary);
+
 		if (!state.visibleSteps.length) {
 			$app.html('<p class="mp-cc-empty">No steps available.</p>');
+			$progress.empty();
+			$actions.empty();
+			$summary.empty();
 			return;
 		}
 
-		var html = '';
-		html += '<div class="mp-cc-nav-shell" data-step-count="' + state.visibleSteps.length + '">';
+		$app.html(buildStepPanelHtml(state));
+		$summary.html(buildSummaryHtml(state));
 		if (isFlagEnabled(state, flagNames.multiStepFlow, true)) {
-			html += buildProgressHtml(state);
+			$progress.html(buildProgressHtml(state));
+			$actions.html(buildNavHtml(state));
+		} else {
+			$progress.empty();
+			$actions.empty();
 		}
-		html += buildStepPanelHtml(state);
-		html += buildNavHtml(state);
-		html += '</div>';
-
-		$app.html(html);
-		bindHandlers(state, $app);
+		bindHandlers(state, $app, $progress, $actions);
 
 		document.dispatchEvent(
 			new CustomEvent('mp_cc_store_synced', {
@@ -379,22 +413,22 @@
 		);
 	}
 
-	function bindHandlers(state, $app) {
+	function bindHandlers(state, $app, $progress, $actions) {
 		if (!isFlagEnabled(state, flagNames.multiStepFlow, true)) {
 			return;
 		}
 
-		$app.find('[data-nav="back"]').off('click').on('click', function () {
+		$actions.find('[data-nav="back"]').off('click').on('click', function () {
 			moveBackward(state, $app);
 		});
 
-		$app.find('[data-nav="next"]').off('click').on('click', function () {
+		$actions.find('[data-nav="next"]').off('click').on('click', function () {
 			saveCurrentStepDraft(state).always(function () {
 				moveForward(state, $app);
 			});
 		});
 
-		$app.find('.mp-cc-progress__btn').off('click').on('click', function () {
+		$progress.find('.mp-cc-progress__btn').off('click').on('click', function () {
 			var target = $(this).data('step');
 			if (!target) {
 				return;
@@ -447,6 +481,8 @@
 			state.frontendStore = rehydrated.frontendStore;
 			state.flowContextId = rehydrated.flowContextId;
 			render(state, $app);
+		}).fail(function () {
+			notify('Не удалось восстановить состояние checkout.', 'error');
 		});
 
 		document.addEventListener('mp_cc_scenario_changed', function (event) {
