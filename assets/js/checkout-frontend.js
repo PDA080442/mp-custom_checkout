@@ -97,6 +97,16 @@
 		return getUiText(fallbackPath, fallbackText);
 	}
 
+	function getScenarioMap() {
+		var map = (window.mpCcCheckout && window.mpCcCheckout.scenarioStepMap && typeof window.mpCcCheckout.scenarioStepMap === 'object')
+			? window.mpCcCheckout.scenarioStepMap
+			: {};
+		return {
+			scenarios: (map.scenarios && typeof map.scenarios === 'object') ? map.scenarios : {},
+			rules: (map.scenarioRules && typeof map.scenarioRules === 'object') ? map.scenarioRules : {}
+		};
+	}
+
 	function parseContext() {
 		var root = document.querySelector(selectors.root);
 		if (!root) {
@@ -572,6 +582,9 @@
 		if (step && step.id === 'cart') {
 			html += buildCartItemsHtml(state);
 		}
+		if (step && step.id === 'date') {
+			html += buildFulfillmentChoiceHtml(state);
+		}
 		html += '</div>';
 		if (!isFlagEnabled(state, flagNames.discountPlacement, true)) {
 			html += '<p class="mp-cc-step-panel__hint">Discount tools are rendered inline in payment step.</p>';
@@ -584,6 +597,77 @@
 		}
 		html += '</section>';
 
+		return html;
+	}
+
+	function buildFulfillmentChoiceHtml(state) {
+		var map = getScenarioMap();
+		var scenarios = map.scenarios || {};
+		var rules = map.rules || {};
+		var selectedScenario = String(state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenario || '') : '');
+		var scenarioIds = Object.keys(scenarios);
+		var pickupId = 'pickup';
+		var deliveryIds = [];
+		var i;
+
+		for (i = 0; i < scenarioIds.length; i += 1) {
+			if (scenarioIds[i] !== pickupId) {
+				deliveryIds.push(scenarioIds[i]);
+			}
+		}
+		var defaultDeliveryId = deliveryIds.length ? deliveryIds[0] : 'krasnoyarsk_delivery';
+		var selectedGroup = selectedScenario === pickupId ? pickupId : 'delivery';
+		var deliveryLabel = scenarios[defaultDeliveryId] ? String(scenarios[defaultDeliveryId]) : 'Доставка';
+		var pickupLabel = scenarios[pickupId] ? String(scenarios[pickupId]) : 'Самовывоз';
+		var pickupCopy = rules[pickupId] && rules[pickupId].copy_rules ? String(rules[pickupId].copy_rules.hint || '') : '';
+		var deliveryCopy = rules[defaultDeliveryId] && rules[defaultDeliveryId].copy_rules ? String(rules[defaultDeliveryId].copy_rules.hint || '') : '';
+
+		var cards = [
+			{
+				group: 'pickup',
+				target: pickupId,
+				label: pickupLabel,
+				copy: pickupCopy,
+				icon: 'pickup'
+			},
+			{
+				group: 'delivery',
+				target: defaultDeliveryId,
+				label: deliveryLabel,
+				copy: deliveryCopy,
+				icon: 'delivery'
+			}
+		];
+
+		var html = '';
+		html += '<section class="mp-cc-fulfillment" aria-labelledby="mp-cc-fulfillment-title">';
+		html += '<header class="mp-cc-fulfillment__header">';
+		html += '<h3 class="mp-cc-fulfillment__title" id="mp-cc-fulfillment-title">' + escapeHtml(getUiText('step_2.title', 'Выберите способ получения')) + '</h3>';
+		html += '</header>';
+		html += '<div class="mp-cc-fulfillment__cards" role="radiogroup" aria-label="' + escapeHtml(getUiText('step_2.title', 'Способ получения')) + '">';
+		for (i = 0; i < cards.length; i += 1) {
+			var card = cards[i];
+			var isActive = selectedGroup === card.group;
+			html += '<button type="button" class="mp-cc-fulfillment-card' + (isActive ? ' is-active' : '') + '"';
+			html += ' role="radio"';
+			html += ' aria-checked="' + (isActive ? 'true' : 'false') + '"';
+			html += ' tabindex="' + (isActive ? '0' : '-1') + '"';
+			html += ' data-scenario-card="' + escapeHtml(card.group) + '"';
+			html += ' data-scenario-target="' + escapeHtml(card.target) + '"';
+			html += '>';
+			html += '<span class="mp-cc-fulfillment-card__media" aria-hidden="true">';
+			html += '<span class="mp-cc-fulfillment-card__icon mp-cc-fulfillment-card__icon--' + escapeHtml(card.icon) + '"></span>';
+			html += '</span>';
+			html += '<span class="mp-cc-fulfillment-card__body">';
+			html += '<span class="mp-cc-fulfillment-card__label">' + escapeHtml(card.label) + '</span>';
+			if (card.copy) {
+				html += '<span class="mp-cc-fulfillment-card__copy">' + escapeHtml(card.copy) + '</span>';
+			}
+			html += '</span>';
+			html += '</button>';
+		}
+		html += '</div>';
+		html += '</section>';
 		return html;
 	}
 
@@ -939,6 +1023,48 @@
 				return;
 			}
 			applyRemoveItem(state, $app, $item);
+		});
+
+		$app.find('[data-scenario-card]').off('click').on('click', function () {
+			var targetScenario = String($(this).data('scenario-target') || '');
+			if (!targetScenario) {
+				return;
+			}
+			if (String(state.frontendStore.fulfillment.scenario || '') === targetScenario) {
+				return;
+			}
+			state.frontendStore.fulfillment.scenario = targetScenario;
+			render(state, $app);
+			document.dispatchEvent(
+				new CustomEvent('mp_cc_scenario_changed', {
+					detail: { scenario: targetScenario }
+				})
+			);
+		});
+
+		$app.find('[data-scenario-card]').off('keydown').on('keydown', function (event) {
+			var key = event.key || '';
+			var $cards = $app.find('[data-scenario-card]');
+			var currentIndex = $cards.index(this);
+			var nextIndex = currentIndex;
+			if (key === 'ArrowRight' || key === 'ArrowDown') {
+				nextIndex = Math.min($cards.length - 1, currentIndex + 1);
+				event.preventDefault();
+			} else if (key === 'ArrowLeft' || key === 'ArrowUp') {
+				nextIndex = Math.max(0, currentIndex - 1);
+				event.preventDefault();
+			} else if (key === ' ' || key === 'Enter') {
+				$(this).trigger('click');
+				event.preventDefault();
+				return;
+			} else {
+				return;
+			}
+			var $next = $cards.eq(nextIndex);
+			if ($next.length) {
+				$next.trigger('click');
+				$next.trigger('focus');
+			}
 		});
 	}
 
