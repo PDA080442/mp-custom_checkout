@@ -13,6 +13,7 @@ use MP\CustomCheckout\Routing\CheckoutRouteContext;
 use MP\CustomCheckout\Routing\CheckoutScenarioRules;
 use MP\CustomCheckout\Routing\CheckoutSessionService;
 use MP\CustomCheckout\Routing\CheckoutStepManager;
+use MP\CustomCheckout\Settings\SafeSettingsResolver;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -109,8 +110,10 @@ final class CheckoutAjaxHooks {
 				);
 			}
 			if ( in_array( $step_id, array( 'date', 'conditions' ), true ) && ! self::validate_date_answers_payload( is_array( $answers ) ? $answers : array() ) ) {
+				$message = SafeSettingsResolver::get( 'step_3.copy.errors.invalid_date', __( 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.', 'mp-custom-checkout' ) );
+				$message = is_string( $message ) && '' !== trim( $message ) ? $message : __( 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.', 'mp-custom-checkout' );
 				wp_send_json_error(
-					array( 'code' => 'invalid_date_selection', 'message' => __( 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.', 'mp-custom-checkout' ) ),
+					array( 'code' => 'invalid_date_selection', 'message' => $message ),
 					422
 				);
 			}

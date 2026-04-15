@@ -62,6 +62,7 @@ final class AdminAssetsHooks {
 				'stepOneConfig' => SafeSettingsResolver::get_section( 'step_1' ),
 				'stepOneDefaults' => self::step_one_defaults(),
 				'scenarioUiConfig' => SafeSettingsResolver::get_section( 'step_2' ),
+				'stepThreeConfig' => SafeSettingsResolver::get_section( 'step_3' ),
 				'pickupConfig' => PickupPointRegistry::config(),
 				'labels' => SafeSettingsResolver::get_section( 'labels' ),
 			)

@@ -150,6 +150,53 @@
 		}, source);
 	}
 
+	function getStepThreeConfig() {
+		var source = (window.mpCcCheckout && window.mpCcCheckout.stepThreeConfig && typeof window.mpCcCheckout.stepThreeConfig === 'object')
+			? window.mpCcCheckout.stepThreeConfig
+			: {};
+		return $.extend(true, {
+			copy: {
+				title: 'Выберите дату получения',
+				helper_by_scenario: {
+					pickup: '',
+					krasnoyarsk_delivery: '',
+					other_city_delivery: ''
+				},
+				errors: {
+					invalid_date: 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.',
+					empty_date: 'Выберите дату, чтобы продолжить.'
+				},
+				admin_preview: {
+					enabled: true
+				}
+			}
+		}, source);
+	}
+
+	function getStepThreeTitle() {
+		var config = getStepThreeConfig();
+		var title = config && config.copy && config.copy.title ? String(config.copy.title) : '';
+		return title || getUiText('step_3.title', 'Выберите дату получения');
+	}
+
+	function getStepThreeHelperByScenario(scenario) {
+		var config = getStepThreeConfig();
+		var map = config && config.copy && config.copy.helper_by_scenario && typeof config.copy.helper_by_scenario === 'object'
+			? config.copy.helper_by_scenario
+			: {};
+		var value = map[scenario] ? String(map[scenario]) : '';
+		return value || getUiText('step_3.date_helper', 'Выберите дату из доступных слотов.');
+	}
+
+	function getStepThreeErrorCopy(key, fallback) {
+		var config = getStepThreeConfig();
+		var errors = config && config.copy && config.copy.errors && typeof config.copy.errors === 'object'
+			? config.copy.errors
+			: {};
+		var value = errors[key] ? String(errors[key]) : '';
+		return value || fallback;
+	}
+
 	function getPickupPointById(pointId) {
 		var pickup = getPickupConfig();
 		var points = pickup.points || [];
@@ -347,9 +394,7 @@
 			});
 		}
 
-		var helper = rules.copy_rules && rules.copy_rules.hint
-			? String(rules.copy_rules.hint)
-			: getUiText('step_3.date_helper', 'Выберите дату из доступных слотов.');
+		var helper = getStepThreeHelperByScenario(scenario);
 		return {
 			scenario: scenario,
 			selectedDate: selectedDate,
@@ -373,14 +418,14 @@
 
 		html += '<section class="mp-cc-date-step" aria-labelledby="mp-cc-date-title">';
 		html += '<header class="mp-cc-date-step__header">';
-		html += '<h4 class="mp-cc-date-step__title" id="mp-cc-date-title">' + escapeHtml(getUiText('step_3.title', 'Выберите дату получения')) + '</h4>';
+		html += '<h4 class="mp-cc-date-step__title" id="mp-cc-date-title">' + escapeHtml(getStepThreeTitle()) + '</h4>';
 		html += '<div class="mp-cc-date-step__month-nav">';
 		html += '<button type="button" class="mp-cc-date-step__month-btn" data-calendar-nav="-1" aria-label="' + escapeHtml(getUiText('step_3.prev_month', 'Предыдущий месяц')) + '"' + (model.canGoPrevMonth ? '' : ' disabled') + '>‹</button>';
 		html += '<p class="mp-cc-date-step__month" aria-live="polite" data-calendar-month="' + escapeHtml(model.monthKey) + '">' + escapeHtml(model.monthLabel) + '</p>';
 		html += '<button type="button" class="mp-cc-date-step__month-btn" data-calendar-nav="+1" aria-label="' + escapeHtml(getUiText('step_3.next_month', 'Следующий месяц')) + '"' + (model.canGoNextMonth ? '' : ' disabled') + '>›</button>';
 		html += '</div>';
 		html += '</header>';
-		html += '<div class="mp-cc-calendar" role="group" aria-label="' + escapeHtml(getUiText('step_3.title', 'Календарь выбора даты')) + '">';
+		html += '<div class="mp-cc-calendar" role="group" aria-label="' + escapeHtml(getStepThreeTitle()) + '">';
 		html += '<div class="mp-cc-calendar__weekdays" aria-hidden="true">';
 		for (i = 0; i < weekdays.length; i += 1) {
 			html += '<span class="mp-cc-calendar__weekday">' + escapeHtml(weekdays[i]) + '</span>';
@@ -424,7 +469,7 @@
 		html += '</div>';
 		html += '</div>';
 		if (!model.hasAnyAvailable) {
-			html += '<p class="mp-cc-date-step__helper" id="mp-cc-date-helper">' + escapeHtml(getUiText('step_3.no_dates', 'Нет доступных дат. Выберите другой сценарий или свяжитесь с поддержкой.')) + '</p>';
+			html += '<p class="mp-cc-date-step__helper" id="mp-cc-date-helper">' + escapeHtml(getStepThreeErrorCopy('invalid_date', 'Нет доступных дат. Выберите другой сценарий или свяжитесь с поддержкой.')) + '</p>';
 		} else {
 			html += '<p class="mp-cc-date-step__helper" id="mp-cc-date-helper">' + escapeHtml(model.helper) + '</p>';
 		}
@@ -915,7 +960,7 @@
 				? String(state.frontendStore.fulfillment.date.selected_date || '')
 				: '';
 			if (!selectedDate) {
-				notify(getUiText('step_3.select_date_required', 'Выберите дату, чтобы продолжить.'), 'error');
+				notify(getStepThreeErrorCopy('empty_date', 'Выберите дату, чтобы продолжить.'), 'error');
 				return;
 			}
 		}
@@ -1383,7 +1428,7 @@
 				? String(state.frontendStore.fulfillment.date.selected_date || '')
 				: '';
 			if (selectedDate) {
-				html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(getUiText('step_3.title', 'Дата получения')) + ':</strong> ' + escapeHtml(formatIsoDateForUi(selectedDate)) + '</p>';
+				html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(getStepThreeTitle()) + ':</strong> ' + escapeHtml(formatIsoDateForUi(selectedDate)) + '</p>';
 			}
 			if (scenario === 'pickup' && pickupPoint && pickupPoint.title) {
 				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(String(pickupPoint.title)) + '</p>';
@@ -1663,7 +1708,7 @@
 				}
 			}).fail(function (xhr) {
 				var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
-				var message = payload.message || getUiText('step_3.date_save_failed', 'Не удалось сохранить выбранную дату.');
+				var message = payload.message || getStepThreeErrorCopy('invalid_date', 'Не удалось сохранить выбранную дату.');
 				notify(message, 'error');
 				syncStoreWithBackend(state, $app);
 			});
@@ -1699,7 +1744,7 @@
 				context_id: state.flowContextId,
 				answers: dateBox
 			}).fail(function () {
-				notify(getUiText('step_3.date_save_failed', 'Не удалось сохранить выбранную дату.'), 'error');
+				notify(getStepThreeErrorCopy('invalid_date', 'Не удалось сохранить выбранную дату.'), 'error');
 			});
 		});
 
