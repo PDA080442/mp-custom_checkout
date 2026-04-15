@@ -20,6 +20,21 @@
 		checkoutTestingMode: 'checkout_testing_mode',
 		adminLivePreview: 'admin_live_preview'
 	};
+	var animationDurationMs = 180;
+
+	function getUiText(path, fallback) {
+		var source = (window.mpCcCheckout && window.mpCcCheckout.uiText) ? window.mpCcCheckout.uiText : {};
+		var parts = String(path || '').split('.');
+		var node = source;
+		var i;
+		for (i = 0; i < parts.length; i += 1) {
+			if (!node || typeof node !== 'object' || !Object.prototype.hasOwnProperty.call(node, parts[i])) {
+				return fallback;
+			}
+			node = node[parts[i]];
+		}
+		return (typeof node === 'string' && node !== '') ? node : fallback;
+	}
 
 	function parseContext() {
 		var root = document.querySelector(selectors.root);
@@ -267,12 +282,14 @@
 		setRuntimeFlag(state, 'loading', true);
 		$app.attr('data-nav-lock', '1').addClass('is-nav-lock');
 		$app.find('button, a').attr('aria-disabled', 'true');
+		$(selectors.actions).find('.mp-cc-nav__btn').prop('disabled', true);
 
 		var done = function () {
 			state.isTransitioning = false;
 			setRuntimeFlag(state, 'loading', false);
 			$app.attr('data-nav-lock', '0').removeClass('is-nav-lock');
 			$app.find('button, a').removeAttr('aria-disabled');
+			$(selectors.actions).find('.mp-cc-nav__btn').prop('disabled', false);
 		};
 
 		return task().always(done);
@@ -293,6 +310,7 @@
 		}
 
 		return withTransitionLock(state, $app, function () {
+			runStepTransitionAnimation($app);
 			return postCheckout('session_set_step', { step_id: targetStepId, context_id: state.flowContextId }).then(function () {
 				state.currentStepId = targetStepId;
 				state.frontendStore.steps.current = targetStepId;
@@ -300,6 +318,7 @@
 				setRuntimeFlag(state, 'blocked', false);
 				render(state, $app);
 				scrollToStepTop();
+				focusStepHeading($app);
 
 				document.dispatchEvent(
 					new CustomEvent('mp_cc_step_changed', {
@@ -425,7 +444,7 @@
 		html += '<section class="mp-cc-step-panel" data-step-panel="' + escapeHtml(step ? step.id : '') + '">';
 		html += '<header class="mp-cc-step-panel__header">';
 		html += '<p class="mp-cc-step-panel__meta">Step ' + (currentIndex + 1) + ' / ' + state.visibleSteps.length + '</p>';
-		html += '<h2 class="mp-cc-step-panel__title">' + escapeHtml(label) + '</h2>';
+		html += '<h2 class="mp-cc-step-panel__title" id="mp-cc-step-heading" tabindex="-1">' + escapeHtml(label) + '</h2>';
 		html += '</header>';
 		html += '<div class="mp-cc-step-panel__content" data-mp-cc-step-slot="' + escapeHtml(step ? step.id : '') + '"></div>';
 		if (!isFlagEnabled(state, flagNames.discountPlacement, true)) {
@@ -449,12 +468,26 @@
 		var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
 		var isFirst = currentIndex <= 0;
 		var isLast = currentIndex >= state.visibleSteps.length - 1;
+		var isLoading = !!(state.frontendStore && state.frontendStore.runtime && state.frontendStore.runtime.loading);
+		var isDirty = !!(state.frontendStore && state.frontendStore.runtime && state.frontendStore.runtime.dirty);
+		var backLabel = getUiText('common.back', 'Back');
+		var nextLabel = getUiText('common.next', 'Next');
+		var payLabel = getUiText('common.pay', 'Proceed to payment');
+		var confirmLabel = getUiText('common.confirm', 'Confirm');
+		var currentStepId = state.currentStepId || '';
+		var nextText = nextLabel;
+		if (isLast && currentStepId === 'contact_payment') {
+			nextText = state.frontendStore && state.frontendStore.payment && state.frontendStore.payment.gateway ? confirmLabel : payLabel;
+		}
 		var html = '';
 
 		html += '<nav class="mp-cc-nav" aria-label="Step navigation">';
-		html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--back" data-nav="back"' + (isFirst ? ' disabled' : '') + '>Back</button>';
-		html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--next" data-nav="next"' + (isLast ? ' disabled' : '') + '>Next</button>';
+		html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--back" data-nav="back"' + (isFirst || isLoading ? ' disabled' : '') + '>' + escapeHtml(backLabel) + '</button>';
+		html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--next" data-nav="next"' + (isLoading ? ' disabled' : '') + '>' + escapeHtml(nextText) + '</button>';
 		html += '</nav>';
+		if (isDirty) {
+			html += '<p class="mp-cc-nav__dirty" role="status" aria-live="polite">' + escapeHtml('Unsaved changes') + '</p>';
+		}
 		return html;
 	}
 
@@ -489,6 +522,32 @@
 		container.innerHTML = '<div class="mp-cc-notice mp-cc-notice--' + safeLevel + '" role="alert">' + safeMessage + '</div>';
 	}
 
+	function focusStepHeading($app) {
+		var heading = $app.find('#mp-cc-step-heading').get(0);
+		if (!heading || typeof heading.focus !== 'function') {
+			return;
+		}
+		try {
+			heading.focus({ preventScroll: true });
+		} catch (e) {
+			heading.focus();
+		}
+	}
+
+	function prefersReducedMotion() {
+		return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+	}
+
+	function runStepTransitionAnimation($app) {
+		if (prefersReducedMotion()) {
+			return;
+		}
+		$app.addClass('is-step-transition');
+		window.setTimeout(function () {
+			$app.removeClass('is-step-transition');
+		}, animationDurationMs);
+	}
+
 	function render(state, $app) {
 		var $progress = $(selectors.progress);
 		var $actions = $(selectors.actions);
@@ -512,6 +571,7 @@
 			$actions.empty();
 		}
 		bindHandlers(state, $app, $progress, $actions);
+		focusStepHeading($app);
 
 		document.dispatchEvent(
 			new CustomEvent('mp_cc_store_synced', {
