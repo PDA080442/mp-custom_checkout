@@ -67,8 +67,18 @@ final class DefaultLabelsRegistry {
 				'positions_count'  => 'Позиций',
 			),
 			'success' => array(
-				'title'   => 'Заказ оформлен',
-				'message' => 'Спасибо за покупку. Мы свяжемся с вами при необходимости.',
+				'title'               => 'Заказ оформлен',
+				'message'             => 'Спасибо за покупку. Мы свяжемся с вами при необходимости.',
+				'order_summary_title' => 'Ваш заказ',
+				'order_number'        => 'Номер заказа',
+				'status'              => 'Статус',
+				'payment'             => 'Способ оплаты',
+				'total'               => 'Итого',
+				'date'                => 'Дата',
+				'cta_primary_label'   => 'В магазин',
+				'cta_primary_url'     => '',
+				'cta_secondary_label' => '',
+				'cta_secondary_url'   => '',
 			),
 		);
 	}
