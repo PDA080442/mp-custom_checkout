@@ -35,7 +35,7 @@ get_header();
 ?>
 
 <main id="mp-cc-success" class="mp-cc-success" role="main">
-	<div class="mp-cc-success__inner">
+	<div id="mp-cc-success-container" class="mp-cc-success__inner" role="region" aria-label="<?php echo esc_attr__( 'Checkout success screen', 'mp-custom-checkout' ); ?>">
 		<header class="mp-cc-success__header">
 			<h1 class="mp-cc-success__title"><?php echo esc_html( isset( $labels['title'] ) ? $labels['title'] : '' ); ?></h1>
 			<?php if ( ! empty( $labels['message'] ) ) : ?>
