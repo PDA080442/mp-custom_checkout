@@ -9,6 +9,7 @@ namespace MP\CustomCheckout\Hooks;
 
 use MP\CustomCheckout\Settings\FeatureFlagResolver;
 use MP\CustomCheckout\Settings\SafeSettingsResolver;
+use MP\CustomCheckout\Routing\PickupPointRegistry;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -60,6 +61,8 @@ final class AdminAssetsHooks {
 				'featureFlags' => FeatureFlagResolver::all(),
 				'stepOneConfig' => SafeSettingsResolver::get_section( 'step_1' ),
 				'stepOneDefaults' => self::step_one_defaults(),
+				'scenarioUiConfig' => SafeSettingsResolver::get_section( 'step_2' ),
+				'pickupConfig' => PickupPointRegistry::config(),
 				'labels' => SafeSettingsResolver::get_section( 'labels' ),
 			)
 		);

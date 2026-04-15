@@ -97,6 +97,91 @@
 		return getUiText(fallbackPath, fallbackText);
 	}
 
+	function getScenarioMap() {
+		var map = (window.mpCcCheckout && window.mpCcCheckout.scenarioStepMap && typeof window.mpCcCheckout.scenarioStepMap === 'object')
+			? window.mpCcCheckout.scenarioStepMap
+			: {};
+		return {
+			scenarios: (map.scenarios && typeof map.scenarios === 'object') ? map.scenarios : {},
+			rules: (map.scenarioRules && typeof map.scenarioRules === 'object') ? map.scenarioRules : {}
+		};
+	}
+
+	function getPickupConfig() {
+		var source = (window.mpCcCheckout && window.mpCcCheckout.pickupConfig && typeof window.mpCcCheckout.pickupConfig === 'object')
+			? window.mpCcCheckout.pickupConfig
+			: {};
+		return {
+			enablePointSelection: Boolean(source.enable_point_selection),
+			mapSlotEnabled: source.map_slot_enabled !== false,
+			points: Array.isArray(source.points) ? source.points : []
+		};
+	}
+
+	function getScenarioUiConfig() {
+		var source = (window.mpCcCheckout && window.mpCcCheckout.scenarioUiConfig && typeof window.mpCcCheckout.scenarioUiConfig === 'object')
+			? window.mpCcCheckout.scenarioUiConfig
+			: {};
+		return $.extend(true, {
+			default_scenario: 'pickup',
+			card_order: ['pickup', 'delivery'],
+			cards: {
+				pickup: {
+					title: 'Самовывоз',
+					description: '',
+					helper: '',
+					icon_variant: 'pickup',
+					icon_style: 'soft'
+				},
+				delivery: {
+					title: 'Доставка',
+					description: '',
+					helper: '',
+					icon_variant: 'delivery',
+					icon_style: 'soft'
+				}
+			},
+			responsive: {
+				desktop_columns: 2,
+				tablet_columns: 1,
+				mobile_columns: 1,
+				card_density: 'comfortable'
+			}
+		}, source);
+	}
+
+	function getPickupPointById(pointId) {
+		var pickup = getPickupConfig();
+		var points = pickup.points || [];
+		var safeId = String(pointId || '');
+		var i;
+		for (i = 0; i < points.length; i += 1) {
+			if (String(points[i].id || '') === safeId) {
+				return points[i];
+			}
+		}
+		return points.length ? points[0] : null;
+	}
+
+	function normalizeScenarioId(scenarioId) {
+		var map = getScenarioMap();
+		var scenarios = map.scenarios || {};
+		var key = String(scenarioId || '');
+		if (key && Object.prototype.hasOwnProperty.call(scenarios, key)) {
+			return key;
+		}
+		var config = getScenarioUiConfig();
+		var fallback = String(config.default_scenario || 'pickup');
+		return (fallback && Object.prototype.hasOwnProperty.call(scenarios, fallback)) ? fallback : 'pickup';
+	}
+
+	function getScenarioRulesById(scenarioId) {
+		var map = getScenarioMap();
+		var rulesMap = map.rules || {};
+		var normalized = normalizeScenarioId(scenarioId);
+		return rulesMap[normalized] && typeof rulesMap[normalized] === 'object' ? rulesMap[normalized] : {};
+	}
+
 	function parseContext() {
 		var root = document.querySelector(selectors.root);
 		if (!root) {
@@ -213,7 +298,7 @@
 			fulfillment: {
 				scenario: flow.scenario || '',
 				date: answers.date_conditions || {},
-				scenarioData: answers.scenario || {}
+				scenarioData: $.extend({}, answers.scenario || {}, { rules: flow.scenario_rules || {} })
 			},
 			discounts: answers.discounts || { coupons: [], gift_card: [] },
 			payment: {
@@ -234,6 +319,25 @@
 				lastSummarySignature: ''
 			}
 		};
+	}
+
+	function ensurePickupScenarioData(state) {
+		if (!state || !state.frontendStore || !state.frontendStore.fulfillment) {
+			return;
+		}
+		var scenario = normalizeScenarioId(state.frontendStore.fulfillment.scenario || 'pickup');
+		if (scenario !== 'pickup') {
+			return;
+		}
+		var existing = state.frontendStore.fulfillment.scenarioData || {};
+		var pickupPoint = existing.pickup_point && typeof existing.pickup_point === 'object' ? existing.pickup_point : null;
+		if (!pickupPoint) {
+			var fallback = getPickupPointById('');
+			if (fallback) {
+				existing.pickup_point = fallback;
+				state.frontendStore.fulfillment.scenarioData = existing;
+			}
+		}
 	}
 
 	function normalizeCartPayload(cartPayload) {
@@ -322,6 +426,66 @@
 		var contextCart = normalizeCartPayload(state.context && state.context.cart ? state.context.cart : {});
 		state.frontendStore.cart.items = contextCart.items;
 		state.frontendStore.cart.summary = contextCart.summary;
+		applyScenarioFieldAvailability(state);
+	}
+
+	function applyScenarioFieldAvailability(state) {
+		if (!state || !state.frontendStore || !state.frontendStore.fulfillment) {
+			return;
+		}
+		var scenarioId = normalizeScenarioId(state.frontendStore.fulfillment.scenario || 'pickup');
+		var rules = getScenarioRulesById(scenarioId);
+		var fieldRules = rules.field_rules && typeof rules.field_rules === 'object' ? rules.field_rules : {};
+		var contact = state.frontendStore.form && state.frontendStore.form.contact ? state.frontendStore.form.contact : {};
+		contact.__address_visibility = {
+			hide_address_fields: Boolean(fieldRules.hide_address_fields),
+			required_address_fields: Boolean(fieldRules.required_address_fields),
+			visible_groups: Array.isArray(fieldRules.visible_groups) ? fieldRules.visible_groups : []
+		};
+		state.frontendStore.form.contact = contact;
+		document.dispatchEvent(
+			new CustomEvent('mp_cc_address_visibility_changed', {
+				detail: {
+					scenario: scenarioId,
+					fieldRules: contact.__address_visibility
+				}
+			})
+		);
+	}
+
+	function resetDependentStateForScenario(state, scenarioId) {
+		if (!state || !state.frontendStore) {
+			return;
+		}
+		state.frontendStore.fulfillment.date = {};
+		state.frontendStore.fulfillment.scenario = scenarioId;
+		state.frontendStore.fulfillment.scenarioData = {
+			id: scenarioId,
+			rules: getScenarioRulesById(scenarioId)
+		};
+		if (scenarioId === 'pickup') {
+			var defaultPoint = getPickupPointById('');
+			if (defaultPoint) {
+				state.frontendStore.fulfillment.scenarioData.pickup_point = defaultPoint;
+			}
+		}
+
+		var rules = getScenarioRulesById(scenarioId);
+		var fieldRules = rules.field_rules && typeof rules.field_rules === 'object' ? rules.field_rules : {};
+		if (fieldRules.hide_address_fields && state.frontendStore.form && state.frontendStore.form.contact) {
+			var contact = $.extend({}, state.frontendStore.form.contact);
+			delete contact.address_1;
+			delete contact.address_2;
+			delete contact.city;
+			delete contact.state;
+			delete contact.postcode;
+			delete contact.country;
+			delete contact.shipping_address;
+			delete contact.shipping_city;
+			delete contact.shipping_postcode;
+			state.frontendStore.form.contact = contact;
+		}
+		applyScenarioFieldAvailability(state);
 	}
 
 	function setRuntimeFlag(state, key, value) {
@@ -572,6 +736,9 @@
 		if (step && step.id === 'cart') {
 			html += buildCartItemsHtml(state);
 		}
+		if (step && step.id === 'date') {
+			html += buildFulfillmentChoiceHtml(state);
+		}
 		html += '</div>';
 		if (!isFlagEnabled(state, flagNames.discountPlacement, true)) {
 			html += '<p class="mp-cc-step-panel__hint">Discount tools are rendered inline in payment step.</p>';
@@ -581,6 +748,151 @@
 		}
 		if (isFlagEnabled(state, flagNames.checkoutTestingMode, false)) {
 			html += '<p class="mp-cc-step-panel__hint">Checkout testing mode is enabled.</p>';
+		}
+		html += '</section>';
+
+		return html;
+	}
+
+	function buildFulfillmentChoiceHtml(state) {
+		var map = getScenarioMap();
+		var ui = getScenarioUiConfig();
+		var scenarios = map.scenarios || {};
+		var rules = map.rules || {};
+		var selectedScenario = String(state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenario || '') : '');
+		var scenarioIds = Object.keys(scenarios);
+		var pickupId = 'pickup';
+		var deliveryIds = [];
+		var i;
+
+		for (i = 0; i < scenarioIds.length; i += 1) {
+			if (scenarioIds[i] !== pickupId) {
+				deliveryIds.push(scenarioIds[i]);
+			}
+		}
+		var defaultDeliveryId = deliveryIds.length ? deliveryIds[0] : 'krasnoyarsk_delivery';
+		var selectedGroup = selectedScenario === pickupId ? pickupId : 'delivery';
+		var deliveryLabel = scenarios[defaultDeliveryId] ? String(scenarios[defaultDeliveryId]) : 'Доставка';
+		var pickupLabel = scenarios[pickupId] ? String(scenarios[pickupId]) : 'Самовывоз';
+		var pickupCopy = rules[pickupId] && rules[pickupId].copy_rules ? String(rules[pickupId].copy_rules.hint || '') : '';
+		var deliveryCopy = rules[defaultDeliveryId] && rules[defaultDeliveryId].copy_rules ? String(rules[defaultDeliveryId].copy_rules.hint || '') : '';
+
+		var cardOrder = Array.isArray(ui.card_order) ? ui.card_order : ['pickup', 'delivery'];
+		var cards = [];
+		for (i = 0; i < cardOrder.length; i += 1) {
+			var key = String(cardOrder[i] || '');
+			if (key !== 'pickup' && key !== 'delivery') {
+				continue;
+			}
+			var cardCfg = ui.cards && ui.cards[key] ? ui.cards[key] : {};
+			if (key === 'pickup') {
+				cards.push({
+					group: 'pickup',
+					target: pickupId,
+					label: cardCfg.title ? String(cardCfg.title) : pickupLabel,
+					copy: cardCfg.description ? String(cardCfg.description) : pickupCopy,
+					helper: cardCfg.helper ? String(cardCfg.helper) : '',
+					icon: cardCfg.icon_variant ? String(cardCfg.icon_variant) : 'pickup',
+					iconStyle: cardCfg.icon_style ? String(cardCfg.icon_style) : 'soft'
+				});
+			} else {
+				cards.push({
+					group: 'delivery',
+					target: defaultDeliveryId,
+					label: cardCfg.title ? String(cardCfg.title) : deliveryLabel,
+					copy: cardCfg.description ? String(cardCfg.description) : deliveryCopy,
+					helper: cardCfg.helper ? String(cardCfg.helper) : '',
+					icon: cardCfg.icon_variant ? String(cardCfg.icon_variant) : 'delivery',
+					iconStyle: cardCfg.icon_style ? String(cardCfg.icon_style) : 'soft'
+				});
+			}
+		}
+		if (!cards.length) {
+			cards.push({ group: 'pickup', target: pickupId, label: pickupLabel, copy: pickupCopy, helper: '', icon: 'pickup', iconStyle: 'soft' });
+			cards.push({ group: 'delivery', target: defaultDeliveryId, label: deliveryLabel, copy: deliveryCopy, helper: '', icon: 'delivery', iconStyle: 'soft' });
+		}
+
+		var html = '';
+		html += '<section class="mp-cc-fulfillment mp-cc-fulfillment--desktop-' + escapeHtml(ui.responsive.desktop_columns) + ' mp-cc-fulfillment--tablet-' + escapeHtml(ui.responsive.tablet_columns) + ' mp-cc-fulfillment--mobile-' + escapeHtml(ui.responsive.mobile_columns) + ' mp-cc-fulfillment--' + escapeHtml(ui.responsive.card_density || 'comfortable') + '" aria-labelledby="mp-cc-fulfillment-title">';
+		html += '<header class="mp-cc-fulfillment__header">';
+		html += '<h3 class="mp-cc-fulfillment__title" id="mp-cc-fulfillment-title">' + escapeHtml(getUiText('step_2.title', 'Выберите способ получения')) + '</h3>';
+		html += '</header>';
+		html += '<div class="mp-cc-fulfillment__cards" role="radiogroup" aria-label="' + escapeHtml(getUiText('step_2.title', 'Способ получения')) + '">';
+		for (i = 0; i < cards.length; i += 1) {
+			var card = cards[i];
+			var isActive = selectedGroup === card.group;
+			html += '<button type="button" class="mp-cc-fulfillment-card mp-cc-fulfillment-card--' + escapeHtml(card.iconStyle || 'soft') + (isActive ? ' is-active' : '') + '"';
+			html += ' role="radio"';
+			html += ' aria-checked="' + (isActive ? 'true' : 'false') + '"';
+			html += ' tabindex="' + (isActive ? '0' : '-1') + '"';
+			html += ' data-scenario-card="' + escapeHtml(card.group) + '"';
+			html += ' data-scenario-target="' + escapeHtml(card.target) + '"';
+			html += '>';
+			html += '<span class="mp-cc-fulfillment-card__media" aria-hidden="true">';
+			html += '<span class="mp-cc-fulfillment-card__icon mp-cc-fulfillment-card__icon--' + escapeHtml(card.icon) + '"></span>';
+			html += '</span>';
+			html += '<span class="mp-cc-fulfillment-card__body">';
+			html += '<span class="mp-cc-fulfillment-card__label">' + escapeHtml(card.label) + '</span>';
+			if (card.copy) {
+				html += '<span class="mp-cc-fulfillment-card__copy">' + escapeHtml(card.copy) + '</span>';
+			}
+			if (card.helper) {
+				html += '<span class="mp-cc-fulfillment-card__helper">' + escapeHtml(card.helper) + '</span>';
+			}
+			html += '</span>';
+			html += '</button>';
+		}
+		html += '</div>';
+		if (selectedGroup === 'pickup') {
+			html += buildPickupPointHtml(state);
+		}
+		html += '</section>';
+		return html;
+	}
+
+	function buildPickupPointHtml(state) {
+		var pickupConfig = getPickupConfig();
+		var points = pickupConfig.points || [];
+		var scenarioData = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenarioData || {}) : {};
+		var selectedPoint = scenarioData.pickup_point && typeof scenarioData.pickup_point === 'object' ? scenarioData.pickup_point : getPickupPointById('');
+		var selectedPointId = selectedPoint && selectedPoint.id ? String(selectedPoint.id) : '';
+		var html = '';
+
+		html += '<section class="mp-cc-pickup-point" aria-labelledby="mp-cc-pickup-title">';
+		html += '<h4 class="mp-cc-pickup-point__title" id="mp-cc-pickup-title">' + escapeHtml('Точка самовывоза') + '</h4>';
+		if (pickupConfig.enablePointSelection && points.length > 1) {
+			html += '<div class="mp-cc-pickup-point__choices" role="radiogroup" aria-label="Выбор точки самовывоза">';
+			for (var i = 0; i < points.length; i += 1) {
+				var point = points[i] || {};
+				var pointId = String(point.id || '');
+				var active = pointId === selectedPointId;
+				html += '<button type="button" class="mp-cc-pickup-point__choice' + (active ? ' is-active' : '') + '" role="radio"';
+				html += ' aria-checked="' + (active ? 'true' : 'false') + '"';
+				html += ' data-pickup-point="' + escapeHtml(pointId) + '">';
+				html += '<span class="mp-cc-pickup-point__choice-title">' + escapeHtml(String(point.title || pointId)) + '</span>';
+				if (point.address) {
+					html += '<span class="mp-cc-pickup-point__choice-address">' + escapeHtml(String(point.address)) + '</span>';
+				}
+				html += '</button>';
+			}
+			html += '</div>';
+		}
+
+		if (selectedPoint) {
+			html += '<div class="mp-cc-pickup-point__info">';
+			html += '<p class="mp-cc-pickup-point__name">' + escapeHtml(String(selectedPoint.title || '')) + '</p>';
+			if (selectedPoint.address) {
+				html += '<p class="mp-cc-pickup-point__address">' + escapeHtml(String(selectedPoint.address)) + '</p>';
+			}
+			if (selectedPoint.description) {
+				html += '<p class="mp-cc-pickup-point__description">' + escapeHtml(String(selectedPoint.description)) + '</p>';
+			}
+			html += '</div>';
+			if (pickupConfig.mapSlotEnabled) {
+				html += '<div class="mp-cc-pickup-point__map-slot" data-pickup-map-slot="1">';
+				html += '<p>' + escapeHtml(String(selectedPoint.map_hint || 'Слот карты будет подключен позже.')) + '</p>';
+				html += '</div>';
+			}
 		}
 		html += '</section>';
 
@@ -750,6 +1062,12 @@
 			? getStepOneLabel(state, 'subtotal_label', 'step_1.subtotal', 'Subtotal')
 			: getUiText('order_review.total', 'Total');
 		var returnUrl = cartSummary.catalog_url ? String(cartSummary.catalog_url) : '/';
+		var scenario = String(state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenario || '') : '');
+		var scenarioRules = getScenarioRulesById(scenario);
+		var scenarioLabel = scenarioRules && scenarioRules.label ? String(scenarioRules.label) : '';
+		var pickupPoint = state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.scenarioData
+			? (state.frontendStore.fulfillment.scenarioData.pickup_point || null)
+			: null;
 		var html = '';
 
 		html += '<section class="mp-cc-summary-card" aria-label="Order summary panel">';
@@ -768,6 +1086,17 @@
 			html += '<div class="mp-cc-summary-card__actions">';
 			html += '<button type="button" class="mp-cc-summary-card__btn mp-cc-summary-card__btn--primary" data-summary-action="continue">' + escapeHtml(getStepOneLabel(state, 'continue_label', 'step_1.continue', 'Continue')) + '</button>';
 			html += '<a href="' + escapeHtml(returnUrl) + '" class="mp-cc-summary-card__btn mp-cc-summary-card__btn--ghost">' + escapeHtml(getStepOneLabel(state, 'return_label', 'step_1.return_to_shop', 'Return to shop')) + '</a>';
+			html += '</div>';
+		}
+		if (state.currentStepId === 'contact_payment' && scenarioLabel) {
+			html += '<div class="mp-cc-summary-card__scenario" data-final-review-scenario="1">';
+			html += '<p class="mp-cc-summary-card__scenario-title"><strong>' + escapeHtml(getUiText('step_2.title', 'Способ получения')) + ':</strong> ' + escapeHtml(scenarioLabel) + '</p>';
+			if (scenario === 'pickup' && pickupPoint && pickupPoint.title) {
+				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(String(pickupPoint.title)) + '</p>';
+				if (pickupPoint.address) {
+					html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(String(pickupPoint.address)) + '</p>';
+				}
+			}
 			html += '</div>';
 		}
 		html += '<div class="mp-cc-summary-card__slot" data-mp-cc-summary-slot="1"></div>';
@@ -939,6 +1268,71 @@
 				return;
 			}
 			applyRemoveItem(state, $app, $item);
+		});
+
+		$app.find('[data-scenario-card]').off('click').on('click', function () {
+			var targetScenario = String($(this).data('scenario-target') || '');
+			if (!targetScenario) {
+				return;
+			}
+			targetScenario = normalizeScenarioId(targetScenario);
+			if (String(state.frontendStore.fulfillment.scenario || '') === targetScenario) {
+				return;
+			}
+			resetDependentStateForScenario(state, targetScenario);
+			render(state, $app);
+			document.dispatchEvent(
+				new CustomEvent('mp_cc_scenario_changed', {
+					detail: { scenario: targetScenario }
+				})
+			);
+		});
+
+		$app.find('[data-scenario-card]').off('keydown').on('keydown', function (event) {
+			var key = event.key || '';
+			var $cards = $app.find('[data-scenario-card]');
+			var currentIndex = $cards.index(this);
+			var nextIndex = currentIndex;
+			if (key === 'ArrowRight' || key === 'ArrowDown') {
+				nextIndex = Math.min($cards.length - 1, currentIndex + 1);
+				event.preventDefault();
+			} else if (key === 'ArrowLeft' || key === 'ArrowUp') {
+				nextIndex = Math.max(0, currentIndex - 1);
+				event.preventDefault();
+			} else if (key === ' ' || key === 'Enter') {
+				$(this).trigger('click');
+				event.preventDefault();
+				return;
+			} else {
+				return;
+			}
+			var $next = $cards.eq(nextIndex);
+			if ($next.length) {
+				$next.trigger('click');
+				$next.trigger('focus');
+			}
+		});
+
+		$app.find('[data-pickup-point]').off('click').on('click', function () {
+			var pointId = String($(this).data('pickup-point') || '');
+			if (!pointId) {
+				return;
+			}
+			var point = getPickupPointById(pointId);
+			if (!point) {
+				return;
+			}
+			var scenarioData = state.frontendStore.fulfillment.scenarioData || {};
+			scenarioData.pickup_point = point;
+			state.frontendStore.fulfillment.scenarioData = scenarioData;
+			render(state, $app);
+			postCheckout('session_set_answers', {
+				step_id: 'scenario',
+				context_id: state.flowContextId,
+				answers: scenarioData
+			}).fail(function () {
+				notify('Не удалось сохранить точку самовывоза.', 'error');
+			});
 		});
 	}
 
@@ -1159,6 +1553,11 @@
 		var context = parseContext();
 		applyThemeVariant(context);
 		var state = buildState(context);
+		if (!state.frontendStore.fulfillment.scenario) {
+			state.frontendStore.fulfillment.scenario = 'pickup';
+		}
+		applyScenarioFieldAvailability(state);
+		ensurePickupScenarioData(state);
 		render(state, $app);
 
 		syncStoreWithBackend(state, $app).fail(function () {
@@ -1170,11 +1569,20 @@
 			if (!nextScenario) {
 				return;
 			}
+			nextScenario = normalizeScenarioId(nextScenario);
 
 			withTransitionLock(state, $app, function () {
 				return postCheckout('session_set_scenario', { scenario: nextScenario, context_id: state.flowContextId })
 					.then(function () {
 						return syncStoreWithBackend(state, $app);
+					}).fail(function (xhr) {
+						var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
+						notify(payload.message || 'Не удалось переключить сценарий.', 'error');
+						document.dispatchEvent(
+							new CustomEvent('mp_cc_scenario_error', {
+								detail: { scenario: nextScenario, payload: payload }
+							})
+						);
 					});
 			});
 		});

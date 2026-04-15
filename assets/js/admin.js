@@ -9,6 +9,8 @@
 		var labels = source.labels || {};
 		var emptyState = source.empty_state || {};
 		var styleControls = source.style_controls || {};
+		var pickupConfig = window.mpCcAdmin && window.mpCcAdmin.pickupConfig ? window.mpCcAdmin.pickupConfig : {};
+		var pickupPoints = pickupConfig.points && Array.isArray(pickupConfig.points) ? pickupConfig.points : [];
 		return {
 			previewEnabled: Boolean(source.admin_preview && source.admin_preview.enabled !== false),
 			title: labels.title || 'Корзина',
@@ -22,7 +24,41 @@
 			emptyCta: emptyState.cta_label || labels.return_label || 'Вернуться в магазин',
 			cardCompact: Boolean(styleControls.card_compact),
 			cardEmphasis: styleControls.card_emphasis || 'default',
-			summaryEmphasis: styleControls.summary_emphasis || 'default'
+			summaryEmphasis: styleControls.summary_emphasis || 'default',
+			pickupPoint: pickupPoints.length ? pickupPoints[0] : null
+		};
+	}
+
+	function getScenarioConfigFromRuntime() {
+		var source = window.mpCcAdmin && window.mpCcAdmin.scenarioUiConfig ? window.mpCcAdmin.scenarioUiConfig : {};
+		var cards = source.cards || {};
+		var responsive = source.responsive || {};
+		return {
+			previewEnabled: Boolean(source.admin_preview && source.admin_preview.enabled !== false),
+			defaultScenario: String(source.default_scenario || 'pickup'),
+			cardOrder: Array.isArray(source.card_order) ? source.card_order : ['pickup', 'delivery'],
+			cards: {
+				pickup: {
+					title: String(cards.pickup && cards.pickup.title ? cards.pickup.title : 'Самовывоз'),
+					description: String(cards.pickup && cards.pickup.description ? cards.pickup.description : ''),
+					helper: String(cards.pickup && cards.pickup.helper ? cards.pickup.helper : ''),
+					iconVariant: String(cards.pickup && cards.pickup.icon_variant ? cards.pickup.icon_variant : 'pickup'),
+					iconStyle: String(cards.pickup && cards.pickup.icon_style ? cards.pickup.icon_style : 'soft')
+				},
+				delivery: {
+					title: String(cards.delivery && cards.delivery.title ? cards.delivery.title : 'Доставка'),
+					description: String(cards.delivery && cards.delivery.description ? cards.delivery.description : ''),
+					helper: String(cards.delivery && cards.delivery.helper ? cards.delivery.helper : ''),
+					iconVariant: String(cards.delivery && cards.delivery.icon_variant ? cards.delivery.icon_variant : 'delivery'),
+					iconStyle: String(cards.delivery && cards.delivery.icon_style ? cards.delivery.icon_style : 'soft')
+				}
+			},
+			responsive: {
+				desktopColumns: Number(responsive.desktop_columns || 2),
+				tabletColumns: Number(responsive.tablet_columns || 1),
+				mobileColumns: Number(responsive.mobile_columns || 1),
+				cardDensity: String(responsive.card_density || 'comfortable')
+			}
 		};
 	}
 
@@ -65,6 +101,52 @@
 		}
 		html += '<a href="#">' + escapeHtml(config.emptyCta) + '</a>';
 		html += '</div>';
+		if (config.pickupPoint) {
+			html += '<div class="mp-cc-admin-preview__pickup">';
+			html += '<h3>Pickup block preview</h3>';
+			html += '<p><strong>' + escapeHtml(String(config.pickupPoint.title || '')) + '</strong></p>';
+			if (config.pickupPoint.address) {
+				html += '<p>' + escapeHtml(String(config.pickupPoint.address)) + '</p>';
+			}
+			if (config.pickupPoint.description) {
+				html += '<p>' + escapeHtml(String(config.pickupPoint.description)) + '</p>';
+			}
+			html += '<div class="mp-cc-admin-preview__pickup-map">Map slot reserved</div>';
+			html += '</div>';
+		}
+		html += '</section>';
+		return html;
+	}
+
+	function renderScenarioPreview(config) {
+		var order = Array.isArray(config.cardOrder) ? config.cardOrder : ['pickup', 'delivery'];
+		var html = '';
+		html += '<section class="mp-cc-admin-preview mp-cc-admin-preview--scenario" id="mp-cc-admin-scenario-preview">';
+		html += '<h2>Scenario Cards Preview</h2>';
+		html += '<p>Default scenario: <strong>' + escapeHtml(config.defaultScenario) + '</strong></p>';
+		html += '<div class="mp-cc-admin-preview__scenario-grid"';
+		html += ' data-desktop="' + escapeHtml(String(config.responsive.desktopColumns)) + '"';
+		html += ' data-tablet="' + escapeHtml(String(config.responsive.tabletColumns)) + '"';
+		html += ' data-mobile="' + escapeHtml(String(config.responsive.mobileColumns)) + '"';
+		html += ' data-density="' + escapeHtml(config.responsive.cardDensity) + '">';
+		for (var i = 0; i < order.length; i += 1) {
+			var key = String(order[i] || '');
+			if (!config.cards[key]) {
+				continue;
+			}
+			var card = config.cards[key];
+			html += '<article class="mp-cc-admin-preview__scenario-card">';
+			html += '<div class="mp-cc-admin-preview__scenario-icon mp-cc-admin-preview__scenario-icon--' + escapeHtml(card.iconStyle) + '">' + escapeHtml(card.iconVariant) + '</div>';
+			html += '<h3>' + escapeHtml(card.title) + '</h3>';
+			if (card.description) {
+				html += '<p>' + escapeHtml(card.description) + '</p>';
+			}
+			if (card.helper) {
+				html += '<small>' + escapeHtml(card.helper) + '</small>';
+			}
+			html += '</article>';
+		}
+		html += '</div>';
 		html += '</section>';
 		return html;
 	}
@@ -94,6 +176,29 @@
 		cfg.cardCompact = Boolean(readFormValue('mp_custom_checkout_settings[step_1][style_controls][card_compact]', cfg.cardCompact));
 		cfg.cardEmphasis = readFormValue('mp_custom_checkout_settings[step_1][style_controls][card_emphasis]', cfg.cardEmphasis);
 		cfg.summaryEmphasis = readFormValue('mp_custom_checkout_settings[step_1][style_controls][summary_emphasis]', cfg.summaryEmphasis);
+		return cfg;
+	}
+
+	function readLiveScenarioConfig(baseConfig) {
+		var cfg = $.extend(true, {}, baseConfig);
+		cfg.defaultScenario = readFormValue('mp_custom_checkout_settings[step_2][default_scenario]', cfg.defaultScenario);
+		cfg.cardOrder = String(readFormValue('mp_custom_checkout_settings[step_2][card_order]', cfg.cardOrder.join(','))).split(',').map(function (value) {
+			return $.trim(String(value || ''));
+		}).filter(Boolean);
+		cfg.cards.pickup.title = readFormValue('mp_custom_checkout_settings[step_2][cards][pickup][title]', cfg.cards.pickup.title);
+		cfg.cards.pickup.description = readFormValue('mp_custom_checkout_settings[step_2][cards][pickup][description]', cfg.cards.pickup.description);
+		cfg.cards.pickup.helper = readFormValue('mp_custom_checkout_settings[step_2][cards][pickup][helper]', cfg.cards.pickup.helper);
+		cfg.cards.pickup.iconVariant = readFormValue('mp_custom_checkout_settings[step_2][cards][pickup][icon_variant]', cfg.cards.pickup.iconVariant);
+		cfg.cards.pickup.iconStyle = readFormValue('mp_custom_checkout_settings[step_2][cards][pickup][icon_style]', cfg.cards.pickup.iconStyle);
+		cfg.cards.delivery.title = readFormValue('mp_custom_checkout_settings[step_2][cards][delivery][title]', cfg.cards.delivery.title);
+		cfg.cards.delivery.description = readFormValue('mp_custom_checkout_settings[step_2][cards][delivery][description]', cfg.cards.delivery.description);
+		cfg.cards.delivery.helper = readFormValue('mp_custom_checkout_settings[step_2][cards][delivery][helper]', cfg.cards.delivery.helper);
+		cfg.cards.delivery.iconVariant = readFormValue('mp_custom_checkout_settings[step_2][cards][delivery][icon_variant]', cfg.cards.delivery.iconVariant);
+		cfg.cards.delivery.iconStyle = readFormValue('mp_custom_checkout_settings[step_2][cards][delivery][icon_style]', cfg.cards.delivery.iconStyle);
+		cfg.responsive.desktopColumns = Number(readFormValue('mp_custom_checkout_settings[step_2][responsive][desktop_columns]', cfg.responsive.desktopColumns));
+		cfg.responsive.tabletColumns = Number(readFormValue('mp_custom_checkout_settings[step_2][responsive][tablet_columns]', cfg.responsive.tabletColumns));
+		cfg.responsive.mobileColumns = Number(readFormValue('mp_custom_checkout_settings[step_2][responsive][mobile_columns]', cfg.responsive.mobileColumns));
+		cfg.responsive.cardDensity = readFormValue('mp_custom_checkout_settings[step_2][responsive][card_density]', cfg.responsive.cardDensity);
 		return cfg;
 	}
 
@@ -186,6 +291,7 @@
 
 	$(function () {
 		var config = getConfigFromRuntime();
+		var scenarioConfig = getScenarioConfigFromRuntime();
 		var defaults = getDefaults();
 		var flags = window.mpCcAdmin && window.mpCcAdmin.featureFlags ? window.mpCcAdmin.featureFlags : {};
 		if (!config.previewEnabled || flags.admin_live_preview === false) {
@@ -199,13 +305,23 @@
 			return;
 		}
 		$wrap.append(renderPreview(config));
+		if (scenarioConfig.previewEnabled) {
+			$wrap.append(renderScenarioPreview(scenarioConfig));
+		}
 		enhanceStepOneFields();
 
 		var rerender = function () {
 			var nextConfig = readLiveConfig(config);
 			$('#mp-cc-admin-step1-preview').replaceWith(renderPreview(nextConfig));
+			if (scenarioConfig.previewEnabled) {
+				var nextScenarioConfig = readLiveScenarioConfig(scenarioConfig);
+				$('#mp-cc-admin-scenario-preview').replaceWith(renderScenarioPreview(nextScenarioConfig));
+			}
 		};
 		$(document).on('input change', '[name^="mp_custom_checkout_settings[step_1]"]', function () {
+			rerender();
+		});
+		$(document).on('input change', '[name^="mp_custom_checkout_settings[step_2]"]', function () {
 			rerender();
 		});
 		$(document).on('click', '[data-mp-cc-step1-reset]', function () {

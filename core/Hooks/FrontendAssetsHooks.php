@@ -8,6 +8,7 @@
 namespace MP\CustomCheckout\Hooks;
 
 use MP\CustomCheckout\DependencyFailureGuard;
+use MP\CustomCheckout\Routing\PickupPointRegistry;
 use MP\CustomCheckout\Routing\CheckoutScenarioRules;
 use MP\CustomCheckout\Settings\DefaultLabelsRegistry;
 use MP\CustomCheckout\Settings\FeatureFlagResolver;
@@ -87,6 +88,8 @@ final class FrontendAssetsHooks {
 				),
 				'uiText' => self::ui_text_dictionaries(),
 				'stepOneConfig' => self::step_one_config(),
+				'scenarioUiConfig' => self::scenario_ui_config(),
+				'pickupConfig' => PickupPointRegistry::config(),
 				'scenarioStepMap' => self::scenario_step_map(),
 				'designTokens' => self::design_tokens_for_runtime(),
 			)
@@ -202,6 +205,14 @@ final class FrontendAssetsHooks {
 	 */
 	private static function step_one_config(): array {
 		$config = SafeSettingsResolver::get_section( 'step_1' );
+		return is_array( $config ) ? $config : array();
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private static function scenario_ui_config(): array {
+		$config = SafeSettingsResolver::get_section( 'step_2' );
 		return is_array( $config ) ? $config : array();
 	}
 

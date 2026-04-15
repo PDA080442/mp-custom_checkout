@@ -9,6 +9,7 @@ namespace MP\CustomCheckout\Routing;
 
 use MP\CustomCheckout\DependencyFailureGuard;
 use MP\CustomCheckout\Hooks\CheckoutRouteHooks;
+use MP\CustomCheckout\Routing\PickupPointRegistry;
 use MP\CustomCheckout\Settings\SafeSettingsResolver;
 use MP\CustomCheckout\Settings\ScenarioStepRegistry;
 
@@ -114,24 +115,68 @@ final class CheckoutSessionService {
 			return;
 		}
 
+		$previous_scenario = isset( $flow['scenario'] ) ? CheckoutScenarioRules::sanitize_scenario( (string) $flow['scenario'] ) : '';
 		$scenario = CheckoutScenarioRules::sanitize_scenario( $scenario );
 		$flow['scenario']  = $scenario;
 		$flow['updated_at'] = time();
 		$answers = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : self::default_answers_structure();
 		$answers = self::merge_answers_with_defaults( $answers );
+		if ( '' !== $previous_scenario && $previous_scenario !== $scenario ) {
+			$answers = self::reset_dependent_answers_for_scenario_switch( $answers, $scenario );
+		}
 		$answers['scenario'] = array(
 			'id'    => $scenario,
 			'label' => CheckoutScenarioRules::scenario_label( $scenario ),
 		);
+		if ( ScenarioStepRegistry::SCENARIO_PICKUP === $scenario ) {
+			$selected_point = isset( $answers['scenario']['pickup_point']['id'] ) ? sanitize_key( (string) $answers['scenario']['pickup_point']['id'] ) : '';
+			$point          = PickupPointRegistry::find_by_id( $selected_point );
+			$answers['scenario']['pickup_point'] = $point;
+		}
 		$flow['answers'] = $answers;
+		$flow['snapshot'] = self::build_snapshot();
 
 		$step_manager = new CheckoutStepManager( $flow );
 		$current_step = $step_manager->get_current_step_id();
 		if ( is_string( $current_step ) && '' !== $current_step ) {
 			$flow['current_step'] = $current_step;
 		}
+		if ( '' !== $previous_scenario && $previous_scenario !== $scenario ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'info',
+				'[scenario_switch] applied',
+				array(
+					'from'         => $previous_scenario,
+					'to'           => $scenario,
+					'current_step' => isset( $flow['current_step'] ) ? (string) $flow['current_step'] : '',
+				)
+			);
+		}
 
 		self::persist_flow( $flow );
+	}
+
+	/**
+	 * @param array<string, mixed> $answers
+	 * @return array<string, mixed>
+	 */
+	private static function reset_dependent_answers_for_scenario_switch( array $answers, string $scenario ): array {
+		$answers['date_conditions'] = array();
+
+		$contact = isset( $answers['contact_billing'] ) && is_array( $answers['contact_billing'] ) ? $answers['contact_billing'] : array();
+		$field_rules = CheckoutScenarioRules::build( $scenario );
+		$hide_address = isset( $field_rules['field_rules']['hide_address_fields'] ) ? (bool) $field_rules['field_rules']['hide_address_fields'] : false;
+		if ( $hide_address ) {
+			foreach ( array( 'address_1', 'address_2', 'city', 'state', 'postcode', 'country', 'shipping_address', 'shipping_city', 'shipping_postcode' ) as $field_key ) {
+				if ( array_key_exists( $field_key, $contact ) ) {
+					unset( $contact[ $field_key ] );
+				}
+			}
+		}
+		$answers['contact_billing'] = $contact;
+
+		return $answers;
 	}
 
 	/**
@@ -367,7 +412,10 @@ final class CheckoutSessionService {
 	}
 
 	private static function get_initial_scenario(): string {
-		$scenario = SafeSettingsResolver::get( 'registry.default_scenario', ScenarioStepRegistry::SCENARIO_PICKUP );
+		$scenario = SafeSettingsResolver::get( 'step_2.default_scenario', '' );
+		if ( ! is_string( $scenario ) || '' === $scenario ) {
+			$scenario = SafeSettingsResolver::get( 'registry.default_scenario', ScenarioStepRegistry::SCENARIO_PICKUP );
+		}
 		$scenario = sanitize_key( is_string( $scenario ) ? $scenario : '' );
 		$known    = array_keys( ScenarioStepRegistry::scenarios() );
 
