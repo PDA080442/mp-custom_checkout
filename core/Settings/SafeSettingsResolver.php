@@ -102,6 +102,38 @@ final class SafeSettingsResolver {
 				);
 				continue;
 			}
+			if ( OptionKeys::SECTION_STEP_2 === $section_key ) {
+				$tree[ $section_key ] = array(
+					'default_scenario' => ScenarioStepRegistry::SCENARIO_PICKUP,
+					'card_order'       => array( 'pickup', 'delivery' ),
+					'cards'            => array(
+						'pickup'   => array(
+							'title'            => 'Самовывоз',
+							'description'      => 'Заберите заказ в удобное время в точке самовывоза.',
+							'helper'           => 'Обычно готово к выдаче в день заказа.',
+							'icon_variant'     => 'pickup',
+							'icon_style'       => 'soft',
+						),
+						'delivery' => array(
+							'title'            => 'Доставка',
+							'description'      => 'Выберите доставку по городу или в другой город.',
+							'helper'           => 'Стоимость и сроки зависят от адреса.',
+							'icon_variant'     => 'delivery',
+							'icon_style'       => 'soft',
+						),
+					),
+					'responsive'       => array(
+						'desktop_columns' => 2,
+						'tablet_columns'  => 1,
+						'mobile_columns'  => 1,
+						'card_density'    => 'comfortable',
+					),
+					'admin_preview'    => array(
+						'enabled' => true,
+					),
+				);
+				continue;
+			}
 			if ( OptionKeys::SECTION_PICKUP === $section_key ) {
 				$tree[ $section_key ] = array(
 					'enable_point_selection' => false,

@@ -118,6 +118,38 @@
 		};
 	}
 
+	function getScenarioUiConfig() {
+		var source = (window.mpCcCheckout && window.mpCcCheckout.scenarioUiConfig && typeof window.mpCcCheckout.scenarioUiConfig === 'object')
+			? window.mpCcCheckout.scenarioUiConfig
+			: {};
+		return $.extend(true, {
+			default_scenario: 'pickup',
+			card_order: ['pickup', 'delivery'],
+			cards: {
+				pickup: {
+					title: 'Самовывоз',
+					description: '',
+					helper: '',
+					icon_variant: 'pickup',
+					icon_style: 'soft'
+				},
+				delivery: {
+					title: 'Доставка',
+					description: '',
+					helper: '',
+					icon_variant: 'delivery',
+					icon_style: 'soft'
+				}
+			},
+			responsive: {
+				desktop_columns: 2,
+				tablet_columns: 1,
+				mobile_columns: 1,
+				card_density: 'comfortable'
+			}
+		}, source);
+	}
+
 	function getPickupPointById(pointId) {
 		var pickup = getPickupConfig();
 		var points = pickup.points || [];
@@ -138,7 +170,9 @@
 		if (key && Object.prototype.hasOwnProperty.call(scenarios, key)) {
 			return key;
 		}
-		return 'pickup';
+		var config = getScenarioUiConfig();
+		var fallback = String(config.default_scenario || 'pickup');
+		return (fallback && Object.prototype.hasOwnProperty.call(scenarios, fallback)) ? fallback : 'pickup';
 	}
 
 	function getScenarioRulesById(scenarioId) {
@@ -722,6 +756,7 @@
 
 	function buildFulfillmentChoiceHtml(state) {
 		var map = getScenarioMap();
+		var ui = getScenarioUiConfig();
 		var scenarios = map.scenarios || {};
 		var rules = map.rules || {};
 		var selectedScenario = String(state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenario || '') : '');
@@ -742,25 +777,43 @@
 		var pickupCopy = rules[pickupId] && rules[pickupId].copy_rules ? String(rules[pickupId].copy_rules.hint || '') : '';
 		var deliveryCopy = rules[defaultDeliveryId] && rules[defaultDeliveryId].copy_rules ? String(rules[defaultDeliveryId].copy_rules.hint || '') : '';
 
-		var cards = [
-			{
-				group: 'pickup',
-				target: pickupId,
-				label: pickupLabel,
-				copy: pickupCopy,
-				icon: 'pickup'
-			},
-			{
-				group: 'delivery',
-				target: defaultDeliveryId,
-				label: deliveryLabel,
-				copy: deliveryCopy,
-				icon: 'delivery'
+		var cardOrder = Array.isArray(ui.card_order) ? ui.card_order : ['pickup', 'delivery'];
+		var cards = [];
+		for (i = 0; i < cardOrder.length; i += 1) {
+			var key = String(cardOrder[i] || '');
+			if (key !== 'pickup' && key !== 'delivery') {
+				continue;
 			}
-		];
+			var cardCfg = ui.cards && ui.cards[key] ? ui.cards[key] : {};
+			if (key === 'pickup') {
+				cards.push({
+					group: 'pickup',
+					target: pickupId,
+					label: cardCfg.title ? String(cardCfg.title) : pickupLabel,
+					copy: cardCfg.description ? String(cardCfg.description) : pickupCopy,
+					helper: cardCfg.helper ? String(cardCfg.helper) : '',
+					icon: cardCfg.icon_variant ? String(cardCfg.icon_variant) : 'pickup',
+					iconStyle: cardCfg.icon_style ? String(cardCfg.icon_style) : 'soft'
+				});
+			} else {
+				cards.push({
+					group: 'delivery',
+					target: defaultDeliveryId,
+					label: cardCfg.title ? String(cardCfg.title) : deliveryLabel,
+					copy: cardCfg.description ? String(cardCfg.description) : deliveryCopy,
+					helper: cardCfg.helper ? String(cardCfg.helper) : '',
+					icon: cardCfg.icon_variant ? String(cardCfg.icon_variant) : 'delivery',
+					iconStyle: cardCfg.icon_style ? String(cardCfg.icon_style) : 'soft'
+				});
+			}
+		}
+		if (!cards.length) {
+			cards.push({ group: 'pickup', target: pickupId, label: pickupLabel, copy: pickupCopy, helper: '', icon: 'pickup', iconStyle: 'soft' });
+			cards.push({ group: 'delivery', target: defaultDeliveryId, label: deliveryLabel, copy: deliveryCopy, helper: '', icon: 'delivery', iconStyle: 'soft' });
+		}
 
 		var html = '';
-		html += '<section class="mp-cc-fulfillment" aria-labelledby="mp-cc-fulfillment-title">';
+		html += '<section class="mp-cc-fulfillment mp-cc-fulfillment--desktop-' + escapeHtml(ui.responsive.desktop_columns) + ' mp-cc-fulfillment--tablet-' + escapeHtml(ui.responsive.tablet_columns) + ' mp-cc-fulfillment--mobile-' + escapeHtml(ui.responsive.mobile_columns) + ' mp-cc-fulfillment--' + escapeHtml(ui.responsive.card_density || 'comfortable') + '" aria-labelledby="mp-cc-fulfillment-title">';
 		html += '<header class="mp-cc-fulfillment__header">';
 		html += '<h3 class="mp-cc-fulfillment__title" id="mp-cc-fulfillment-title">' + escapeHtml(getUiText('step_2.title', 'Выберите способ получения')) + '</h3>';
 		html += '</header>';
@@ -768,7 +821,7 @@
 		for (i = 0; i < cards.length; i += 1) {
 			var card = cards[i];
 			var isActive = selectedGroup === card.group;
-			html += '<button type="button" class="mp-cc-fulfillment-card' + (isActive ? ' is-active' : '') + '"';
+			html += '<button type="button" class="mp-cc-fulfillment-card mp-cc-fulfillment-card--' + escapeHtml(card.iconStyle || 'soft') + (isActive ? ' is-active' : '') + '"';
 			html += ' role="radio"';
 			html += ' aria-checked="' + (isActive ? 'true' : 'false') + '"';
 			html += ' tabindex="' + (isActive ? '0' : '-1') + '"';
@@ -782,6 +835,9 @@
 			html += '<span class="mp-cc-fulfillment-card__label">' + escapeHtml(card.label) + '</span>';
 			if (card.copy) {
 				html += '<span class="mp-cc-fulfillment-card__copy">' + escapeHtml(card.copy) + '</span>';
+			}
+			if (card.helper) {
+				html += '<span class="mp-cc-fulfillment-card__helper">' + escapeHtml(card.helper) + '</span>';
 			}
 			html += '</span>';
 			html += '</button>';
