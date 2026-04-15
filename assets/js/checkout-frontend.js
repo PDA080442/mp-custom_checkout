@@ -163,11 +163,13 @@
 				success: false,
 				blocked: false,
 				dirty: false,
-				lastSyncAt: Date.now()
+				lastSyncAt: Date.now(),
+				summaryHydrated: false
 			},
 			meta: {
 				contextId: flow.context_id || '',
-				expiresAt: flow.expires_at || 0
+				expiresAt: flow.expires_at || 0,
+				lastSummarySignature: ''
 			}
 		};
 	}
@@ -254,6 +256,7 @@
 		state.frontendStore.runtime.blocked = false;
 		state.frontendStore.runtime.dirty = false;
 		state.frontendStore.runtime.lastSyncAt = Date.now();
+		state.frontendStore.runtime.summaryHydrated = true;
 		var contextCart = normalizeCartPayload(state.context && state.context.cart ? state.context.cart : {});
 		state.frontendStore.cart.items = contextCart.items;
 		state.frontendStore.cart.summary = contextCart.summary;
@@ -633,16 +636,33 @@
 		var total = state.visibleSteps.length;
 		var snapshot = state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart.snapshot || {} : {};
 		var cartSummary = state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart.summary || {} : {};
+		var runtime = state.frontendStore && state.frontendStore.runtime ? state.frontendStore.runtime : {};
+		var showPlaceholders = !runtime.summaryHydrated;
 		var itemsCount = cartSummary.items_count || snapshot.items_count || 0;
-		var totalText = snapshot.total || cartSummary.subtotal || '';
+		var subtotalText = cartSummary.subtotal || '';
+		var totalText = snapshot.total || subtotalText || '';
+		var displayAmount = state.currentStepId === 'cart' ? subtotalText : totalText;
+		var amountLabel = state.currentStepId === 'cart' ? 'Subtotal' : 'Total';
+		var returnUrl = cartSummary.catalog_url ? String(cartSummary.catalog_url) : '/';
 		var html = '';
 
 		html += '<section class="mp-cc-summary-card" aria-label="Order summary panel">';
 		html += '<h3 class="mp-cc-summary-card__title">Order Summary</h3>';
 		html += '<p class="mp-cc-summary-card__meta">Step ' + (currentIndex + 1) + ' of ' + total + '</p>';
-		html += '<p class="mp-cc-summary-card__meta">Items: ' + escapeHtml(itemsCount) + '</p>';
-		if (totalText) {
-			html += '<p class="mp-cc-summary-card__meta">Total: ' + escapeHtml(totalText) + '</p>';
+		if (showPlaceholders) {
+			html += '<div class="mp-cc-summary-card__placeholder" aria-hidden="true"></div>';
+			html += '<div class="mp-cc-summary-card__placeholder mp-cc-summary-card__placeholder--sm" aria-hidden="true"></div>';
+		} else {
+			html += '<p class="mp-cc-summary-card__meta">Items: <strong>' + escapeHtml(itemsCount) + '</strong></p>';
+			if (displayAmount) {
+				html += '<p class="mp-cc-summary-card__meta"><span class="mp-cc-summary-card__amount-label">' + escapeHtml(amountLabel) + ':</span> <span class="mp-cc-summary-card__amount" data-summary-amount="1">' + displayAmount + '</span></p>';
+			}
+		}
+		if (state.currentStepId === 'cart') {
+			html += '<div class="mp-cc-summary-card__actions">';
+			html += '<button type="button" class="mp-cc-summary-card__btn mp-cc-summary-card__btn--primary" data-summary-action="continue">Continue</button>';
+			html += '<a href="' + escapeHtml(returnUrl) + '" class="mp-cc-summary-card__btn mp-cc-summary-card__btn--ghost">' + escapeHtml(getUiText('step_1.btn_choose_gifts', 'Return to shop')) + '</a>';
+			html += '</div>';
 		}
 		html += '<div class="mp-cc-summary-card__slot" data-mp-cc-summary-slot="1"></div>';
 		html += '</section>';
@@ -701,6 +721,7 @@
 
 		$app.html(buildStepPanelHtml(state));
 		$summary.html(buildSummaryHtml(state));
+		animateSummaryUpdate(state, $summary);
 		if (isFlagEnabled(state, flagNames.multiStepFlow, true)) {
 			$progress.html(buildProgressHtml(state));
 			$actions.html(buildNavHtml(state));
@@ -731,6 +752,12 @@
 		});
 
 		$actions.find('[data-nav="next"]').off('click').on('click', function () {
+			saveCurrentStepDraft(state).always(function () {
+				moveForward(state, $app);
+			});
+		});
+
+		$(selectors.summary).find('[data-summary-action="continue"]').off('click').on('click', function () {
 			saveCurrentStepDraft(state).always(function () {
 				moveForward(state, $app);
 			});
@@ -944,6 +971,24 @@
 			notify(message, 'error');
 			syncStoreWithBackend(state, $app);
 		});
+	}
+
+	function animateSummaryUpdate(state, $summary) {
+		if (!$summary || !$summary.length || !state || !state.frontendStore || !state.frontendStore.meta) {
+			return;
+		}
+		var cartSummary = state.frontendStore.cart && state.frontendStore.cart.summary ? state.frontendStore.cart.summary : {};
+		var snapshot = state.frontendStore.cart && state.frontendStore.cart.snapshot ? state.frontendStore.cart.snapshot : {};
+		var signature = String(cartSummary.items_count || 0) + '|' + String(cartSummary.subtotal || '') + '|' + String(snapshot.total || '');
+		var prevSignature = String(state.frontendStore.meta.lastSummarySignature || '');
+		state.frontendStore.meta.lastSummarySignature = signature;
+		if (!prevSignature || prevSignature === signature) {
+			return;
+		}
+		$summary.find('[data-summary-amount]').addClass('is-updated');
+		window.setTimeout(function () {
+			$summary.find('[data-summary-amount]').removeClass('is-updated');
+		}, 320);
 	}
 
 	function isFlagEnabled(state, flag, fallback) {
