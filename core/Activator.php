@@ -7,6 +7,8 @@
 
 namespace MP\CustomCheckout;
 
+use MP\CustomCheckout\Settings\OptionKeys;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
@@ -21,5 +23,8 @@ final class Activator {
 		if ( ! defined( 'MP_CUSTOM_CHECKOUT_VERSION' ) ) {
 			return;
 		}
+
+		add_option( OptionKeys::MAIN, array(), '', false );
+		add_option( OptionKeys::DB_VERSION, '0', '', false );
 	}
 }
