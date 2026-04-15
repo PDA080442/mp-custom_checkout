@@ -8,6 +8,7 @@
 namespace MP\CustomCheckout;
 
 use MP\CustomCheckout\Hooks\CheckoutRouteHooks;
+use MP\CustomCheckout\Routing\CheckoutSuccessRouteHooks;
 use MP\CustomCheckout\Settings\OptionKeys;
 
 defined( 'ABSPATH' ) || exit;
@@ -29,6 +30,7 @@ final class Activator {
 		add_option( OptionKeys::DB_VERSION, '0', '', false );
 
 		CheckoutRouteHooks::add_rewrite_rules();
+		CheckoutSuccessRouteHooks::add_rewrite_rules();
 		flush_rewrite_rules( false );
 	}
 }
