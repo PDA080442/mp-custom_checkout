@@ -29,10 +29,13 @@ final class CheckoutRouteContext {
 
 		$flow = CheckoutSessionService::get_flow();
 		if ( ! empty( $flow ) ) {
+			$step_manager = new CheckoutStepManager( $flow );
 			$context['checkout_flow'] = array(
 				'context_id'   => isset( $flow['context_id'] ) ? (string) $flow['context_id'] : '',
-				'current_step' => isset( $flow['current_step'] ) ? (string) $flow['current_step'] : '',
+				'current_step' => (string) ( $step_manager->get_current_step_id() ?? '' ),
 				'scenario'     => isset( $flow['scenario'] ) ? (string) $flow['scenario'] : '',
+				'steps'        => array_values( $step_manager->get_registered_steps() ),
+				'visible_steps' => $step_manager->get_visible_step_ids(),
 			);
 		}
 
