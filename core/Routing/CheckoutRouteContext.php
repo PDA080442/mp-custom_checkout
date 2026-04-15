@@ -28,7 +28,7 @@ final class CheckoutRouteContext {
 			'is_admin'        => is_admin(),
 			'is_plain_permalinks' => CheckoutPermalinkCompatibility::is_plain_permalinks(),
 			'feature_flags'   => FeatureFlagResolver::all(),
-			'cart'            => self::collect_cart_data(),
+			'cart'            => self::get_cart_data(),
 		);
 
 		$flow = CheckoutSessionService::get_public_state();
@@ -85,7 +85,7 @@ final class CheckoutRouteContext {
 	 *
 	 * @return array<string, mixed>
 	 */
-	private static function collect_cart_data(): array {
+	public static function get_cart_data(): array {
 		$result = array(
 			'items'    => array(),
 			'summary'  => array(
@@ -131,6 +131,11 @@ final class CheckoutRouteContext {
 				$line_subtotal = WC()->cart->get_product_subtotal( $product, $qty );
 			}
 
+			$max_qty = (int) $product->get_max_purchase_quantity();
+			if ( $max_qty <= 0 ) {
+				$max_qty = 9999;
+			}
+
 			$result['items'][] = array(
 				'key'            => (string) $cart_item_key,
 				'product_id'     => isset( $cart_item['product_id'] ) ? (int) $cart_item['product_id'] : 0,
@@ -141,6 +146,8 @@ final class CheckoutRouteContext {
 				'variation_text' => $variation_text,
 				'image_url'      => $image_url,
 				'quantity'       => $qty,
+				'min_quantity'   => max( 1, (int) $product->get_min_purchase_quantity() ),
+				'max_quantity'   => $max_qty,
 				'line_subtotal'  => (string) $line_subtotal,
 			);
 		}
