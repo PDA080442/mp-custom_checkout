@@ -36,6 +36,7 @@ final class Plugin {
 	 * Подключение хуков и инициализация.
 	 */
 	public function boot(): void {
+		DependencyFailureGuard::boot();
 		add_action( 'plugins_loaded', array( $this, 'load_textdomain' ), 0 );
 	}
 
