@@ -1,3 +1,18 @@
 /**
- * MP Custom Checkout — публичные стили (заглушка).
+ * MP Custom Checkout — базовые стили checkout.
  */
+
+.mp-cc-checkout__app {
+	min-height: 1px;
+}
+
+.mp-cc-nojs {
+	max-width: 52rem;
+	margin: 0 auto;
+	padding: 1rem 0;
+}
+
+.mp-cc-nojs__steps {
+	margin: 0.5rem 0 1.25rem;
+	padding-left: 1.25rem;
+}
