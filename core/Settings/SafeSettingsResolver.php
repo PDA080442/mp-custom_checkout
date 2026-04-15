@@ -136,6 +136,21 @@ final class SafeSettingsResolver {
 			}
 			if ( OptionKeys::SECTION_STEP_3 === $section_key ) {
 				$tree[ $section_key ] = array(
+					'copy' => array(
+						'title' => 'Выберите дату получения',
+						'helper_by_scenario' => array(
+							'pickup'               => 'Выберите удобную дату самовывоза.',
+							'krasnoyarsk_delivery' => 'Выберите дату доставки по Красноярску.',
+							'other_city_delivery'  => 'Выберите дату отправки в другой город.',
+						),
+						'errors' => array(
+							'invalid_date' => 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.',
+							'empty_date'   => 'Выберите дату, чтобы продолжить.',
+						),
+						'admin_preview' => array(
+							'enabled' => true,
+						),
+					),
 					'weekday_rules' => array(
 						'pickup'                => array( 1, 2, 3, 4, 5, 6 ),
 						'krasnoyarsk_delivery'  => array( 1, 2, 3, 4, 5, 6 ),
