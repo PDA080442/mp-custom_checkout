@@ -412,7 +412,10 @@ final class CheckoutSessionService {
 	}
 
 	private static function get_initial_scenario(): string {
-		$scenario = SafeSettingsResolver::get( 'registry.default_scenario', ScenarioStepRegistry::SCENARIO_PICKUP );
+		$scenario = SafeSettingsResolver::get( 'step_2.default_scenario', '' );
+		if ( ! is_string( $scenario ) || '' === $scenario ) {
+			$scenario = SafeSettingsResolver::get( 'registry.default_scenario', ScenarioStepRegistry::SCENARIO_PICKUP );
+		}
 		$scenario = sanitize_key( is_string( $scenario ) ? $scenario : '' );
 		$known    = array_keys( ScenarioStepRegistry::scenarios() );
 
