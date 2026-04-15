@@ -134,6 +134,18 @@ final class SafeSettingsResolver {
 				);
 				continue;
 			}
+			if ( OptionKeys::SECTION_STEP_3 === $section_key ) {
+				$tree[ $section_key ] = array(
+					'weekday_rules' => array(
+						'pickup'                => array( 1, 2, 3, 4, 5, 6 ),
+						'krasnoyarsk_delivery'  => array( 1, 2, 3, 4, 5, 6 ),
+						'other_city_delivery'   => array( 1, 3, 5 ),
+					),
+					'holiday_dates' => array(),
+					'closed_dates'  => array(),
+				);
+				continue;
+			}
 			if ( OptionKeys::SECTION_PICKUP === $section_key ) {
 				$tree[ $section_key ] = array(
 					'enable_point_selection' => false,
