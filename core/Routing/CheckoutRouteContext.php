@@ -27,6 +27,15 @@ final class CheckoutRouteContext {
 			'is_plain_permalinks' => CheckoutPermalinkCompatibility::is_plain_permalinks(),
 		);
 
+		$flow = CheckoutSessionService::get_flow();
+		if ( ! empty( $flow ) ) {
+			$context['checkout_flow'] = array(
+				'context_id'   => isset( $flow['context_id'] ) ? (string) $flow['context_id'] : '',
+				'current_step' => isset( $flow['current_step'] ) ? (string) $flow['current_step'] : '',
+				'scenario'     => isset( $flow['scenario'] ) ? (string) $flow['scenario'] : '',
+			);
+		}
+
 		$lang = self::detect_current_language();
 		if ( null !== $lang ) {
 			$context['language'] = $lang;

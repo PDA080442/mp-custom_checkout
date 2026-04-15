@@ -11,6 +11,7 @@ use MP\CustomCheckout\DependencyFailureGuard;
 use MP\CustomCheckout\Routing\CheckoutEntryService;
 use MP\CustomCheckout\Routing\CheckoutPermalinkCompatibility;
 use MP\CustomCheckout\Routing\CheckoutRouteController;
+use MP\CustomCheckout\Routing\CheckoutSessionService;
 use MP\CustomCheckout\Routing\CheckoutSuccessController;
 use MP\CustomCheckout\Routing\CheckoutSuccessOrderReceivedRedirect;
 use MP\CustomCheckout\Routing\CheckoutSuccessRouteHooks;
@@ -53,6 +54,7 @@ final class PluginHooksRegistrar {
 		}
 
 		CheckoutEntryService::register();
+		CheckoutSessionService::register();
 		OrderMetaHooks::register();
 		EmailHooks::register();
 	}
