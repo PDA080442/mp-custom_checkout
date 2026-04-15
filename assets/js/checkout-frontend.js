@@ -172,6 +172,14 @@
 		};
 	}
 
+	function normalizeCartPayload(cartPayload) {
+		var safePayload = cartPayload && typeof cartPayload === 'object' ? cartPayload : {};
+		return {
+			items: Array.isArray(safePayload.items) ? safePayload.items : [],
+			summary: (safePayload.summary && typeof safePayload.summary === 'object') ? safePayload.summary : {}
+		};
+	}
+
 	function getStepIndex(steps, stepId) {
 		var i;
 		for (i = 0; i < steps.length; i += 1) {
@@ -217,9 +225,12 @@
 		return stepId;
 	}
 
-	function syncFromFlow(state, flow) {
+	function syncFromFlow(state, flow, cartPayload) {
 		var nextFlow = flow || {};
 		state.context.checkout_flow = nextFlow;
+		if (cartPayload && typeof cartPayload === 'object') {
+			state.context.cart = normalizeCartPayload(cartPayload);
+		}
 		state.flowContextId = nextFlow.context_id || state.flowContextId || '';
 		state.frontendStore = createFrontendStore(
 			nextFlow,
@@ -231,9 +242,9 @@
 		state.frontendStore.runtime.blocked = false;
 		state.frontendStore.runtime.dirty = false;
 		state.frontendStore.runtime.lastSyncAt = Date.now();
-		var contextCart = state.context && state.context.cart ? state.context.cart : {};
-		state.frontendStore.cart.items = Array.isArray(contextCart.items) ? contextCart.items : [];
-		state.frontendStore.cart.summary = contextCart.summary || {};
+		var contextCart = normalizeCartPayload(state.context && state.context.cart ? state.context.cart : {});
+		state.frontendStore.cart.items = contextCart.items;
+		state.frontendStore.cart.summary = contextCart.summary;
 	}
 
 	function setRuntimeFlag(state, key, value) {
@@ -248,7 +259,7 @@
 			if (!response || !response.success || !response.data || !response.data.flow) {
 				return;
 			}
-			syncFromFlow(state, response.data.flow);
+			syncFromFlow(state, response.data.flow, response.data.cart || {});
 			var rehydrated = buildState(state.context);
 			state.visibleSteps = rehydrated.visibleSteps;
 			state.currentStepId = rehydrated.currentStepId;
@@ -519,6 +530,8 @@
 			var variationText = item.variation_text ? String(item.variation_text) : '';
 			var imageUrl = item.image_url ? String(item.image_url) : '';
 			var qty = Number(item.quantity || 0);
+			var minQty = Number(item.min_quantity || 1);
+			var maxQty = Number(item.max_quantity || 9999);
 			var subtotal = item.line_subtotal ? String(item.line_subtotal) : '';
 
 			html += '<article class="mp-cc-cart-item"';
@@ -547,7 +560,11 @@
 			}
 			html += '</dl>';
 			html += '<div class="mp-cc-cart-item__footer">';
-			html += '<span class="mp-cc-cart-item__qty" data-cart-qty="' + escapeHtml(qty) + '">' + escapeHtml(qty) + ' ×</span>';
+			html += '<div class="mp-cc-cart-item__qty-controls" role="group" aria-label="' + escapeHtml(getUiText('step_1.positions_count', 'Quantity')) + '">';
+			html += '<button type="button" class="mp-cc-qty-btn" data-qty-action="decrease" data-cart-qty-btn="-1" aria-label="Decrease quantity"' + (qty <= minQty ? ' disabled' : '') + '>−</button>';
+			html += '<input class="mp-cc-qty-input" type="number" inputmode="numeric" min="' + escapeHtml(minQty) + '" max="' + escapeHtml(maxQty) + '" step="1" value="' + escapeHtml(qty) + '" data-cart-qty-input="1" aria-label="Quantity" />';
+			html += '<button type="button" class="mp-cc-qty-btn" data-qty-action="increase" data-cart-qty-btn="+1" aria-label="Increase quantity"' + (qty >= maxQty ? ' disabled' : '') + '>+</button>';
+			html += '</div>';
 			html += '<span class="mp-cc-cart-item__subtotal">' + (subtotal || '—') + '</span>';
 			html += '</div>';
 			html += '</div>';
@@ -592,8 +609,9 @@
 		var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
 		var total = state.visibleSteps.length;
 		var snapshot = state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart.snapshot || {} : {};
-		var itemsCount = snapshot.items_count || 0;
-		var totalText = snapshot.total || '';
+		var cartSummary = state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart.summary || {} : {};
+		var itemsCount = cartSummary.items_count || snapshot.items_count || 0;
+		var totalText = snapshot.total || cartSummary.subtotal || '';
 		var html = '';
 
 		html += '<section class="mp-cc-summary-card" aria-label="Order summary panel">';
@@ -705,6 +723,124 @@
 				return;
 			}
 			setCurrentStep(state, $app, String(target));
+		});
+
+		$app.find('[data-cart-qty-btn]').off('click').on('click', function () {
+			var $btn = $(this);
+			var $item = $btn.closest('[data-cart-item-key]');
+			if (!$item.length) {
+				return;
+			}
+			var $input = $item.find('[data-cart-qty-input]');
+			var current = Number($input.val() || 0);
+			var delta = Number($btn.data('cart-qty-btn') || 0);
+			if (!delta) {
+				return;
+			}
+			applyQuantityChange(state, $app, $item, current + delta);
+		});
+
+		$app.find('[data-cart-qty-input]').off('change blur').on('change blur', function () {
+			var $input = $(this);
+			var $item = $input.closest('[data-cart-item-key]');
+			if (!$item.length) {
+				return;
+			}
+			applyQuantityChange(state, $app, $item, Number($input.val() || 0));
+		});
+	}
+
+	function clampQuantity(nextQty, minQty, maxQty) {
+		var safeQty = Number(nextQty || 0);
+		if (!Number.isFinite(safeQty)) {
+			safeQty = minQty;
+		}
+		safeQty = Math.round(safeQty);
+		if (safeQty < minQty) {
+			safeQty = minQty;
+		}
+		if (safeQty > maxQty) {
+			safeQty = maxQty;
+		}
+		return safeQty;
+	}
+
+	function updateLocalCartItem(state, itemKey, quantity, lineSubtotal) {
+		if (!state || !state.frontendStore || !state.frontendStore.cart || !Array.isArray(state.frontendStore.cart.items)) {
+			return;
+		}
+		for (var i = 0; i < state.frontendStore.cart.items.length; i += 1) {
+			if (String(state.frontendStore.cart.items[i].key || '') === String(itemKey || '')) {
+				state.frontendStore.cart.items[i].quantity = quantity;
+				if (typeof lineSubtotal === 'string' && lineSubtotal !== '') {
+					state.frontendStore.cart.items[i].line_subtotal = lineSubtotal;
+				}
+				break;
+			}
+		}
+	}
+
+	function getLocalCartItem(state, itemKey) {
+		if (!state || !state.frontendStore || !state.frontendStore.cart || !Array.isArray(state.frontendStore.cart.items)) {
+			return null;
+		}
+		for (var i = 0; i < state.frontendStore.cart.items.length; i += 1) {
+			if (String(state.frontendStore.cart.items[i].key || '') === String(itemKey || '')) {
+				return state.frontendStore.cart.items[i];
+			}
+		}
+		return null;
+	}
+
+	function applyQuantityChange(state, $app, $item, requestedQty) {
+		var itemKey = String($item.data('cart-item-key') || '');
+		var $input = $item.find('[data-cart-qty-input]');
+		var $decrease = $item.find('[data-qty-action="decrease"]');
+		var $increase = $item.find('[data-qty-action="increase"]');
+		if (!itemKey || !$input.length) {
+			return;
+		}
+
+		var minQty = Number($input.attr('min') || 1);
+		var maxQty = Number($input.attr('max') || 9999);
+		var localItem = getLocalCartItem(state, itemKey);
+		var prevQty = Number(localItem && localItem.quantity ? localItem.quantity : minQty);
+		var nextQty = clampQuantity(requestedQty, minQty, maxQty);
+		if (nextQty === prevQty || state.isTransitioning) {
+			$input.val(nextQty);
+			return;
+		}
+		$item.addClass('is-updating');
+		$input.val(nextQty);
+		$decrease.prop('disabled', nextQty <= minQty);
+		$increase.prop('disabled', nextQty >= maxQty);
+		updateLocalCartItem(state, itemKey, nextQty, '');
+		render(state, $app);
+
+		postCheckout('update_quantity', {
+			context_id: state.flowContextId,
+			item_key: itemKey,
+			quantity: nextQty
+		}).then(function (response) {
+			if (!response || !response.success || !response.data) {
+				throw new Error('update_quantity_failed');
+			}
+			var payload = response.data;
+			var nextFlow = payload.flow || state.context.checkout_flow || {};
+			var nextCart = normalizeCartPayload(payload.cart || {});
+			syncFromFlow(state, nextFlow, nextCart);
+			if (payload.item && payload.item.key) {
+				updateLocalCartItem(state, payload.item.key, Number(payload.item.quantity || nextQty), String(payload.item.line_subtotal || ''));
+			}
+			render(state, $app);
+		}).fail(function (xhr) {
+			var errorPayload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
+			var message = errorPayload.message || 'Не удалось обновить количество. Попробуйте снова.';
+			updateLocalCartItem(state, itemKey, prevQty, '');
+			notify(message, 'error');
+			syncStoreWithBackend(state, $app);
+		}).always(function () {
+			$item.removeClass('is-updating');
 		});
 	}
 
