@@ -31,6 +31,28 @@ final class CheckoutRouteController {
 			return;
 		}
 
+		$step_manager = new CheckoutStepManager();
+		$requested_step = isset( $_GET['step'] ) ? sanitize_key( wp_unslash( $_GET['step'] ) ) : '';
+		if ( '' !== $requested_step ) {
+			$resolved_step = $step_manager->resolve_requested_step( $requested_step );
+			if ( null === $resolved_step ) {
+				CheckoutRouteLogger::log_failure(
+					'invalid_step_navigation',
+					array(
+						'requested_step' => $requested_step,
+						'current_step'   => $step_manager->get_current_step_id(),
+					)
+				);
+
+				$fallback_step = $step_manager->get_current_step_id();
+				$query_args    = is_string( $fallback_step ) && '' !== $fallback_step ? array( 'step' => $fallback_step ) : array();
+				wp_safe_redirect( CheckoutRouteConfig::get_checkout_url( $query_args ) );
+				exit;
+			}
+
+			$step_manager->set_current_step_id( $resolved_step );
+		}
+
 		$context = CheckoutRouteContext::collect();
 
 		/**

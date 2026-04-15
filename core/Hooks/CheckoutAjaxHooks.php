@@ -9,6 +9,7 @@ namespace MP\CustomCheckout\Hooks;
 
 use MP\CustomCheckout\DependencyFailureGuard;
 use MP\CustomCheckout\Routing\CheckoutSessionService;
+use MP\CustomCheckout\Routing\CheckoutStepManager;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -65,6 +66,14 @@ final class CheckoutAjaxHooks {
 			if ( '' === $step_id ) {
 				wp_send_json_error(
 					array( 'code' => 'invalid_step_id', 'message' => __( 'Не указан шаг checkout.', 'mp-custom-checkout' ) ),
+					400
+				);
+			}
+
+			$manager = new CheckoutStepManager();
+			if ( ! $manager->can_navigate_to( $step_id ) ) {
+				wp_send_json_error(
+					array( 'code' => 'invalid_step_navigation', 'message' => __( 'Переход на указанный шаг недоступен.', 'mp-custom-checkout' ) ),
 					400
 				);
 			}

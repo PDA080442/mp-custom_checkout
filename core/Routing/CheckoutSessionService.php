@@ -9,6 +9,7 @@ namespace MP\CustomCheckout\Routing;
 
 use MP\CustomCheckout\DependencyFailureGuard;
 use MP\CustomCheckout\Hooks\CheckoutRouteHooks;
+use MP\CustomCheckout\Settings\SafeSettingsResolver;
 use MP\CustomCheckout\Settings\ScenarioStepRegistry;
 
 defined( 'ABSPATH' ) || exit;
@@ -24,7 +25,7 @@ final class CheckoutSessionService {
 	 * Подписка на lifecycle checkout-flow.
 	 */
 	public static function register(): void {
-		add_action( 'template_redirect', array( __CLASS__, 'maybe_initialize_context' ), 7 );
+		add_action( 'template_redirect', array( __CLASS__, 'maybe_initialize_context' ), 4 );
 		add_action( 'woocommerce_thankyou', array( __CLASS__, 'clear_on_success_thankyou' ), 20, 1 );
 		add_action( 'mp_custom_checkout_success_screen', array( __CLASS__, 'clear_on_success' ), 5, 2 );
 		add_action( 'woocommerce_cart_emptied', array( __CLASS__, 'clear_on_abandoned_flow' ), 20 );
@@ -48,6 +49,12 @@ final class CheckoutSessionService {
 			}
 		} else {
 			$flow['updated_at'] = time();
+		}
+
+		$step_manager = new CheckoutStepManager( $flow );
+		$active_step  = $step_manager->get_current_step_id();
+		if ( is_string( $active_step ) && '' !== $active_step ) {
+			$flow['current_step'] = $active_step;
 		}
 
 		self::persist_flow( $flow );
@@ -171,8 +178,9 @@ final class CheckoutSessionService {
 	 * @return array<string, mixed>
 	 */
 	private static function build_initial_flow(): array {
-		$step_order = ScenarioStepRegistry::default_step_order();
+		$step_order = self::get_initial_step_order();
 		$first_step = isset( $step_order[0] ) && is_string( $step_order[0] ) ? $step_order[0] : ScenarioStepRegistry::STEP_CART;
+		$scenario   = self::get_initial_scenario();
 
 		$flow = array(
 			'context_id'    => wp_generate_uuid4(),
@@ -180,7 +188,7 @@ final class CheckoutSessionService {
 			'updated_at'    => time(),
 			'current_step'  => $first_step,
 			'step_order'    => $step_order,
-			'scenario'      => ScenarioStepRegistry::SCENARIO_PICKUP,
+			'scenario'      => $scenario,
 			'snapshot'      => self::build_snapshot(),
 			'answers'       => array(),
 		);
@@ -293,5 +301,37 @@ final class CheckoutSessionService {
 			sprintf( '[checkout_session] %s', $code ),
 			array( 'code' => $code )
 		);
+	}
+
+	/**
+	 * @return array<int, string>
+	 */
+	private static function get_initial_step_order(): array {
+		$stored = SafeSettingsResolver::get( 'registry.step_order', ScenarioStepRegistry::default_step_order() );
+		if ( ! is_array( $stored ) ) {
+			return ScenarioStepRegistry::default_step_order();
+		}
+
+		$order = array();
+		foreach ( $stored as $item ) {
+			if ( ! is_string( $item ) ) {
+				continue;
+			}
+			$key = sanitize_key( $item );
+			if ( '' !== $key ) {
+				$order[] = $key;
+			}
+		}
+
+		$order = array_values( array_unique( $order ) );
+		return ! empty( $order ) ? $order : ScenarioStepRegistry::default_step_order();
+	}
+
+	private static function get_initial_scenario(): string {
+		$scenario = SafeSettingsResolver::get( 'registry.default_scenario', ScenarioStepRegistry::SCENARIO_PICKUP );
+		$scenario = sanitize_key( is_string( $scenario ) ? $scenario : '' );
+		$known    = array_keys( ScenarioStepRegistry::scenarios() );
+
+		return in_array( $scenario, $known, true ) ? $scenario : ScenarioStepRegistry::SCENARIO_PICKUP;
 	}
 }
