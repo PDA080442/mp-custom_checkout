@@ -67,6 +67,11 @@
 		var copy = source.copy || {};
 		var helperMap = copy.helper_by_scenario || {};
 		var errors = copy.errors || {};
+		var minLead = source.min_lead_time_days || {};
+		var weekdayRules = source.weekday_rules || {};
+		var style = source.calendar_style || {};
+		var holidayDates = Array.isArray(source.holiday_dates) ? source.holiday_dates : [];
+		var closedDates = Array.isArray(source.closed_dates) ? source.closed_dates : [];
 		return {
 			previewEnabled: Boolean(copy.admin_preview && copy.admin_preview.enabled !== false),
 			title: String(copy.title || 'Выберите дату получения'),
@@ -78,6 +83,24 @@
 			errors: {
 				invalidDate: String(errors.invalid_date || ''),
 				emptyDate: String(errors.empty_date || '')
+			},
+			minLeadTime: {
+				pickup: Number(minLead.pickup || 1),
+				krasnoyarsk_delivery: Number(minLead.krasnoyarsk_delivery || 1),
+				other_city_delivery: Number(minLead.other_city_delivery || 2)
+			},
+			weekdayRules: {
+				pickup: Array.isArray(weekdayRules.pickup) ? weekdayRules.pickup : [],
+				krasnoyarsk_delivery: Array.isArray(weekdayRules.krasnoyarsk_delivery) ? weekdayRules.krasnoyarsk_delivery : [],
+				other_city_delivery: Array.isArray(weekdayRules.other_city_delivery) ? weekdayRules.other_city_delivery : []
+			},
+			holidayDates: holidayDates,
+			closedDates: closedDates,
+			calendarStyle: {
+				density: String(style.density || 'comfortable'),
+				dayShape: String(style.day_shape || 'rounded'),
+				highlightStyle: String(style.highlight_style || 'accent'),
+				showWeekendTint: Boolean(style.show_weekend_tint !== false)
 			}
 		};
 	}
@@ -172,6 +195,7 @@
 	}
 
 	function renderDatePreview(config) {
+		var blockedTotal = config.holidayDates.length + config.closedDates.length;
 		var html = '';
 		html += '<section class="mp-cc-admin-preview mp-cc-admin-preview--date" id="mp-cc-admin-date-preview">';
 		html += '<h2>Date Step Preview</h2>';
@@ -184,6 +208,12 @@
 		html += '<div class="mp-cc-admin-preview__date-errors">';
 		html += '<p><strong>Invalid date:</strong> ' + escapeHtml(config.errors.invalidDate || '—') + '</p>';
 		html += '<p><strong>Empty date:</strong> ' + escapeHtml(config.errors.emptyDate || '—') + '</p>';
+		html += '</div>';
+		html += '<div class="mp-cc-admin-preview__date-rules">';
+		html += '<p><strong>Lead time:</strong> pickup ' + escapeHtml(config.minLeadTime.pickup) + 'd, krasnoyarsk ' + escapeHtml(config.minLeadTime.krasnoyarsk_delivery) + 'd, other city ' + escapeHtml(config.minLeadTime.other_city_delivery) + 'd</p>';
+		html += '<p><strong>Weekdays:</strong> pickup [' + escapeHtml(config.weekdayRules.pickup.join(',')) + '] | krasnoyarsk [' + escapeHtml(config.weekdayRules.krasnoyarsk_delivery.join(',')) + '] | other city [' + escapeHtml(config.weekdayRules.other_city_delivery.join(',')) + ']</p>';
+		html += '<p><strong>Blocked dates:</strong> holidays ' + escapeHtml(config.holidayDates.length) + ', closed ' + escapeHtml(config.closedDates.length) + ', total ' + escapeHtml(blockedTotal) + '</p>';
+		html += '<p><strong>Calendar style:</strong> ' + escapeHtml(config.calendarStyle.density) + ', ' + escapeHtml(config.calendarStyle.dayShape) + ', ' + escapeHtml(config.calendarStyle.highlightStyle) + ', weekend tint: ' + escapeHtml(config.calendarStyle.showWeekendTint ? 'on' : 'off') + '</p>';
 		html += '</div>';
 		html += '</section>';
 		return html;
@@ -248,6 +278,13 @@
 		cfg.helperByScenario.other_city_delivery = readFormValue('mp_custom_checkout_settings[step_3][copy][helper_by_scenario][other_city_delivery]', cfg.helperByScenario.other_city_delivery);
 		cfg.errors.invalidDate = readFormValue('mp_custom_checkout_settings[step_3][copy][errors][invalid_date]', cfg.errors.invalidDate);
 		cfg.errors.emptyDate = readFormValue('mp_custom_checkout_settings[step_3][copy][errors][empty_date]', cfg.errors.emptyDate);
+		cfg.minLeadTime.pickup = Number(readFormValue('mp_custom_checkout_settings[step_3][min_lead_time_days][pickup]', cfg.minLeadTime.pickup));
+		cfg.minLeadTime.krasnoyarsk_delivery = Number(readFormValue('mp_custom_checkout_settings[step_3][min_lead_time_days][krasnoyarsk_delivery]', cfg.minLeadTime.krasnoyarsk_delivery));
+		cfg.minLeadTime.other_city_delivery = Number(readFormValue('mp_custom_checkout_settings[step_3][min_lead_time_days][other_city_delivery]', cfg.minLeadTime.other_city_delivery));
+		cfg.calendarStyle.density = readFormValue('mp_custom_checkout_settings[step_3][calendar_style][density]', cfg.calendarStyle.density);
+		cfg.calendarStyle.dayShape = readFormValue('mp_custom_checkout_settings[step_3][calendar_style][day_shape]', cfg.calendarStyle.dayShape);
+		cfg.calendarStyle.highlightStyle = readFormValue('mp_custom_checkout_settings[step_3][calendar_style][highlight_style]', cfg.calendarStyle.highlightStyle);
+		cfg.calendarStyle.showWeekendTint = Boolean(readFormValue('mp_custom_checkout_settings[step_3][calendar_style][show_weekend_tint]', cfg.calendarStyle.showWeekendTint));
 		return cfg;
 	}
 

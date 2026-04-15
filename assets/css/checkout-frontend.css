@@ -306,6 +306,11 @@
 	background: rgba(255, 255, 255, 0.7);
 }
 
+.mp-cc-date-step--compact {
+	gap: 0.5rem;
+	padding: 0.65rem;
+}
+
 .mp-cc-date-step__header {
 	display: flex;
 	align-items: baseline;
@@ -382,6 +387,14 @@
 	transition: border-color var(--mp-cc-transition-duration) ease, background var(--mp-cc-transition-duration) ease, box-shadow var(--mp-cc-transition-duration) ease;
 }
 
+.mp-cc-date-step--shape-pill .mp-cc-calendar__day {
+	border-radius: 999px;
+}
+
+.mp-cc-date-step--shape-square .mp-cc-calendar__day {
+	border-radius: 2px;
+}
+
 .mp-cc-calendar__day:hover:not(:disabled) {
 	border-color: var(--mp-cc-color-accent);
 	background: #f8f8f8;
@@ -399,6 +412,12 @@
 	box-shadow: 0 8px 18px rgba(17, 17, 17, 0.2);
 }
 
+.mp-cc-date-step--highlight-subtle .mp-cc-calendar__day.is-selected {
+	background: rgba(17, 17, 17, 0.08);
+	color: var(--mp-cc-color-text);
+	box-shadow: none;
+}
+
 .mp-cc-calendar__day.is-outside {
 	opacity: 0.4;
 }
@@ -408,6 +427,10 @@
 	opacity: 0.35;
 	cursor: not-allowed;
 	background: rgba(17, 17, 17, 0.02);
+}
+
+.mp-cc-date-step--weekend-tint .mp-cc-calendar__day.is-weekend:not(.is-disabled):not(.is-selected) {
+	background: rgba(17, 17, 17, 0.03);
 }
 
 .mp-cc-date-step__helper {

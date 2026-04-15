@@ -136,6 +136,16 @@ final class SafeSettingsResolver {
 			}
 			if ( OptionKeys::SECTION_STEP_3 === $section_key ) {
 				$tree[ $section_key ] = array(
+					'min_lead_time_days' => array(
+						'pickup'               => 1,
+						'krasnoyarsk_delivery' => 1,
+						'other_city_delivery'  => 2,
+					),
+					'max_days_ahead' => array(
+						'pickup'               => 14,
+						'krasnoyarsk_delivery' => 21,
+						'other_city_delivery'  => 30,
+					),
 					'copy' => array(
 						'title' => 'Выберите дату получения',
 						'helper_by_scenario' => array(
@@ -150,6 +160,12 @@ final class SafeSettingsResolver {
 						'admin_preview' => array(
 							'enabled' => true,
 						),
+					),
+					'calendar_style' => array(
+						'density'          => 'comfortable',
+						'day_shape'        => 'rounded',
+						'highlight_style'  => 'accent',
+						'show_weekend_tint'=> true,
 					),
 					'weekday_rules' => array(
 						'pickup'                => array( 1, 2, 3, 4, 5, 6 ),
