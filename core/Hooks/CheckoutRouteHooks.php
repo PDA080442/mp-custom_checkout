@@ -8,6 +8,8 @@
 namespace MP\CustomCheckout\Hooks;
 
 use MP\CustomCheckout\Routing\CheckoutRouteConfig;
+use MP\CustomCheckout\Settings\DefaultFeatureFlagsRegistry;
+use MP\CustomCheckout\Settings\FeatureFlagResolver;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -65,6 +67,12 @@ final class CheckoutRouteHooks {
 	public static function template_redirect(): void {
 		if ( ! self::is_checkout_route() ) {
 			return;
+		}
+
+		if ( ! FeatureFlagResolver::is_enabled( DefaultFeatureFlagsRegistry::FLAG_CUSTOM_CHECKOUT_ROUTE, true ) ) {
+			$url = function_exists( 'wc_get_checkout_url' ) ? wc_get_checkout_url() : home_url( '/' );
+			wp_safe_redirect( $url );
+			exit;
 		}
 
 		do_action( 'mp_custom_checkout_route_dispatch' );

@@ -7,6 +7,8 @@
 
 namespace MP\CustomCheckout\Routing;
 
+use MP\CustomCheckout\Settings\FeatureFlagResolver;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
@@ -25,14 +27,23 @@ final class CheckoutRouteContext {
 			'site_locale'     => get_locale(),
 			'is_admin'        => is_admin(),
 			'is_plain_permalinks' => CheckoutPermalinkCompatibility::is_plain_permalinks(),
+			'feature_flags'   => FeatureFlagResolver::all(),
 		);
 
-		$flow = CheckoutSessionService::get_flow();
+		$flow = CheckoutSessionService::get_public_state();
 		if ( ! empty( $flow ) ) {
+			$step_manager = new CheckoutStepManager( $flow );
+			$scenario     = isset( $flow['scenario'] ) ? (string) $flow['scenario'] : '';
+			$scenario     = CheckoutScenarioRules::sanitize_scenario( $scenario );
 			$context['checkout_flow'] = array(
 				'context_id'   => isset( $flow['context_id'] ) ? (string) $flow['context_id'] : '',
-				'current_step' => isset( $flow['current_step'] ) ? (string) $flow['current_step'] : '',
-				'scenario'     => isset( $flow['scenario'] ) ? (string) $flow['scenario'] : '',
+				'current_step' => (string) ( $step_manager->get_current_step_id() ?? '' ),
+				'scenario'     => $scenario,
+				'answers'      => isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : array(),
+				'expires_at'   => isset( $flow['expires_at'] ) ? (int) $flow['expires_at'] : 0,
+				'steps'        => array_values( $step_manager->get_registered_steps() ),
+				'visible_steps' => $step_manager->get_visible_step_ids(),
+				'scenario_rules' => CheckoutScenarioRules::build( $scenario ),
 			);
 		}
 

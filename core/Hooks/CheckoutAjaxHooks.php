@@ -9,6 +9,7 @@ namespace MP\CustomCheckout\Hooks;
 
 use MP\CustomCheckout\DependencyFailureGuard;
 use MP\CustomCheckout\Routing\CheckoutSessionService;
+use MP\CustomCheckout\Routing\CheckoutStepManager;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -60,11 +61,26 @@ final class CheckoutAjaxHooks {
 	 * Сохранение состояния checkout-flow между шагами.
 	 */
 	private static function handle_session_sub_action( string $sub_action ): bool {
+		if ( self::is_session_sub_action( $sub_action ) && ! self::validate_context_id() ) {
+			wp_send_json_error(
+				array( 'code' => 'stale_context', 'message' => __( 'Сессия checkout устарела. Обновите страницу.', 'mp-custom-checkout' ) ),
+				409
+			);
+		}
+
 		if ( 'session_set_step' === $sub_action ) {
 			$step_id = isset( $_POST['step_id'] ) ? sanitize_key( wp_unslash( $_POST['step_id'] ) ) : '';
 			if ( '' === $step_id ) {
 				wp_send_json_error(
 					array( 'code' => 'invalid_step_id', 'message' => __( 'Не указан шаг checkout.', 'mp-custom-checkout' ) ),
+					400
+				);
+			}
+
+			$manager = new CheckoutStepManager();
+			if ( ! $manager->can_navigate_to( $step_id ) ) {
+				wp_send_json_error(
+					array( 'code' => 'invalid_step_navigation', 'message' => __( 'Переход на указанный шаг недоступен.', 'mp-custom-checkout' ) ),
 					400
 				);
 			}
@@ -99,11 +115,29 @@ final class CheckoutAjaxHooks {
 			);
 		}
 
+		if ( 'session_set_scenario' === $sub_action ) {
+			$scenario = isset( $_POST['scenario'] ) ? sanitize_key( wp_unslash( $_POST['scenario'] ) ) : '';
+			if ( '' === $scenario ) {
+				wp_send_json_error(
+					array( 'code' => 'invalid_scenario', 'message' => __( 'Не указан сценарий оформления.', 'mp-custom-checkout' ) ),
+					400
+				);
+			}
+
+			CheckoutSessionService::set_scenario( $scenario );
+			wp_send_json_success(
+				array(
+					'sub_action' => $sub_action,
+					'scenario'   => $scenario,
+				)
+			);
+		}
+
 		if ( 'session_get_state' === $sub_action ) {
 			wp_send_json_success(
 				array(
 					'sub_action' => $sub_action,
-					'flow'       => CheckoutSessionService::get_flow(),
+					'flow'       => CheckoutSessionService::get_public_state(),
 				)
 			);
 		}
@@ -119,5 +153,23 @@ final class CheckoutAjaxHooks {
 		}
 
 		return false;
+	}
+
+	private static function is_session_sub_action( string $sub_action ): bool {
+		return in_array(
+			$sub_action,
+			array( 'session_set_step', 'session_set_answers', 'session_set_scenario', 'session_get_state', 'session_abandon' ),
+			true
+		);
+	}
+
+	private static function validate_context_id(): bool {
+		$posted_context = isset( $_POST['context_id'] ) ? sanitize_text_field( wp_unslash( $_POST['context_id'] ) ) : '';
+		$flow           = CheckoutSessionService::get_public_state();
+		if ( empty( $flow ) ) {
+			return true;
+		}
+
+		return CheckoutSessionService::validate_context_id( $flow, $posted_context );
 	}
 }
