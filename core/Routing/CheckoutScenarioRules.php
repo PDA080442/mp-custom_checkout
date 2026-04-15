@@ -104,30 +104,7 @@ final class CheckoutScenarioRules {
 	 * @return array<string, mixed>
 	 */
 	private static function date_rules( string $scenario ): array {
-		if ( ScenarioStepRegistry::SCENARIO_PICKUP === $scenario ) {
-			return array(
-				'mode'             => 'pickup_slots',
-				'lead_time_days'   => 0,
-				'allow_weekends'   => true,
-				'max_days_ahead'   => 14,
-			);
-		}
-
-		if ( ScenarioStepRegistry::SCENARIO_KRASNOYARSK_DELIVERY === $scenario ) {
-			return array(
-				'mode'             => 'city_delivery_slots',
-				'lead_time_days'   => 1,
-				'allow_weekends'   => true,
-				'max_days_ahead'   => 21,
-			);
-		}
-
-		return array(
-			'mode'             => 'intercity_delivery_windows',
-			'lead_time_days'   => 2,
-			'allow_weekends'   => false,
-			'max_days_ahead'   => 30,
-		);
+		return CheckoutDateAvailabilityEngine::build_rules( $scenario );
 	}
 
 	/**

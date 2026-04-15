@@ -134,6 +134,49 @@ final class SafeSettingsResolver {
 				);
 				continue;
 			}
+			if ( OptionKeys::SECTION_STEP_3 === $section_key ) {
+				$tree[ $section_key ] = array(
+					'min_lead_time_days' => array(
+						'pickup'               => 1,
+						'krasnoyarsk_delivery' => 1,
+						'other_city_delivery'  => 2,
+					),
+					'max_days_ahead' => array(
+						'pickup'               => 14,
+						'krasnoyarsk_delivery' => 21,
+						'other_city_delivery'  => 30,
+					),
+					'copy' => array(
+						'title' => 'Выберите дату получения',
+						'helper_by_scenario' => array(
+							'pickup'               => 'Выберите удобную дату самовывоза.',
+							'krasnoyarsk_delivery' => 'Выберите дату доставки по Красноярску.',
+							'other_city_delivery'  => 'Выберите дату отправки в другой город.',
+						),
+						'errors' => array(
+							'invalid_date' => 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.',
+							'empty_date'   => 'Выберите дату, чтобы продолжить.',
+						),
+						'admin_preview' => array(
+							'enabled' => true,
+						),
+					),
+					'calendar_style' => array(
+						'density'          => 'comfortable',
+						'day_shape'        => 'rounded',
+						'highlight_style'  => 'accent',
+						'show_weekend_tint'=> true,
+					),
+					'weekday_rules' => array(
+						'pickup'                => array( 1, 2, 3, 4, 5, 6 ),
+						'krasnoyarsk_delivery'  => array( 1, 2, 3, 4, 5, 6 ),
+						'other_city_delivery'   => array( 1, 3, 5 ),
+					),
+					'holiday_dates' => array(),
+					'closed_dates'  => array(),
+				);
+				continue;
+			}
 			if ( OptionKeys::SECTION_PICKUP === $section_key ) {
 				$tree[ $section_key ] = array(
 					'enable_point_selection' => false,

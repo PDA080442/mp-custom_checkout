@@ -198,7 +198,19 @@ final class CheckoutSessionService {
 		$storage_key = self::normalize_answers_storage_key( $step_id );
 		$current     = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : self::default_answers_structure();
 		$current     = self::merge_answers_with_defaults( $current );
-		$current[ $storage_key ] = self::sanitize_recursive( $answers );
+		$sanitized_answers       = self::sanitize_recursive( $answers );
+		if ( 'date_conditions' === $storage_key ) {
+			$selected_date = isset( $sanitized_answers['selected_date'] ) ? (string) $sanitized_answers['selected_date'] : '';
+			if ( '' === $selected_date ) {
+				do_action(
+					'mp_custom_checkout_log',
+					'warning',
+					'[date_sync] session_save_without_selected_date',
+					array( 'step_id' => $step_id )
+				);
+			}
+		}
+		$current[ $storage_key ] = $sanitized_answers;
 		$flow['answers']         = $current;
 		$flow['updated_at']          = time();
 

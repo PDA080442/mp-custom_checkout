@@ -150,6 +150,64 @@
 		}, source);
 	}
 
+	function getStepThreeConfig() {
+		var source = (window.mpCcCheckout && window.mpCcCheckout.stepThreeConfig && typeof window.mpCcCheckout.stepThreeConfig === 'object')
+			? window.mpCcCheckout.stepThreeConfig
+			: {};
+		return $.extend(true, {
+			copy: {
+				title: 'Выберите дату получения',
+				helper_by_scenario: {
+					pickup: '',
+					krasnoyarsk_delivery: '',
+					other_city_delivery: ''
+				},
+				errors: {
+					invalid_date: 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.',
+					empty_date: 'Выберите дату, чтобы продолжить.'
+				},
+				admin_preview: {
+					enabled: true
+				}
+			}
+		}, source);
+	}
+
+	function getStepThreeTitle() {
+		var config = getStepThreeConfig();
+		var title = config && config.copy && config.copy.title ? String(config.copy.title) : '';
+		return title || getUiText('step_3.title', 'Выберите дату получения');
+	}
+
+	function getStepThreeHelperByScenario(scenario) {
+		var config = getStepThreeConfig();
+		var map = config && config.copy && config.copy.helper_by_scenario && typeof config.copy.helper_by_scenario === 'object'
+			? config.copy.helper_by_scenario
+			: {};
+		var value = map[scenario] ? String(map[scenario]) : '';
+		return value || getUiText('step_3.date_helper', 'Выберите дату из доступных слотов.');
+	}
+
+	function getStepThreeErrorCopy(key, fallback) {
+		var config = getStepThreeConfig();
+		var errors = config && config.copy && config.copy.errors && typeof config.copy.errors === 'object'
+			? config.copy.errors
+			: {};
+		var value = errors[key] ? String(errors[key]) : '';
+		return value || fallback;
+	}
+
+	function getStepThreeCalendarStyle() {
+		var config = getStepThreeConfig();
+		var style = config && config.calendar_style && typeof config.calendar_style === 'object' ? config.calendar_style : {};
+		return {
+			density: String(style.density || 'comfortable'),
+			dayShape: String(style.day_shape || 'rounded'),
+			highlightStyle: String(style.highlight_style || 'accent'),
+			showWeekendTint: style.show_weekend_tint !== false
+		};
+	}
+
 	function getPickupPointById(pointId) {
 		var pickup = getPickupConfig();
 		var points = pickup.points || [];
@@ -180,6 +238,255 @@
 		var rulesMap = map.rules || {};
 		var normalized = normalizeScenarioId(scenarioId);
 		return rulesMap[normalized] && typeof rulesMap[normalized] === 'object' ? rulesMap[normalized] : {};
+	}
+
+	function startOfDay(date) {
+		var value = new Date(date.getTime());
+		value.setHours(0, 0, 0, 0);
+		return value;
+	}
+
+	function addDays(date, days) {
+		var value = new Date(date.getTime());
+		value.setDate(value.getDate() + Number(days || 0));
+		return value;
+	}
+
+	function isoDate(date) {
+		return [
+			date.getFullYear(),
+			String(date.getMonth() + 1).padStart(2, '0'),
+			String(date.getDate()).padStart(2, '0')
+		].join('-');
+	}
+
+	function parseIsoDate(value) {
+		var raw = String(value || '');
+		var matched = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+		if (!matched) {
+			return null;
+		}
+		var year = Number(matched[1]);
+		var month = Number(matched[2]) - 1;
+		var day = Number(matched[3]);
+		var date = new Date(year, month, day);
+		if (date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) {
+			return null;
+		}
+		return startOfDay(date);
+	}
+
+	function formatIsoDateForUi(value) {
+		var date = parseIsoDate(value);
+		if (!date) {
+			return String(value || '');
+		}
+		return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+	}
+
+	function monthKeyFromDate(date) {
+		return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0')].join('-');
+	}
+
+	function parseMonthKey(value) {
+		var raw = String(value || '');
+		var matched = raw.match(/^(\d{4})-(\d{2})$/);
+		if (!matched) {
+			return null;
+		}
+		var year = Number(matched[1]);
+		var month = Number(matched[2]) - 1;
+		if (!Number.isFinite(year) || !Number.isFinite(month) || month < 0 || month > 11) {
+			return null;
+		}
+		return new Date(year, month, 1);
+	}
+
+	function buildDateCalendarModel(state) {
+		var scenario = normalizeScenarioId(state.frontendStore.fulfillment.scenario || '');
+		var rules = getScenarioRulesById(scenario);
+		var dateRules = rules.date_rules && typeof rules.date_rules === 'object' ? rules.date_rules : {};
+		var leadTime = Math.max(1, Number(dateRules.lead_time_days || 1));
+		var maxDays = Math.max(1, Number(dateRules.max_days_ahead || 14));
+		var allowWeekends = dateRules.allow_weekends !== false;
+		var today = startOfDay(new Date());
+		var minByRules = parseIsoDate(dateRules.min_date || '');
+		var maxByRules = parseIsoDate(dateRules.max_date || '');
+		var earliest = minByRules || addDays(today, leadTime);
+		var latest = maxByRules || addDays(today, maxDays);
+		if (earliest < addDays(today, 1)) {
+			earliest = addDays(today, 1);
+		}
+		if (latest < earliest) {
+			latest = earliest;
+		}
+		var allowedWeekdays = Array.isArray(dateRules.allowed_weekdays) ? dateRules.allowed_weekdays.map(function (value) {
+			return Number(value);
+		}).filter(function (value) {
+			return Number.isFinite(value) && value >= 0 && value <= 6;
+		}) : [];
+		if (!allowedWeekdays.length) {
+			allowedWeekdays = allowWeekends ? [0, 1, 2, 3, 4, 5, 6] : [1, 2, 3, 4, 5];
+		}
+		var blockedDates = Array.isArray(dateRules.blocked_dates) ? dateRules.blocked_dates : [];
+		var blockedMap = {};
+		for (var b = 0; b < blockedDates.length; b += 1) {
+			blockedMap[String(blockedDates[b] || '')] = true;
+		}
+		var availableDates = Array.isArray(dateRules.available_dates) ? dateRules.available_dates : [];
+		var availableMap = {};
+		for (var a = 0; a < availableDates.length; a += 1) {
+			availableMap[String(availableDates[a] || '')] = true;
+		}
+		var hasServerAvailability = availableDates.length > 0;
+		var firstAvailable = null;
+		var pointer = new Date(earliest.getTime());
+		while (pointer <= latest) {
+			var pointerIso = isoDate(pointer);
+			var pointerWeekday = pointer.getDay();
+			var allowedByWeekday = allowedWeekdays.indexOf(pointerWeekday) > -1;
+			var allowedByServer = !hasServerAvailability || Boolean(availableMap[pointerIso]);
+			var allowedByBlocked = !blockedMap[pointerIso];
+			if (allowedByWeekday && allowedByServer && allowedByBlocked) {
+				firstAvailable = new Date(pointer.getTime());
+				break;
+			}
+			pointer = addDays(pointer, 1);
+		}
+		var hasAnyAvailable = Boolean(firstAvailable);
+		if (!firstAvailable) {
+			firstAvailable = new Date(earliest.getTime());
+		}
+		var earliestMonth = new Date(earliest.getFullYear(), earliest.getMonth(), 1);
+		var latestMonth = new Date(latest.getFullYear(), latest.getMonth(), 1);
+		var dateStore = state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.date
+			? state.frontendStore.fulfillment.date
+			: {};
+		var preferredMonth = parseMonthKey(dateStore.calendar_month || '');
+		var monthStart = preferredMonth ? preferredMonth : new Date(earliestMonth.getTime());
+		if (monthStart < earliestMonth) {
+			monthStart = new Date(earliestMonth.getTime());
+		}
+		if (monthStart > latestMonth) {
+			monthStart = new Date(latestMonth.getTime());
+		}
+		var monthLabel = monthStart.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+		var selectedDate = String(dateStore.selected_date || '');
+		var selected = parseIsoDate(selectedDate);
+		if (!selected || selected < earliest || selected > latest || allowedWeekdays.indexOf(selected.getDay()) === -1 || blockedMap[selectedDate] || (hasServerAvailability && !availableMap[selectedDate])) {
+			selected = firstAvailable;
+			selectedDate = isoDate(firstAvailable);
+		}
+		if (!hasAnyAvailable) {
+			selectedDate = '';
+		}
+
+		var gridStart = addDays(monthStart, -((monthStart.getDay() + 6) % 7));
+		var days = [];
+		var i;
+		for (i = 0; i < 42; i += 1) {
+			var date = addDays(gridStart, i);
+			var inMonth = date.getMonth() === monthStart.getMonth();
+			var weekend = date.getDay() === 0 || date.getDay() === 6;
+			var value = isoDate(date);
+			var outOfRange = date < earliest || date > latest;
+			var blockedByManualDate = Boolean(blockedMap[value]);
+			var allowedByWeekdayDate = allowedWeekdays.indexOf(date.getDay()) > -1;
+			var allowedByServerDate = !hasServerAvailability || Boolean(availableMap[value]);
+			var disabled = outOfRange || blockedByManualDate || !allowedByWeekdayDate || !allowedByServerDate;
+			days.push({
+				value: value,
+				label: date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }),
+				dayOfMonth: date.getDate(),
+				inMonth: inMonth,
+				disabled: disabled,
+				selected: value === selectedDate,
+				weekend: weekend
+			});
+		}
+
+		var helper = getStepThreeHelperByScenario(scenario);
+		return {
+			scenario: scenario,
+			selectedDate: selectedDate,
+			hasAnyAvailable: hasAnyAvailable,
+			monthLabel: monthLabel,
+			monthKey: monthKeyFromDate(monthStart),
+			minMonthKey: monthKeyFromDate(earliestMonth),
+			maxMonthKey: monthKeyFromDate(latestMonth),
+			canGoPrevMonth: monthStart > earliestMonth,
+			canGoNextMonth: monthStart < latestMonth,
+			days: days,
+			helper: helper
+		};
+	}
+
+	function buildDateCalendarHtml(state) {
+		var model = buildDateCalendarModel(state);
+		var style = getStepThreeCalendarStyle();
+		var weekdays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+		var html = '';
+		var i;
+
+		html += '<section class="mp-cc-date-step mp-cc-date-step--' + escapeHtml(style.density) + ' mp-cc-date-step--shape-' + escapeHtml(style.dayShape) + ' mp-cc-date-step--highlight-' + escapeHtml(style.highlightStyle) + (style.showWeekendTint ? ' mp-cc-date-step--weekend-tint' : '') + '" aria-labelledby="mp-cc-date-title">';
+		html += '<header class="mp-cc-date-step__header">';
+		html += '<h4 class="mp-cc-date-step__title" id="mp-cc-date-title">' + escapeHtml(getStepThreeTitle()) + '</h4>';
+		html += '<div class="mp-cc-date-step__month-nav">';
+		html += '<button type="button" class="mp-cc-date-step__month-btn" data-calendar-nav="-1" aria-label="' + escapeHtml(getUiText('step_3.prev_month', 'Предыдущий месяц')) + '"' + (model.canGoPrevMonth ? '' : ' disabled') + '>‹</button>';
+		html += '<p class="mp-cc-date-step__month" aria-live="polite" data-calendar-month="' + escapeHtml(model.monthKey) + '">' + escapeHtml(model.monthLabel) + '</p>';
+		html += '<button type="button" class="mp-cc-date-step__month-btn" data-calendar-nav="+1" aria-label="' + escapeHtml(getUiText('step_3.next_month', 'Следующий месяц')) + '"' + (model.canGoNextMonth ? '' : ' disabled') + '>›</button>';
+		html += '</div>';
+		html += '</header>';
+		html += '<div class="mp-cc-calendar" role="group" aria-label="' + escapeHtml(getStepThreeTitle()) + '">';
+		html += '<div class="mp-cc-calendar__weekdays" aria-hidden="true">';
+		for (i = 0; i < weekdays.length; i += 1) {
+			html += '<span class="mp-cc-calendar__weekday">' + escapeHtml(weekdays[i]) + '</span>';
+		}
+		html += '</div>';
+		html += '<div class="mp-cc-calendar__grid" role="grid" aria-labelledby="mp-cc-date-title" data-calendar-grid="1">';
+		var focusAssigned = false;
+		for (i = 0; i < model.days.length; i += 1) {
+			var day = model.days[i];
+			var classes = ['mp-cc-calendar__day'];
+			if (!day.inMonth) {
+				classes.push('is-outside');
+			}
+			if (day.disabled) {
+				classes.push('is-disabled');
+			}
+			if (day.selected) {
+				classes.push('is-selected');
+			}
+			if (day.weekend) {
+				classes.push('is-weekend');
+			}
+			var isFocusable = !day.disabled && (day.selected || !focusAssigned);
+			var tabIndex = isFocusable ? '0' : '-1';
+			if (isFocusable) {
+				focusAssigned = true;
+			}
+			html += '<button type="button" class="' + classes.join(' ') + '"';
+			html += ' role="gridcell"';
+			html += ' data-calendar-date="' + escapeHtml(day.value) + '"';
+			html += ' aria-label="' + escapeHtml(day.label) + '"';
+			html += ' aria-selected="' + (day.selected ? 'true' : 'false') + '"';
+			html += ' tabindex="' + tabIndex + '"';
+			if (day.disabled) {
+				html += ' disabled aria-disabled="true"';
+			}
+			html += '>';
+			html += '<span>' + escapeHtml(day.dayOfMonth) + '</span>';
+			html += '</button>';
+		}
+		html += '</div>';
+		html += '</div>';
+		if (!model.hasAnyAvailable) {
+			html += '<p class="mp-cc-date-step__helper" id="mp-cc-date-helper">' + escapeHtml(getStepThreeErrorCopy('invalid_date', 'Нет доступных дат. Выберите другой сценарий или свяжитесь с поддержкой.')) + '</p>';
+		} else {
+			html += '<p class="mp-cc-date-step__helper" id="mp-cc-date-helper">' + escapeHtml(model.helper) + '</p>';
+		}
+		html += '</section>';
+		return html;
 	}
 
 	function parseContext() {
@@ -338,6 +645,34 @@
 				state.frontendStore.fulfillment.scenarioData = existing;
 			}
 		}
+	}
+
+	function ensureDateSelection(state) {
+		if (!state || !state.frontendStore || !state.frontendStore.fulfillment) {
+			return;
+		}
+		var dateBox = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+			? state.frontendStore.fulfillment.date
+			: {};
+		if (dateBox.selected_date) {
+			if (!dateBox.calendar_month) {
+				var parsedDate = parseIsoDate(dateBox.selected_date);
+				if (parsedDate) {
+					dateBox.calendar_month = monthKeyFromDate(parsedDate);
+					state.frontendStore.fulfillment.date = dateBox;
+				}
+			}
+			return;
+		}
+		var model = buildDateCalendarModel(state);
+		if (!model || !model.selectedDate || !model.hasAnyAvailable) {
+			return;
+		}
+		dateBox.selected_date = model.selectedDate;
+		if (!dateBox.calendar_month) {
+			dateBox.calendar_month = model.monthKey;
+		}
+		state.frontendStore.fulfillment.date = dateBox;
 	}
 
 	function normalizeCartPayload(cartPayload) {
@@ -632,6 +967,15 @@
 			notify(getUiText('step_1.empty_cart', 'Cart is empty'), 'error');
 			return;
 		}
+		if (state.currentStepId === 'date') {
+			var selectedDate = state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.date
+				? String(state.frontendStore.fulfillment.date.selected_date || '')
+				: '';
+			if (!selectedDate) {
+				notify(getStepThreeErrorCopy('empty_date', 'Выберите дату, чтобы продолжить.'), 'error');
+				return;
+			}
+		}
 		requestForwardValidation(state.currentStepId).then(function (valid) {
 			if (!valid) {
 				setRuntimeFlag(state, 'blocked', true);
@@ -846,6 +1190,7 @@
 		if (selectedGroup === 'pickup') {
 			html += buildPickupPointHtml(state);
 		}
+		html += buildDateCalendarHtml(state);
 		html += '</section>';
 		return html;
 	}
@@ -1091,6 +1436,12 @@
 		if (state.currentStepId === 'contact_payment' && scenarioLabel) {
 			html += '<div class="mp-cc-summary-card__scenario" data-final-review-scenario="1">';
 			html += '<p class="mp-cc-summary-card__scenario-title"><strong>' + escapeHtml(getUiText('step_2.title', 'Способ получения')) + ':</strong> ' + escapeHtml(scenarioLabel) + '</p>';
+			var selectedDate = state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.date
+				? String(state.frontendStore.fulfillment.date.selected_date || '')
+				: '';
+			if (selectedDate) {
+				html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(getStepThreeTitle()) + ':</strong> ' + escapeHtml(formatIsoDateForUi(selectedDate)) + '</p>';
+			}
 			if (scenario === 'pickup' && pickupPoint && pickupPoint.title) {
 				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(String(pickupPoint.title)) + '</p>';
 				if (pickupPoint.address) {
@@ -1179,6 +1530,7 @@
 			$summary.empty();
 			return;
 		}
+		ensureDateSelection(state);
 
 		$app.html(buildStepPanelHtml(state));
 		$summary.html(buildSummaryHtml(state));
@@ -1333,6 +1685,116 @@
 			}).fail(function () {
 				notify('Не удалось сохранить точку самовывоза.', 'error');
 			});
+		});
+
+		$app.find('[data-calendar-date]').off('click').on('click', function () {
+			var $btn = $(this);
+			if ($btn.is(':disabled')) {
+				return;
+			}
+			var value = String($btn.data('calendar-date') || '');
+			if (!value) {
+				return;
+			}
+			var dateBox = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+				? state.frontendStore.fulfillment.date
+				: {};
+			dateBox.selected_date = value;
+			var parsed = parseIsoDate(value);
+			if (parsed) {
+				dateBox.calendar_month = monthKeyFromDate(parsed);
+			}
+			state.frontendStore.fulfillment.date = dateBox;
+			render(state, $app);
+			postCheckout('session_set_answers', {
+				step_id: 'date',
+				context_id: state.flowContextId,
+				answers: dateBox
+			}).then(function (response) {
+				if (!response || !response.success || !response.data) {
+					throw new Error('date_save_empty_response');
+				}
+				if (response.data.flow) {
+					syncFromFlow(state, response.data.flow, response.data.cart || {});
+					render(state, $app);
+				}
+			}).fail(function (xhr) {
+				var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
+				var message = payload.message || getStepThreeErrorCopy('invalid_date', 'Не удалось сохранить выбранную дату.');
+				notify(message, 'error');
+				syncStoreWithBackend(state, $app);
+			});
+		});
+
+		$app.find('[data-calendar-nav]').off('click').on('click', function () {
+			var shift = Number($(this).data('calendar-nav') || 0);
+			if (!shift) {
+				return;
+			}
+			var dateBox = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+				? state.frontendStore.fulfillment.date
+				: {};
+			var model = buildDateCalendarModel(state);
+			var currentMonth = parseMonthKey(dateBox.calendar_month || model.monthKey);
+			if (!currentMonth) {
+				return;
+			}
+			var shiftedMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + shift, 1);
+			var minMonth = parseMonthKey(model.minMonthKey);
+			var maxMonth = parseMonthKey(model.maxMonthKey);
+			if (minMonth && shiftedMonth < minMonth) {
+				shiftedMonth = minMonth;
+			}
+			if (maxMonth && shiftedMonth > maxMonth) {
+				shiftedMonth = maxMonth;
+			}
+			dateBox.calendar_month = monthKeyFromDate(shiftedMonth);
+			state.frontendStore.fulfillment.date = dateBox;
+			render(state, $app);
+			postCheckout('session_set_answers', {
+				step_id: 'date',
+				context_id: state.flowContextId,
+				answers: dateBox
+			}).fail(function () {
+				notify(getStepThreeErrorCopy('invalid_date', 'Не удалось сохранить выбранную дату.'), 'error');
+			});
+		});
+
+		$app.find('[data-calendar-grid]').off('keydown').on('keydown', function (event) {
+			var key = String(event.key || '');
+			var $cells = $app.find('[data-calendar-date]').filter(function () {
+				return !$(this).is(':disabled');
+			});
+			var current = document.activeElement;
+			var currentIndex = $cells.index(current);
+			if (currentIndex < 0) {
+				return;
+			}
+			var nextIndex = currentIndex;
+			if (key === 'ArrowRight') {
+				nextIndex = Math.min($cells.length - 1, currentIndex + 1);
+			} else if (key === 'ArrowLeft') {
+				nextIndex = Math.max(0, currentIndex - 1);
+			} else if (key === 'ArrowDown') {
+				nextIndex = Math.min($cells.length - 1, currentIndex + 7);
+			} else if (key === 'ArrowUp') {
+				nextIndex = Math.max(0, currentIndex - 7);
+			} else if (key === 'Home') {
+				nextIndex = 0;
+			} else if (key === 'End') {
+				nextIndex = $cells.length - 1;
+			} else if (key === 'Enter' || key === ' ') {
+				$(current).trigger('click');
+				event.preventDefault();
+				return;
+			} else {
+				return;
+			}
+			event.preventDefault();
+			var $target = $cells.eq(nextIndex);
+			if ($target.length) {
+				$target.trigger('focus');
+			}
 		});
 	}
 
@@ -1558,6 +2020,7 @@
 		}
 		applyScenarioFieldAvailability(state);
 		ensurePickupScenarioData(state);
+		ensureDateSelection(state);
 		render(state, $app);
 
 		syncStoreWithBackend(state, $app).fail(function () {

@@ -62,6 +62,49 @@
 		};
 	}
 
+	function getDateStepConfigFromRuntime() {
+		var source = window.mpCcAdmin && window.mpCcAdmin.stepThreeConfig ? window.mpCcAdmin.stepThreeConfig : {};
+		var copy = source.copy || {};
+		var helperMap = copy.helper_by_scenario || {};
+		var errors = copy.errors || {};
+		var minLead = source.min_lead_time_days || {};
+		var weekdayRules = source.weekday_rules || {};
+		var style = source.calendar_style || {};
+		var holidayDates = Array.isArray(source.holiday_dates) ? source.holiday_dates : [];
+		var closedDates = Array.isArray(source.closed_dates) ? source.closed_dates : [];
+		return {
+			previewEnabled: Boolean(copy.admin_preview && copy.admin_preview.enabled !== false),
+			title: String(copy.title || 'Выберите дату получения'),
+			helperByScenario: {
+				pickup: String(helperMap.pickup || ''),
+				krasnoyarsk_delivery: String(helperMap.krasnoyarsk_delivery || ''),
+				other_city_delivery: String(helperMap.other_city_delivery || '')
+			},
+			errors: {
+				invalidDate: String(errors.invalid_date || ''),
+				emptyDate: String(errors.empty_date || '')
+			},
+			minLeadTime: {
+				pickup: Number(minLead.pickup || 1),
+				krasnoyarsk_delivery: Number(minLead.krasnoyarsk_delivery || 1),
+				other_city_delivery: Number(minLead.other_city_delivery || 2)
+			},
+			weekdayRules: {
+				pickup: Array.isArray(weekdayRules.pickup) ? weekdayRules.pickup : [],
+				krasnoyarsk_delivery: Array.isArray(weekdayRules.krasnoyarsk_delivery) ? weekdayRules.krasnoyarsk_delivery : [],
+				other_city_delivery: Array.isArray(weekdayRules.other_city_delivery) ? weekdayRules.other_city_delivery : []
+			},
+			holidayDates: holidayDates,
+			closedDates: closedDates,
+			calendarStyle: {
+				density: String(style.density || 'comfortable'),
+				dayShape: String(style.day_shape || 'rounded'),
+				highlightStyle: String(style.highlight_style || 'accent'),
+				showWeekendTint: Boolean(style.show_weekend_tint !== false)
+			}
+		};
+	}
+
 	function getDefaults() {
 		var source = window.mpCcAdmin && window.mpCcAdmin.stepOneDefaults ? window.mpCcAdmin.stepOneDefaults : {};
 		return (source && typeof source === 'object') ? source : {};
@@ -151,6 +194,31 @@
 		return html;
 	}
 
+	function renderDatePreview(config) {
+		var blockedTotal = config.holidayDates.length + config.closedDates.length;
+		var html = '';
+		html += '<section class="mp-cc-admin-preview mp-cc-admin-preview--date" id="mp-cc-admin-date-preview">';
+		html += '<h2>Date Step Preview</h2>';
+		html += '<h3>' + escapeHtml(config.title) + '</h3>';
+		html += '<div class="mp-cc-admin-preview__date-grid">';
+		html += '<article><strong>Самовывоз</strong><p>' + escapeHtml(config.helperByScenario.pickup || '—') + '</p></article>';
+		html += '<article><strong>Доставка по Красноярску</strong><p>' + escapeHtml(config.helperByScenario.krasnoyarsk_delivery || '—') + '</p></article>';
+		html += '<article><strong>Доставка в другой город</strong><p>' + escapeHtml(config.helperByScenario.other_city_delivery || '—') + '</p></article>';
+		html += '</div>';
+		html += '<div class="mp-cc-admin-preview__date-errors">';
+		html += '<p><strong>Invalid date:</strong> ' + escapeHtml(config.errors.invalidDate || '—') + '</p>';
+		html += '<p><strong>Empty date:</strong> ' + escapeHtml(config.errors.emptyDate || '—') + '</p>';
+		html += '</div>';
+		html += '<div class="mp-cc-admin-preview__date-rules">';
+		html += '<p><strong>Lead time:</strong> pickup ' + escapeHtml(config.minLeadTime.pickup) + 'd, krasnoyarsk ' + escapeHtml(config.minLeadTime.krasnoyarsk_delivery) + 'd, other city ' + escapeHtml(config.minLeadTime.other_city_delivery) + 'd</p>';
+		html += '<p><strong>Weekdays:</strong> pickup [' + escapeHtml(config.weekdayRules.pickup.join(',')) + '] | krasnoyarsk [' + escapeHtml(config.weekdayRules.krasnoyarsk_delivery.join(',')) + '] | other city [' + escapeHtml(config.weekdayRules.other_city_delivery.join(',')) + ']</p>';
+		html += '<p><strong>Blocked dates:</strong> holidays ' + escapeHtml(config.holidayDates.length) + ', closed ' + escapeHtml(config.closedDates.length) + ', total ' + escapeHtml(blockedTotal) + '</p>';
+		html += '<p><strong>Calendar style:</strong> ' + escapeHtml(config.calendarStyle.density) + ', ' + escapeHtml(config.calendarStyle.dayShape) + ', ' + escapeHtml(config.calendarStyle.highlightStyle) + ', weekend tint: ' + escapeHtml(config.calendarStyle.showWeekendTint ? 'on' : 'off') + '</p>';
+		html += '</div>';
+		html += '</section>';
+		return html;
+	}
+
 	function readFormValue(name, fallback) {
 		var $field = $('[name="' + name + '"]').first();
 		if (!$field.length) {
@@ -199,6 +267,24 @@
 		cfg.responsive.tabletColumns = Number(readFormValue('mp_custom_checkout_settings[step_2][responsive][tablet_columns]', cfg.responsive.tabletColumns));
 		cfg.responsive.mobileColumns = Number(readFormValue('mp_custom_checkout_settings[step_2][responsive][mobile_columns]', cfg.responsive.mobileColumns));
 		cfg.responsive.cardDensity = readFormValue('mp_custom_checkout_settings[step_2][responsive][card_density]', cfg.responsive.cardDensity);
+		return cfg;
+	}
+
+	function readLiveDateStepConfig(baseConfig) {
+		var cfg = $.extend(true, {}, baseConfig);
+		cfg.title = readFormValue('mp_custom_checkout_settings[step_3][copy][title]', cfg.title);
+		cfg.helperByScenario.pickup = readFormValue('mp_custom_checkout_settings[step_3][copy][helper_by_scenario][pickup]', cfg.helperByScenario.pickup);
+		cfg.helperByScenario.krasnoyarsk_delivery = readFormValue('mp_custom_checkout_settings[step_3][copy][helper_by_scenario][krasnoyarsk_delivery]', cfg.helperByScenario.krasnoyarsk_delivery);
+		cfg.helperByScenario.other_city_delivery = readFormValue('mp_custom_checkout_settings[step_3][copy][helper_by_scenario][other_city_delivery]', cfg.helperByScenario.other_city_delivery);
+		cfg.errors.invalidDate = readFormValue('mp_custom_checkout_settings[step_3][copy][errors][invalid_date]', cfg.errors.invalidDate);
+		cfg.errors.emptyDate = readFormValue('mp_custom_checkout_settings[step_3][copy][errors][empty_date]', cfg.errors.emptyDate);
+		cfg.minLeadTime.pickup = Number(readFormValue('mp_custom_checkout_settings[step_3][min_lead_time_days][pickup]', cfg.minLeadTime.pickup));
+		cfg.minLeadTime.krasnoyarsk_delivery = Number(readFormValue('mp_custom_checkout_settings[step_3][min_lead_time_days][krasnoyarsk_delivery]', cfg.minLeadTime.krasnoyarsk_delivery));
+		cfg.minLeadTime.other_city_delivery = Number(readFormValue('mp_custom_checkout_settings[step_3][min_lead_time_days][other_city_delivery]', cfg.minLeadTime.other_city_delivery));
+		cfg.calendarStyle.density = readFormValue('mp_custom_checkout_settings[step_3][calendar_style][density]', cfg.calendarStyle.density);
+		cfg.calendarStyle.dayShape = readFormValue('mp_custom_checkout_settings[step_3][calendar_style][day_shape]', cfg.calendarStyle.dayShape);
+		cfg.calendarStyle.highlightStyle = readFormValue('mp_custom_checkout_settings[step_3][calendar_style][highlight_style]', cfg.calendarStyle.highlightStyle);
+		cfg.calendarStyle.showWeekendTint = Boolean(readFormValue('mp_custom_checkout_settings[step_3][calendar_style][show_weekend_tint]', cfg.calendarStyle.showWeekendTint));
 		return cfg;
 	}
 
@@ -280,6 +366,72 @@
 		});
 	}
 
+	function enhanceStepThreeFields() {
+		var $rows = $('input[name^="mp_custom_checkout_settings[step_3]"], select[name^="mp_custom_checkout_settings[step_3]"], textarea[name^="mp_custom_checkout_settings[step_3]"]')
+			.closest('tr');
+		if (!$rows.length) {
+			return;
+		}
+		$rows.addClass('mp-cc-admin-step3-row');
+		var hints = {
+			'copy][title': 'Общий заголовок блока выбора даты.',
+			'copy][helper_by_scenario][pickup': 'Подсказка для сценария самовывоза.',
+			'copy][helper_by_scenario][krasnoyarsk_delivery': 'Подсказка для доставки по Красноярску.',
+			'copy][helper_by_scenario][other_city_delivery': 'Подсказка для доставки в другой город.',
+			'copy][errors][invalid_date': 'Текст ошибки для недоступной даты.',
+			'copy][errors][empty_date': 'Текст ошибки, если дата не выбрана.',
+			'holiday_dates': 'Список праздничных дат YYYY-MM-DD (массив).',
+			'closed_dates': 'Список вручную закрытых дат YYYY-MM-DD (массив).'
+		};
+		$rows.each(function () {
+			var $row = $(this);
+			var $input = $row.find('input[name^="mp_custom_checkout_settings[step_3]"], select[name^="mp_custom_checkout_settings[step_3]"], textarea[name^="mp_custom_checkout_settings[step_3]"]').first();
+			if (!$input.length) {
+				return;
+			}
+			var name = String($input.attr('name') || '');
+			var hintText = '';
+			var key;
+			for (key in hints) {
+				if (Object.prototype.hasOwnProperty.call(hints, key) && name.indexOf(key) > -1) {
+					hintText = hints[key];
+					break;
+				}
+			}
+			if (hintText && !$row.find('.mp-cc-admin-step3-hint').length) {
+				$row.find('td').append('<p class="mp-cc-admin-step3-hint">' + escapeHtml(hintText) + '</p>');
+			}
+		});
+	}
+
+	function refreshStepThreeEmptyIndicators() {
+		var selectors = [
+			'input[name="mp_custom_checkout_settings[step_3][copy][title]"]',
+			'input[name="mp_custom_checkout_settings[step_3][copy][helper_by_scenario][pickup]"]',
+			'input[name="mp_custom_checkout_settings[step_3][copy][helper_by_scenario][krasnoyarsk_delivery]"]',
+			'input[name="mp_custom_checkout_settings[step_3][copy][helper_by_scenario][other_city_delivery]"]',
+			'input[name="mp_custom_checkout_settings[step_3][copy][errors][invalid_date]"]',
+			'input[name="mp_custom_checkout_settings[step_3][copy][errors][empty_date]"]'
+		];
+		for (var i = 0; i < selectors.length; i += 1) {
+			var $field = $(selectors[i]).first();
+			if (!$field.length) {
+				continue;
+			}
+			var value = String($field.val() || '').trim();
+			var $row = $field.closest('tr');
+			var isEmpty = value.length === 0;
+			$row.toggleClass('mp-cc-admin-step3-row--empty', isEmpty);
+			if (isEmpty) {
+				if (!$row.find('.mp-cc-admin-step3-warning').length) {
+					$row.find('td').append('<p class="mp-cc-admin-step3-warning">Поле пустое — будет использован fallback.</p>');
+				}
+			} else {
+				$row.find('.mp-cc-admin-step3-warning').remove();
+			}
+		}
+	}
+
 	function escapeHtml(value) {
 		return String(value || '')
 			.replace(/&/g, '&amp;')
@@ -292,6 +444,7 @@
 	$(function () {
 		var config = getConfigFromRuntime();
 		var scenarioConfig = getScenarioConfigFromRuntime();
+		var dateStepConfig = getDateStepConfigFromRuntime();
 		var defaults = getDefaults();
 		var flags = window.mpCcAdmin && window.mpCcAdmin.featureFlags ? window.mpCcAdmin.featureFlags : {};
 		if (!config.previewEnabled || flags.admin_live_preview === false) {
@@ -308,7 +461,12 @@
 		if (scenarioConfig.previewEnabled) {
 			$wrap.append(renderScenarioPreview(scenarioConfig));
 		}
+		if (dateStepConfig.previewEnabled) {
+			$wrap.append(renderDatePreview(dateStepConfig));
+		}
 		enhanceStepOneFields();
+		enhanceStepThreeFields();
+		refreshStepThreeEmptyIndicators();
 
 		var rerender = function () {
 			var nextConfig = readLiveConfig(config);
@@ -317,11 +475,19 @@
 				var nextScenarioConfig = readLiveScenarioConfig(scenarioConfig);
 				$('#mp-cc-admin-scenario-preview').replaceWith(renderScenarioPreview(nextScenarioConfig));
 			}
+			if (dateStepConfig.previewEnabled) {
+				var nextDateConfig = readLiveDateStepConfig(dateStepConfig);
+				$('#mp-cc-admin-date-preview').replaceWith(renderDatePreview(nextDateConfig));
+			}
 		};
 		$(document).on('input change', '[name^="mp_custom_checkout_settings[step_1]"]', function () {
 			rerender();
 		});
 		$(document).on('input change', '[name^="mp_custom_checkout_settings[step_2]"]', function () {
+			rerender();
+		});
+		$(document).on('input change', '[name^="mp_custom_checkout_settings[step_3]"]', function () {
+			refreshStepThreeEmptyIndicators();
 			rerender();
 		});
 		$(document).on('click', '[data-mp-cc-step1-reset]', function () {

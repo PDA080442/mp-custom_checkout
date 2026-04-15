@@ -8,9 +8,12 @@
 namespace MP\CustomCheckout\Hooks;
 
 use MP\CustomCheckout\DependencyFailureGuard;
+use MP\CustomCheckout\Routing\CheckoutDateAvailabilityEngine;
 use MP\CustomCheckout\Routing\CheckoutRouteContext;
+use MP\CustomCheckout\Routing\CheckoutScenarioRules;
 use MP\CustomCheckout\Routing\CheckoutSessionService;
 use MP\CustomCheckout\Routing\CheckoutStepManager;
+use MP\CustomCheckout\Settings\SafeSettingsResolver;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -106,12 +109,22 @@ final class CheckoutAjaxHooks {
 					400
 				);
 			}
+			if ( in_array( $step_id, array( 'date', 'conditions' ), true ) && ! self::validate_date_answers_payload( is_array( $answers ) ? $answers : array() ) ) {
+				$message = SafeSettingsResolver::get( 'step_3.copy.errors.invalid_date', __( 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.', 'mp-custom-checkout' ) );
+				$message = is_string( $message ) && '' !== trim( $message ) ? $message : __( 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.', 'mp-custom-checkout' );
+				wp_send_json_error(
+					array( 'code' => 'invalid_date_selection', 'message' => $message ),
+					422
+				);
+			}
 
 			CheckoutSessionService::set_step_answers( $step_id, is_array( $answers ) ? $answers : array() );
 			wp_send_json_success(
 				array(
 					'sub_action' => $sub_action,
 					'step_id'    => $step_id,
+					'flow'       => self::build_flow_payload(),
+					'cart'       => CheckoutRouteContext::get_cart_data(),
 				)
 			);
 		}
@@ -193,6 +206,50 @@ final class CheckoutAjaxHooks {
 		}
 
 		return CheckoutSessionService::validate_context_id( $flow, $posted_context );
+	}
+
+	/**
+	 * @param array<string, mixed> $answers
+	 */
+	private static function validate_date_answers_payload( array $answers ): bool {
+		$selected_date = isset( $answers['selected_date'] ) ? sanitize_text_field( (string) $answers['selected_date'] ) : '';
+		if ( '' === $selected_date ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'warning',
+				'[date_sync] empty_date_selected',
+				array()
+			);
+			return false;
+		}
+		if ( 1 !== preg_match( '/^\d{4}-\d{2}-\d{2}$/', $selected_date ) ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'warning',
+				'[date_sync] invalid_date_format',
+				array( 'selected_date' => $selected_date )
+			);
+			return false;
+		}
+
+		$flow     = CheckoutSessionService::get_public_state();
+		$scenario = isset( $flow['scenario'] ) ? (string) $flow['scenario'] : '';
+		$scenario = CheckoutScenarioRules::sanitize_scenario( $scenario );
+		$rules    = CheckoutDateAvailabilityEngine::build_rules( $scenario );
+		$allowed  = isset( $rules['available_dates'] ) && is_array( $rules['available_dates'] ) ? $rules['available_dates'] : array();
+		$is_valid = in_array( $selected_date, $allowed, true );
+		if ( ! $is_valid ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'error',
+				'[date_sync] selected_date_not_available',
+				array(
+					'selected_date' => $selected_date,
+					'scenario'      => $scenario,
+				)
+			);
+		}
+		return $is_valid;
 	}
 
 	private static function handle_update_quantity(): void {
