@@ -66,10 +66,16 @@
 
 		return {
 			context: context,
+			flowContextId: flow.context_id || '',
 			visibleSteps: visible,
 			currentStepId: currentStep,
 			maxReachedIndex: currentIndex,
-			isTransitioning: false
+			isTransitioning: false,
+			frontendStore: {
+				answers: flow.answers || {},
+				scenario: flow.scenario || '',
+				expiresAt: flow.expires_at || 0
+			}
 		};
 	}
 
@@ -97,11 +103,34 @@
 				{
 					action: 'mp_cc_checkout',
 					nonce: localized.nonce,
-					sub_action: subAction
+					sub_action: subAction,
+					context_id: (payload && payload.context_id) ? payload.context_id : ''
 				},
 				payload || {}
 			)
 		});
+	}
+
+	function stepKeyById(stepId) {
+		if (stepId === 'cart') {
+			return 'step_one';
+		}
+		if (stepId === 'date' || stepId === 'conditions') {
+			return 'date_conditions';
+		}
+		if (stepId === 'contact_payment') {
+			return 'contact_billing';
+		}
+		return stepId;
+	}
+
+	function syncFromFlow(state, flow) {
+		var nextFlow = flow || {};
+		state.context.checkout_flow = nextFlow;
+		state.flowContextId = nextFlow.context_id || state.flowContextId || '';
+		state.frontendStore.answers = nextFlow.answers || {};
+		state.frontendStore.scenario = nextFlow.scenario || '';
+		state.frontendStore.expiresAt = nextFlow.expires_at || 0;
 	}
 
 	function requestForwardValidation(stepId) {
@@ -175,7 +204,7 @@
 		}
 
 		return withTransitionLock(state, $app, function () {
-			return postCheckout('session_set_step', { step_id: targetStepId }).then(function () {
+			return postCheckout('session_set_step', { step_id: targetStepId, context_id: state.flowContextId }).then(function () {
 				state.currentStepId = targetStepId;
 				state.maxReachedIndex = Math.max(state.maxReachedIndex, targetIndex);
 				render(state, $app);
@@ -214,6 +243,24 @@
 				return;
 			}
 			setCurrentStep(state, $app, target.id);
+		});
+	}
+
+	function saveCurrentStepDraft(state) {
+		var stepId = state.currentStepId;
+		if (!stepId) {
+			return $.Deferred().resolve().promise();
+		}
+
+		var storageKey = stepKeyById(stepId);
+		var payload = state.frontendStore.answers && state.frontendStore.answers[storageKey]
+			? state.frontendStore.answers[storageKey]
+			: {};
+
+		return postCheckout('session_set_answers', {
+			step_id: stepId,
+			context_id: state.flowContextId,
+			answers: payload
 		});
 	}
 
@@ -296,6 +343,15 @@
 
 		$app.html(html);
 		bindHandlers(state, $app);
+
+		document.dispatchEvent(
+			new CustomEvent('mp_cc_store_synced', {
+				detail: {
+					contextId: state.flowContextId,
+					store: state.frontendStore
+				}
+			})
+		);
 	}
 
 	function bindHandlers(state, $app) {
@@ -304,7 +360,9 @@
 		});
 
 		$app.find('[data-nav="next"]').off('click').on('click', function () {
-			moveForward(state, $app);
+			saveCurrentStepDraft(state).always(function () {
+				moveForward(state, $app);
+			});
 		});
 
 		$app.find('.mp-cc-progress__btn').off('click').on('click', function () {
@@ -338,6 +396,20 @@
 		var state = buildState(parseContext());
 		render(state, $app);
 
+		postCheckout('session_get_state', { context_id: state.flowContextId }).then(function (response) {
+			if (!response || !response.success || !response.data || !response.data.flow) {
+				return;
+			}
+			syncFromFlow(state, response.data.flow);
+			var rehydrated = buildState(state.context);
+			state.visibleSteps = rehydrated.visibleSteps;
+			state.currentStepId = rehydrated.currentStepId;
+			state.maxReachedIndex = Math.max(state.maxReachedIndex, rehydrated.maxReachedIndex);
+			state.frontendStore = rehydrated.frontendStore;
+			state.flowContextId = rehydrated.flowContextId;
+			render(state, $app);
+		});
+
 		document.addEventListener('mp_cc_scenario_changed', function (event) {
 			var nextScenario = event && event.detail ? String(event.detail.scenario || '') : '';
 			if (!nextScenario) {
@@ -345,23 +417,41 @@
 			}
 
 			withTransitionLock(state, $app, function () {
-				return postCheckout('session_set_scenario', { scenario: nextScenario })
+				return postCheckout('session_set_scenario', { scenario: nextScenario, context_id: state.flowContextId })
 					.then(function () {
-						return postCheckout('session_get_state');
+						return postCheckout('session_get_state', { context_id: state.flowContextId });
 					})
 					.then(function (response) {
 						if (!response || !response.success || !response.data || !response.data.flow) {
 							return;
 						}
 
-						state.context.checkout_flow = response.data.flow;
+						syncFromFlow(state, response.data.flow);
 						var nextState = buildState(state.context);
 						state.visibleSteps = nextState.visibleSteps;
 						state.currentStepId = nextState.currentStepId;
 						state.maxReachedIndex = Math.max(state.maxReachedIndex, nextState.maxReachedIndex);
+						state.frontendStore = nextState.frontendStore;
+						state.flowContextId = nextState.flowContextId;
 						render(state, $app);
 					});
 			});
+		});
+
+		document.addEventListener('mp_cc_store_update', function (event) {
+			var detail = event && event.detail ? event.detail : {};
+			var bucket = detail.bucket ? String(detail.bucket) : '';
+			var payload = detail.payload || {};
+			if (!bucket) {
+				return;
+			}
+			state.frontendStore.answers[bucket] = payload;
+		});
+
+		document.addEventListener('visibilitychange', function () {
+			if (document.visibilityState === 'hidden') {
+				saveCurrentStepDraft(state);
+			}
 		});
 	});
 })(jQuery);
