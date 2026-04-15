@@ -85,12 +85,54 @@
 			currentStepId: currentStep,
 			maxReachedIndex: currentIndex,
 			isTransitioning: false,
-			frontendStore: {
-				answers: flow.answers || {},
-				scenario: flow.scenario || '',
-				expiresAt: flow.expires_at || 0
-			},
+			frontendStore: createFrontendStore(flow, visible, allSteps, currentStep),
 			featureFlags: $.extend({}, contextFlags, localizedFlags)
+		};
+	}
+
+	function createFrontendStore(flow, visibleSteps, allSteps, currentStepId) {
+		var answers = flow.answers || {};
+		var contactBilling = answers.contact_billing || {};
+		var paymentGateway = '';
+		if (contactBilling && typeof contactBilling === 'object') {
+			paymentGateway = contactBilling.payment_gateway || contactBilling.gateway || '';
+		}
+
+		return {
+			steps: {
+				current: currentStepId || '',
+				visible: visibleSteps || [],
+				all: allSteps || []
+			},
+			cart: {
+				snapshot: flow.snapshot || {},
+				summary: {}
+			},
+			form: {
+				contact: contactBilling,
+				errors: {}
+			},
+			fulfillment: {
+				scenario: flow.scenario || '',
+				date: answers.date_conditions || {},
+				scenarioData: answers.scenario || {}
+			},
+			discounts: answers.discounts || { coupons: [], gift_card: [] },
+			payment: {
+				gateway: paymentGateway || '',
+				state: 'idle'
+			},
+			runtime: {
+				loading: false,
+				success: false,
+				blocked: false,
+				dirty: false,
+				lastSyncAt: Date.now()
+			},
+			meta: {
+				contextId: flow.context_id || '',
+				expiresAt: flow.expires_at || 0
+			}
 		};
 	}
 
@@ -143,9 +185,39 @@
 		var nextFlow = flow || {};
 		state.context.checkout_flow = nextFlow;
 		state.flowContextId = nextFlow.context_id || state.flowContextId || '';
-		state.frontendStore.answers = nextFlow.answers || {};
-		state.frontendStore.scenario = nextFlow.scenario || '';
-		state.frontendStore.expiresAt = nextFlow.expires_at || 0;
+		state.frontendStore = createFrontendStore(
+			nextFlow,
+			state.visibleSteps,
+			(state.frontendStore.steps && state.frontendStore.steps.all) ? state.frontendStore.steps.all : [],
+			state.currentStepId
+		);
+		state.frontendStore.runtime.loading = false;
+		state.frontendStore.runtime.blocked = false;
+		state.frontendStore.runtime.dirty = false;
+		state.frontendStore.runtime.lastSyncAt = Date.now();
+	}
+
+	function setRuntimeFlag(state, key, value) {
+		if (!state || !state.frontendStore || !state.frontendStore.runtime) {
+			return;
+		}
+		state.frontendStore.runtime[key] = Boolean(value);
+	}
+
+	function syncStoreWithBackend(state, $app) {
+		return postCheckout('session_get_state', { context_id: state.flowContextId }).then(function (response) {
+			if (!response || !response.success || !response.data || !response.data.flow) {
+				return;
+			}
+			syncFromFlow(state, response.data.flow);
+			var rehydrated = buildState(state.context);
+			state.visibleSteps = rehydrated.visibleSteps;
+			state.currentStepId = rehydrated.currentStepId;
+			state.maxReachedIndex = Math.max(state.maxReachedIndex, rehydrated.maxReachedIndex);
+			state.frontendStore = rehydrated.frontendStore;
+			state.flowContextId = rehydrated.flowContextId;
+			render(state, $app);
+		});
 	}
 
 	function requestForwardValidation(stepId) {
@@ -192,11 +264,13 @@
 		}
 
 		state.isTransitioning = true;
+		setRuntimeFlag(state, 'loading', true);
 		$app.attr('data-nav-lock', '1').addClass('is-nav-lock');
 		$app.find('button, a').attr('aria-disabled', 'true');
 
 		var done = function () {
 			state.isTransitioning = false;
+			setRuntimeFlag(state, 'loading', false);
 			$app.attr('data-nav-lock', '0').removeClass('is-nav-lock');
 			$app.find('button, a').removeAttr('aria-disabled');
 		};
@@ -221,7 +295,9 @@
 		return withTransitionLock(state, $app, function () {
 			return postCheckout('session_set_step', { step_id: targetStepId, context_id: state.flowContextId }).then(function () {
 				state.currentStepId = targetStepId;
+				state.frontendStore.steps.current = targetStepId;
 				state.maxReachedIndex = Math.max(state.maxReachedIndex, targetIndex);
+				setRuntimeFlag(state, 'blocked', false);
 				render(state, $app);
 				scrollToStepTop();
 
@@ -234,6 +310,7 @@
 						}
 					})
 				);
+				return syncStoreWithBackend(state, $app);
 			});
 		});
 	}
@@ -255,8 +332,11 @@
 		var target = state.visibleSteps[currentIndex + 1];
 		requestForwardValidation(state.currentStepId).then(function (valid) {
 			if (!valid) {
+				setRuntimeFlag(state, 'blocked', true);
+				notify('Заполните обязательные поля текущего шага.', 'error');
 				return;
 			}
+			setRuntimeFlag(state, 'blocked', false);
 			setCurrentStep(state, $app, target.id);
 		});
 	}
@@ -268,15 +348,38 @@
 		}
 
 		var storageKey = stepKeyById(stepId);
-		var payload = state.frontendStore.answers && state.frontendStore.answers[storageKey]
-			? state.frontendStore.answers[storageKey]
-			: {};
+		var payload = getDraftPayloadByStorageKey(state, storageKey);
+		setRuntimeFlag(state, 'dirty', true);
 
 		return postCheckout('session_set_answers', {
 			step_id: stepId,
 			context_id: state.flowContextId,
 			answers: payload
+		}).then(function () {
+			setRuntimeFlag(state, 'dirty', false);
 		});
+	}
+
+	function getDraftPayloadByStorageKey(state, storageKey) {
+		if (!state || !state.frontendStore) {
+			return {};
+		}
+		if (storageKey === 'step_one') {
+			return state.frontendStore.cart.snapshot || {};
+		}
+		if (storageKey === 'date_conditions') {
+			return state.frontendStore.fulfillment.date || {};
+		}
+		if (storageKey === 'contact_billing') {
+			return state.frontendStore.form.contact || {};
+		}
+		if (storageKey === 'scenario') {
+			return state.frontendStore.fulfillment.scenarioData || {};
+		}
+		if (storageKey === 'discounts') {
+			return state.frontendStore.discounts || {};
+		}
+		return {};
 	}
 
 	function buildProgressHtml(state) {
@@ -358,11 +461,18 @@
 	function buildSummaryHtml(state) {
 		var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
 		var total = state.visibleSteps.length;
+		var snapshot = state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart.snapshot || {} : {};
+		var itemsCount = snapshot.items_count || 0;
+		var totalText = snapshot.total || '';
 		var html = '';
 
 		html += '<section class="mp-cc-summary-card" aria-label="Order summary panel">';
 		html += '<h3 class="mp-cc-summary-card__title">Order Summary</h3>';
 		html += '<p class="mp-cc-summary-card__meta">Step ' + (currentIndex + 1) + ' of ' + total + '</p>';
+		html += '<p class="mp-cc-summary-card__meta">Items: ' + escapeHtml(itemsCount) + '</p>';
+		if (totalText) {
+			html += '<p class="mp-cc-summary-card__meta">Total: ' + escapeHtml(totalText) + '</p>';
+		}
 		html += '<div class="mp-cc-summary-card__slot" data-mp-cc-summary-slot="1"></div>';
 		html += '</section>';
 
@@ -469,19 +579,7 @@
 		var state = buildState(parseContext());
 		render(state, $app);
 
-		postCheckout('session_get_state', { context_id: state.flowContextId }).then(function (response) {
-			if (!response || !response.success || !response.data || !response.data.flow) {
-				return;
-			}
-			syncFromFlow(state, response.data.flow);
-			var rehydrated = buildState(state.context);
-			state.visibleSteps = rehydrated.visibleSteps;
-			state.currentStepId = rehydrated.currentStepId;
-			state.maxReachedIndex = Math.max(state.maxReachedIndex, rehydrated.maxReachedIndex);
-			state.frontendStore = rehydrated.frontendStore;
-			state.flowContextId = rehydrated.flowContextId;
-			render(state, $app);
-		}).fail(function () {
+		syncStoreWithBackend(state, $app).fail(function () {
 			notify('Не удалось восстановить состояние checkout.', 'error');
 		});
 
@@ -494,21 +592,7 @@
 			withTransitionLock(state, $app, function () {
 				return postCheckout('session_set_scenario', { scenario: nextScenario, context_id: state.flowContextId })
 					.then(function () {
-						return postCheckout('session_get_state', { context_id: state.flowContextId });
-					})
-					.then(function (response) {
-						if (!response || !response.success || !response.data || !response.data.flow) {
-							return;
-						}
-
-						syncFromFlow(state, response.data.flow);
-						var nextState = buildState(state.context);
-						state.visibleSteps = nextState.visibleSteps;
-						state.currentStepId = nextState.currentStepId;
-						state.maxReachedIndex = Math.max(state.maxReachedIndex, nextState.maxReachedIndex);
-						state.frontendStore = nextState.frontendStore;
-						state.flowContextId = nextState.flowContextId;
-						render(state, $app);
+						return syncStoreWithBackend(state, $app);
 					});
 			});
 		});
@@ -520,13 +604,31 @@
 			if (!bucket) {
 				return;
 			}
-			state.frontendStore.answers[bucket] = payload;
+			if (bucket === 'step_one') {
+				state.frontendStore.cart.snapshot = payload;
+			} else if (bucket === 'date_conditions') {
+				state.frontendStore.fulfillment.date = payload;
+			} else if (bucket === 'contact_billing') {
+				state.frontendStore.form.contact = payload;
+				if (payload && typeof payload === 'object') {
+					state.frontendStore.payment.gateway = payload.payment_gateway || payload.gateway || '';
+				}
+			} else if (bucket === 'scenario') {
+				state.frontendStore.fulfillment.scenarioData = payload;
+			} else if (bucket === 'discounts') {
+				state.frontendStore.discounts = payload;
+			}
+			setRuntimeFlag(state, 'dirty', true);
 		});
 
 		document.addEventListener('visibilitychange', function () {
 			if (document.visibilityState === 'hidden') {
 				saveCurrentStepDraft(state);
 			}
+		});
+
+		document.addEventListener('mp_cc_checkout_success', function () {
+			setRuntimeFlag(state, 'success', true);
 		});
 	});
 })(jQuery);
