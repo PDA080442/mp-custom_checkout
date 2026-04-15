@@ -208,6 +208,86 @@
 		};
 	}
 
+	function getConditionsContentByScenario() {
+		return {
+			krasnoyarsk_delivery: {
+				title: getUiText('step_3.krasnoyarsk_title', 'Доставка по Красноярску'),
+				text: getUiText('step_3.krasnoyarsk_conditions', 'Доставка выполняется в пределах города в выбранную дату. Курьер связывается заранее для подтверждения интервала.')
+			},
+			other_city_delivery: {
+				title: getUiText('step_3.other_city_title', 'Доставка в другой город'),
+				text: getUiText('step_3.other_city_conditions', 'Срок и стоимость уточняются после подтверждения заказа. Отправка выполняется через транспортного партнера по согласованным данным.')
+			},
+			pickup: {
+				title: getUiText('step_3.pickup_title', 'Самовывоз'),
+				text: getUiText('step_3.pickup_conditions', 'Заказ выдается в точке самовывоза после подтверждения готовности. Пожалуйста, дождитесь уведомления перед визитом.')
+			}
+		};
+	}
+
+	function buildConditionsStepHtml(state) {
+		var scenario = normalizeScenarioId(state.frontendStore.fulfillment.scenario || '');
+		var dateState = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+			? state.frontendStore.fulfillment.date
+			: {};
+		var isConfirmed = Boolean(dateState.conditions_confirmed);
+		var hasError = Boolean(state.frontendStore.form && state.frontendStore.form.errors && state.frontendStore.form.errors.conditions_unconfirmed);
+		var blocks = getConditionsContentByScenario();
+		var order = ['krasnoyarsk_delivery', 'other_city_delivery', 'pickup'];
+		var notes = [
+			getUiText('step_3.secondary_note_1', 'Проверяйте корректность телефона: статус заказа приходит в уведомления.'),
+			getUiText('step_3.secondary_note_2', 'При изменении сценария условия и доступность дат обновляются автоматически.'),
+			getUiText('step_3.secondary_note_3', 'Для вопросов по срокам и логистике используйте контакты поддержки магазина.')
+		];
+		var html = '';
+		var i;
+
+		html += '<section class="mp-cc-conditions-step" aria-labelledby="mp-cc-conditions-title">';
+		html += '<header class="mp-cc-conditions-step__header">';
+		html += '<h4 class="mp-cc-conditions-step__title" id="mp-cc-conditions-title">' + escapeHtml(getUiText('step_3.conditions_title', 'Условия получения')) + '</h4>';
+		html += '<p class="mp-cc-conditions-step__intro">' + escapeHtml(getUiText('step_3.conditions_intro', 'Перед продолжением проверьте правила для выбранного способа получения.')) + '</p>';
+		html += '</header>';
+		html += '<div class="mp-cc-conditions-step__grid">';
+		for (i = 0; i < order.length; i += 1) {
+			var blockId = order[i];
+			var block = blocks[blockId];
+			var isActive = scenario === blockId;
+			html += '<article class="mp-cc-conditions-card' + (isActive ? ' is-active' : '') + '" data-conditions-scenario="' + escapeHtml(blockId) + '">';
+			html += '<h5 class="mp-cc-conditions-card__title">' + escapeHtml(block.title) + '</h5>';
+			html += '<p class="mp-cc-conditions-card__text">' + escapeHtml(block.text) + '</p>';
+			if (blockId === 'pickup') {
+				html += '<div class="mp-cc-conditions-card__pickup-graph" aria-hidden="true">';
+				html += '<span>10:00-13:00</span><span>13:00-17:00</span><span>17:00-20:00</span>';
+				html += '</div>';
+			}
+			html += '</article>';
+		}
+		html += '</div>';
+		html += '<div class="mp-cc-conditions-step__confirm' + (hasError ? ' is-error' : '') + '">';
+		html += '<label class="mp-cc-conditions-step__confirm-label">';
+		html += '<input type="checkbox" data-conditions-confirm="1" ' + (isConfirmed ? 'checked' : '') + ' aria-invalid="' + (hasError ? 'true' : 'false') + '" />';
+		html += '<span>' + escapeHtml(getUiText('step_3.confirm_checkbox', 'Я ознакомился с условиями')) + '</span>';
+		html += '</label>';
+		if (hasError) {
+			html += '<p class="mp-cc-conditions-step__error" role="alert">' + escapeHtml(getUiText('step_3.unconfirmed_error', 'Подтвердите ознакомление с условиями, чтобы продолжить.')) + '</p>';
+		}
+		html += '</div>';
+		html += '<aside class="mp-cc-conditions-step__notes" aria-label="' + escapeHtml(getUiText('step_3.notes_title', 'Важные замечания')) + '">';
+		html += '<h5 class="mp-cc-conditions-step__notes-title">' + escapeHtml(getUiText('step_3.notes_title', 'Важные замечания')) + '</h5>';
+		html += '<ul class="mp-cc-conditions-step__notes-list">';
+		for (i = 0; i < notes.length; i += 1) {
+			if (!notes[i]) {
+				continue;
+			}
+			html += '<li>' + escapeHtml(notes[i]) + '</li>';
+		}
+		html += '</ul>';
+		html += '</aside>';
+		html += '</section>';
+
+		return html;
+	}
+
 	function getPickupPointById(pointId) {
 		var pickup = getPickupConfig();
 		var points = pickup.points || [];
@@ -976,6 +1056,18 @@
 				return;
 			}
 		}
+		if (state.currentStepId === 'conditions') {
+			var dateState = state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.date
+				? state.frontendStore.fulfillment.date
+				: {};
+			if (!dateState.conditions_confirmed) {
+				state.frontendStore.form.errors.conditions_unconfirmed = true;
+				render(state, $app);
+				notify(getUiText('step_3.unconfirmed_error', 'Подтвердите ознакомление с условиями, чтобы продолжить.'), 'error');
+				return;
+			}
+			state.frontendStore.form.errors.conditions_unconfirmed = false;
+		}
 		requestForwardValidation(state.currentStepId).then(function (valid) {
 			if (!valid) {
 				setRuntimeFlag(state, 'blocked', true);
@@ -1082,6 +1174,9 @@
 		}
 		if (step && step.id === 'date') {
 			html += buildFulfillmentChoiceHtml(state);
+		}
+		if (step && step.id === 'conditions') {
+			html += buildConditionsStepHtml(state);
 		}
 		html += '</div>';
 		if (!isFlagEnabled(state, flagNames.discountPlacement, true)) {
@@ -1795,6 +1890,24 @@
 			if ($target.length) {
 				$target.trigger('focus');
 			}
+		});
+
+		$app.find('[data-conditions-confirm]').off('change').on('change', function () {
+			var isChecked = $(this).is(':checked');
+			var dateBox = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+				? state.frontendStore.fulfillment.date
+				: {};
+			dateBox.conditions_confirmed = isChecked;
+			state.frontendStore.fulfillment.date = dateBox;
+			state.frontendStore.form.errors.conditions_unconfirmed = false;
+			render(state, $app);
+			postCheckout('session_set_answers', {
+				step_id: 'conditions',
+				context_id: state.flowContextId,
+				answers: dateBox
+			}).fail(function () {
+				notify(getUiText('common.error_generic', 'Произошла ошибка. Попробуйте ещё раз.'), 'error');
+			});
 		});
 	}
 
