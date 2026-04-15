@@ -9,6 +9,8 @@
 		var labels = source.labels || {};
 		var emptyState = source.empty_state || {};
 		var styleControls = source.style_controls || {};
+		var pickupConfig = window.mpCcAdmin && window.mpCcAdmin.pickupConfig ? window.mpCcAdmin.pickupConfig : {};
+		var pickupPoints = pickupConfig.points && Array.isArray(pickupConfig.points) ? pickupConfig.points : [];
 		return {
 			previewEnabled: Boolean(source.admin_preview && source.admin_preview.enabled !== false),
 			title: labels.title || 'Корзина',
@@ -22,7 +24,8 @@
 			emptyCta: emptyState.cta_label || labels.return_label || 'Вернуться в магазин',
 			cardCompact: Boolean(styleControls.card_compact),
 			cardEmphasis: styleControls.card_emphasis || 'default',
-			summaryEmphasis: styleControls.summary_emphasis || 'default'
+			summaryEmphasis: styleControls.summary_emphasis || 'default',
+			pickupPoint: pickupPoints.length ? pickupPoints[0] : null
 		};
 	}
 
@@ -65,6 +68,19 @@
 		}
 		html += '<a href="#">' + escapeHtml(config.emptyCta) + '</a>';
 		html += '</div>';
+		if (config.pickupPoint) {
+			html += '<div class="mp-cc-admin-preview__pickup">';
+			html += '<h3>Pickup block preview</h3>';
+			html += '<p><strong>' + escapeHtml(String(config.pickupPoint.title || '')) + '</strong></p>';
+			if (config.pickupPoint.address) {
+				html += '<p>' + escapeHtml(String(config.pickupPoint.address)) + '</p>';
+			}
+			if (config.pickupPoint.description) {
+				html += '<p>' + escapeHtml(String(config.pickupPoint.description)) + '</p>';
+			}
+			html += '<div class="mp-cc-admin-preview__pickup-map">Map slot reserved</div>';
+			html += '</div>';
+		}
 		html += '</section>';
 		return html;
 	}

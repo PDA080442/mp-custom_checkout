@@ -10,6 +10,7 @@ namespace MP\CustomCheckout\Hooks;
 use MP\CustomCheckout\DependencyFailureGuard;
 use MP\CustomCheckout\Routing\CheckoutScenarioRules;
 use MP\CustomCheckout\Routing\CheckoutSessionService;
+use MP\CustomCheckout\Settings\ScenarioStepRegistry;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -71,5 +72,17 @@ final class OrderMetaHooks {
 		$order->update_meta_data( '_mp_cc_scenario_id', $scenario );
 		$order->update_meta_data( '_mp_cc_scenario_label', $scenario_label );
 		$order->update_meta_data( '_mp_cc_scenario_payload', wp_json_encode( $serialized ) );
+		if ( ScenarioStepRegistry::SCENARIO_PICKUP === $scenario ) {
+			$answers      = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : array();
+			$scenario_box = isset( $answers['scenario'] ) && is_array( $answers['scenario'] ) ? $answers['scenario'] : array();
+			$pickup_point = isset( $scenario_box['pickup_point'] ) && is_array( $scenario_box['pickup_point'] ) ? $scenario_box['pickup_point'] : array();
+			if ( ! empty( $pickup_point ) ) {
+				$order->update_meta_data( '_mp_cc_pickup_point_id', isset( $pickup_point['id'] ) ? sanitize_key( (string) $pickup_point['id'] ) : '' );
+				$order->update_meta_data( '_mp_cc_pickup_point_title', isset( $pickup_point['title'] ) ? sanitize_text_field( (string) $pickup_point['title'] ) : '' );
+				$order->update_meta_data( '_mp_cc_pickup_point_address', isset( $pickup_point['address'] ) ? sanitize_text_field( (string) $pickup_point['address'] ) : '' );
+				$order->update_meta_data( '_mp_cc_pickup_point_description', isset( $pickup_point['description'] ) ? sanitize_text_field( (string) $pickup_point['description'] ) : '' );
+				$order->update_meta_data( '_mp_cc_pickup_point_payload', wp_json_encode( $pickup_point ) );
+			}
+		}
 	}
 }

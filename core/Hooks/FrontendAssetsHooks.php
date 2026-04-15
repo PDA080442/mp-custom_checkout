@@ -8,6 +8,7 @@
 namespace MP\CustomCheckout\Hooks;
 
 use MP\CustomCheckout\DependencyFailureGuard;
+use MP\CustomCheckout\Routing\PickupPointRegistry;
 use MP\CustomCheckout\Routing\CheckoutScenarioRules;
 use MP\CustomCheckout\Settings\DefaultLabelsRegistry;
 use MP\CustomCheckout\Settings\FeatureFlagResolver;
@@ -87,6 +88,7 @@ final class FrontendAssetsHooks {
 				),
 				'uiText' => self::ui_text_dictionaries(),
 				'stepOneConfig' => self::step_one_config(),
+				'pickupConfig' => PickupPointRegistry::config(),
 				'scenarioStepMap' => self::scenario_step_map(),
 				'designTokens' => self::design_tokens_for_runtime(),
 			)
