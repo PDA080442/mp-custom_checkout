@@ -54,6 +54,26 @@
 		}
 	}
 
+	function applyThemeVariant(context) {
+		var root = document.querySelector(selectors.root);
+		if (!root) {
+			return;
+		}
+
+		var designTokens = (window.mpCcCheckout && window.mpCcCheckout.designTokens) ? window.mpCcCheckout.designTokens : {};
+		var variant = '';
+		if (designTokens && typeof designTokens === 'object' && designTokens.theme_variant) {
+			variant = String(designTokens.theme_variant);
+		} else if (context && context.design_tokens && context.design_tokens.theme_variant) {
+			variant = String(context.design_tokens.theme_variant);
+		}
+
+		root.classList.remove('mp-cc-theme-luxe');
+		if (variant.toLowerCase() === 'luxe' || variant.toLowerCase() === 'luxury') {
+			root.classList.add('mp-cc-theme-luxe');
+		}
+	}
+
 	function buildState(context) {
 		var flow = context.checkout_flow || {};
 		var contextFlags = context.feature_flags || {};
@@ -280,14 +300,16 @@
 
 		state.isTransitioning = true;
 		setRuntimeFlag(state, 'loading', true);
-		$app.attr('data-nav-lock', '1').addClass('is-nav-lock');
+		$app.attr('data-nav-lock', '1').addClass('is-nav-lock is-loading');
+		$(selectors.summary).addClass('is-loading');
 		$app.find('button, a').attr('aria-disabled', 'true');
 		$(selectors.actions).find('.mp-cc-nav__btn').prop('disabled', true);
 
 		var done = function () {
 			state.isTransitioning = false;
 			setRuntimeFlag(state, 'loading', false);
-			$app.attr('data-nav-lock', '0').removeClass('is-nav-lock');
+			$app.attr('data-nav-lock', '0').removeClass('is-nav-lock is-loading');
+			$(selectors.summary).removeClass('is-loading');
 			$app.find('button, a').removeAttr('aria-disabled');
 			$(selectors.actions).find('.mp-cc-nav__btn').prop('disabled', false);
 		};
@@ -636,7 +658,9 @@
 			return;
 		}
 
-		var state = buildState(parseContext());
+		var context = parseContext();
+		applyThemeVariant(context);
+		var state = buildState(context);
 		render(state, $app);
 
 		syncStoreWithBackend(state, $app).fail(function () {
