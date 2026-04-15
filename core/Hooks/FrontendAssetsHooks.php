@@ -8,6 +8,7 @@
 namespace MP\CustomCheckout\Hooks;
 
 use MP\CustomCheckout\DependencyFailureGuard;
+use MP\CustomCheckout\Settings\FeatureFlagResolver;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -59,6 +60,7 @@ final class FrontendAssetsHooks {
 			array(
 				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
 				'nonce'   => wp_create_nonce( 'mp_cc_checkout' ),
+				'flags'   => FeatureFlagResolver::frontend_payload(),
 			)
 		);
 

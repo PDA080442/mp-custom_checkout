@@ -8,6 +8,14 @@
 		root: '#mp-cc-checkout',
 		app: '#mp-cc-checkout-app'
 	};
+	var flagNames = {
+		multiStepFlow: 'multi_step_flow',
+		multiPickupPoints: 'multi_pickup_points',
+		conditionsStep: 'conditions_step',
+		discountPlacement: 'discount_block_placement',
+		checkoutTestingMode: 'checkout_testing_mode',
+		adminLivePreview: 'admin_live_preview'
+	};
 
 	function parseContext() {
 		var root = document.querySelector(selectors.root);
@@ -29,6 +37,8 @@
 
 	function buildState(context) {
 		var flow = context.checkout_flow || {};
+		var contextFlags = context.feature_flags || {};
+		var localizedFlags = (window.mpCcCheckout && window.mpCcCheckout.flags) ? window.mpCcCheckout.flags : {};
 		var allSteps = Array.isArray(flow.steps) ? flow.steps : [];
 		var visibleIds = Array.isArray(flow.visible_steps) ? flow.visible_steps : [];
 		var currentStep = flow.current_step || (visibleIds[0] || '');
@@ -75,7 +85,8 @@
 				answers: flow.answers || {},
 				scenario: flow.scenario || '',
 				expiresAt: flow.expires_at || 0
-			}
+			},
+			featureFlags: $.extend({}, contextFlags, localizedFlags)
 		};
 	}
 
@@ -310,12 +321,24 @@
 		html += '<h2 class="mp-cc-step-panel__title">' + escapeHtml(label) + '</h2>';
 		html += '</header>';
 		html += '<div class="mp-cc-step-panel__content" data-mp-cc-step-slot="' + escapeHtml(step ? step.id : '') + '"></div>';
+		if (!isFlagEnabled(state, flagNames.discountPlacement, true)) {
+			html += '<p class="mp-cc-step-panel__hint">Discount tools are rendered inline in payment step.</p>';
+		}
+		if (!isFlagEnabled(state, flagNames.multiPickupPoints, false)) {
+			html += '<p class="mp-cc-step-panel__hint">Single pickup point mode is active.</p>';
+		}
+		if (isFlagEnabled(state, flagNames.checkoutTestingMode, false)) {
+			html += '<p class="mp-cc-step-panel__hint">Checkout testing mode is enabled.</p>';
+		}
 		html += '</section>';
 
 		return html;
 	}
 
 	function buildNavHtml(state) {
+		if (!isFlagEnabled(state, flagNames.multiStepFlow, true)) {
+			return '';
+		}
 		var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
 		var isFirst = currentIndex <= 0;
 		var isLast = currentIndex >= state.visibleSteps.length - 1;
@@ -336,7 +359,9 @@
 
 		var html = '';
 		html += '<div class="mp-cc-nav-shell" data-step-count="' + state.visibleSteps.length + '">';
-		html += buildProgressHtml(state);
+		if (isFlagEnabled(state, flagNames.multiStepFlow, true)) {
+			html += buildProgressHtml(state);
+		}
 		html += buildStepPanelHtml(state);
 		html += buildNavHtml(state);
 		html += '</div>';
@@ -355,6 +380,10 @@
 	}
 
 	function bindHandlers(state, $app) {
+		if (!isFlagEnabled(state, flagNames.multiStepFlow, true)) {
+			return;
+		}
+
 		$app.find('[data-nav="back"]').off('click').on('click', function () {
 			moveBackward(state, $app);
 		});
@@ -376,6 +405,16 @@
 			}
 			setCurrentStep(state, $app, String(target));
 		});
+	}
+
+	function isFlagEnabled(state, flag, fallback) {
+		if (!state || !state.featureFlags || typeof state.featureFlags !== 'object') {
+			return Boolean(fallback);
+		}
+		if (!Object.prototype.hasOwnProperty.call(state.featureFlags, flag)) {
+			return Boolean(fallback);
+		}
+		return Boolean(state.featureFlags[flag]);
 	}
 
 	function escapeHtml(value) {

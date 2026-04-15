@@ -7,6 +7,8 @@
 
 namespace MP\CustomCheckout\Routing;
 
+use MP\CustomCheckout\Settings\FeatureFlagResolver;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
@@ -25,6 +27,7 @@ final class CheckoutRouteContext {
 			'site_locale'     => get_locale(),
 			'is_admin'        => is_admin(),
 			'is_plain_permalinks' => CheckoutPermalinkCompatibility::is_plain_permalinks(),
+			'feature_flags'   => FeatureFlagResolver::all(),
 		);
 
 		$flow = CheckoutSessionService::get_public_state();
