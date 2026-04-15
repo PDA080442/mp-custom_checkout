@@ -96,6 +96,28 @@ final class CheckoutSessionService {
 	}
 
 	/**
+	 * Сохранить выбранный сценарий fulfillment.
+	 */
+	public static function set_scenario( string $scenario ): void {
+		$flow = self::ensure_initialized();
+		if ( empty( $flow ) ) {
+			return;
+		}
+
+		$scenario = CheckoutScenarioRules::sanitize_scenario( $scenario );
+		$flow['scenario']  = $scenario;
+		$flow['updated_at'] = time();
+
+		$step_manager = new CheckoutStepManager( $flow );
+		$current_step = $step_manager->get_current_step_id();
+		if ( is_string( $current_step ) && '' !== $current_step ) {
+			$flow['current_step'] = $current_step;
+		}
+
+		self::persist_flow( $flow );
+	}
+
+	/**
 	 * Сохранить промежуточные ответы шага.
 	 *
 	 * @param array<string, mixed> $answers Данные шага.
