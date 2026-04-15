@@ -66,8 +66,10 @@ final class OrderMetaHooks {
 		$scenario  = CheckoutScenarioRules::sanitize_scenario( $scenario );
 		$rules     = CheckoutScenarioRules::build( $scenario );
 
-		$serialized = isset( $rules['serialize'] ) && is_array( $rules['serialize'] ) ? $rules['serialize'] : array( 'id' => $scenario );
-		$scenario_label = isset( $serialized['label'] ) ? (string) $serialized['label'] : CheckoutScenarioRules::scenario_label( $scenario );
+		$serialized      = isset( $rules['serialize'] ) && is_array( $rules['serialize'] ) ? $rules['serialize'] : array( 'id' => $scenario );
+		$scenario_label  = isset( $serialized['label'] ) ? (string) $serialized['label'] : CheckoutScenarioRules::scenario_label( $scenario );
+		$scenario_label  = CheckoutScenarioRules::normalize_label_for_output( $scenario_label, $scenario );
+		$serialized['label'] = $scenario_label;
 
 		$order->update_meta_data( '_mp_cc_scenario_id', $scenario );
 		$order->update_meta_data( '_mp_cc_scenario_label', $scenario_label );

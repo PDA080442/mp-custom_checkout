@@ -708,6 +708,24 @@
 	margin-top: 0.9rem;
 }
 
+.mp-cc-summary-card__scenario {
+	margin-top: 0.9rem;
+	padding-top: 0.75rem;
+	border-top: 1px solid var(--mp-cc-color-border);
+	display: grid;
+	gap: 0.3rem;
+}
+
+.mp-cc-summary-card__scenario-title,
+.mp-cc-summary-card__scenario-meta {
+	margin: 0;
+	font-size: 0.875rem;
+}
+
+.mp-cc-summary-card__scenario-meta {
+	color: var(--mp-cc-color-text-muted);
+}
+
 #mp-cc-checkout.mp-cc-step1-card-compact .mp-cc-cart-item {
 	padding: 0.55rem;
 	gap: 0.55rem;

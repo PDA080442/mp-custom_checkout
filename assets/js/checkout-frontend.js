@@ -1062,6 +1062,12 @@
 			? getStepOneLabel(state, 'subtotal_label', 'step_1.subtotal', 'Subtotal')
 			: getUiText('order_review.total', 'Total');
 		var returnUrl = cartSummary.catalog_url ? String(cartSummary.catalog_url) : '/';
+		var scenario = String(state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenario || '') : '');
+		var scenarioRules = getScenarioRulesById(scenario);
+		var scenarioLabel = scenarioRules && scenarioRules.label ? String(scenarioRules.label) : '';
+		var pickupPoint = state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.scenarioData
+			? (state.frontendStore.fulfillment.scenarioData.pickup_point || null)
+			: null;
 		var html = '';
 
 		html += '<section class="mp-cc-summary-card" aria-label="Order summary panel">';
@@ -1080,6 +1086,17 @@
 			html += '<div class="mp-cc-summary-card__actions">';
 			html += '<button type="button" class="mp-cc-summary-card__btn mp-cc-summary-card__btn--primary" data-summary-action="continue">' + escapeHtml(getStepOneLabel(state, 'continue_label', 'step_1.continue', 'Continue')) + '</button>';
 			html += '<a href="' + escapeHtml(returnUrl) + '" class="mp-cc-summary-card__btn mp-cc-summary-card__btn--ghost">' + escapeHtml(getStepOneLabel(state, 'return_label', 'step_1.return_to_shop', 'Return to shop')) + '</a>';
+			html += '</div>';
+		}
+		if (state.currentStepId === 'contact_payment' && scenarioLabel) {
+			html += '<div class="mp-cc-summary-card__scenario" data-final-review-scenario="1">';
+			html += '<p class="mp-cc-summary-card__scenario-title"><strong>' + escapeHtml(getUiText('step_2.title', 'Способ получения')) + ':</strong> ' + escapeHtml(scenarioLabel) + '</p>';
+			if (scenario === 'pickup' && pickupPoint && pickupPoint.title) {
+				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(String(pickupPoint.title)) + '</p>';
+				if (pickupPoint.address) {
+					html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(String(pickupPoint.address)) + '</p>';
+				}
+			}
 			html += '</div>';
 		}
 		html += '<div class="mp-cc-summary-card__slot" data-mp-cc-summary-slot="1"></div>';
