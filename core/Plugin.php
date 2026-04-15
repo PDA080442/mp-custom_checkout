@@ -7,6 +7,7 @@
 
 namespace MP\CustomCheckout;
 
+use MP\CustomCheckout\Hooks\PluginHooksRegistrar;
 use MP\CustomCheckout\Settings\SettingsMigrationManager;
 
 defined( 'ABSPATH' ) || exit;
@@ -41,6 +42,7 @@ final class Plugin {
 		DependencyFailureGuard::boot();
 		add_action( 'plugins_loaded', array( $this, 'load_textdomain' ), 0 );
 		add_action( 'plugins_loaded', array( SettingsMigrationManager::class, 'maybe_migrate' ), 15 );
+		add_action( 'plugins_loaded', array( PluginHooksRegistrar::class, 'register' ), 25 );
 	}
 
 	/**
