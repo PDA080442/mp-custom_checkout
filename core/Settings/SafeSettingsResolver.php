@@ -45,6 +45,13 @@ final class SafeSettingsResolver {
 				continue;
 			}
 
+			if ( OptionKeys::SECTION_GENERAL === $section_key ) {
+				$tree[ $section_key ] = array(
+					'route_slug' => 'mp-checkout',
+				);
+				continue;
+			}
+
 			$tree[ $section_key ] = array();
 		}
 

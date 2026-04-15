@@ -8,6 +8,8 @@
 namespace MP\CustomCheckout\Hooks;
 
 use MP\CustomCheckout\DependencyFailureGuard;
+use MP\CustomCheckout\Routing\CheckoutPermalinkCompatibility;
+use MP\CustomCheckout\Routing\CheckoutRouteController;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -22,7 +24,9 @@ final class PluginHooksRegistrar {
 	public static function register(): void {
 		FrontendAssetsHooks::register();
 		AdminAssetsHooks::register();
+		CheckoutPermalinkCompatibility::register();
 		CheckoutRouteHooks::register();
+		CheckoutRouteController::register();
 		CheckoutAjaxHooks::register();
 		DiagnosticsHooks::register();
 
