@@ -141,7 +141,8 @@
 			},
 			cart: {
 				snapshot: flow.snapshot || {},
-				summary: {}
+				summary: {},
+				items: []
 			},
 			form: {
 				contact: contactBilling,
@@ -230,6 +231,9 @@
 		state.frontendStore.runtime.blocked = false;
 		state.frontendStore.runtime.dirty = false;
 		state.frontendStore.runtime.lastSyncAt = Date.now();
+		var contextCart = state.context && state.context.cart ? state.context.cart : {};
+		state.frontendStore.cart.items = Array.isArray(contextCart.items) ? contextCart.items : [];
+		state.frontendStore.cart.summary = contextCart.summary || {};
 	}
 
 	function setRuntimeFlag(state, key, value) {
@@ -468,7 +472,11 @@
 		html += '<p class="mp-cc-step-panel__meta">Step ' + (currentIndex + 1) + ' / ' + state.visibleSteps.length + '</p>';
 		html += '<h2 class="mp-cc-step-panel__title" id="mp-cc-step-heading" tabindex="-1">' + escapeHtml(label) + '</h2>';
 		html += '</header>';
-		html += '<div class="mp-cc-step-panel__content" data-mp-cc-step-slot="' + escapeHtml(step ? step.id : '') + '"></div>';
+		html += '<div class="mp-cc-step-panel__content" data-mp-cc-step-slot="' + escapeHtml(step ? step.id : '') + '">';
+		if (step && step.id === 'cart') {
+			html += buildCartItemsHtml(state);
+		}
+		html += '</div>';
 		if (!isFlagEnabled(state, flagNames.discountPlacement, true)) {
 			html += '<p class="mp-cc-step-panel__hint">Discount tools are rendered inline in payment step.</p>';
 		}
@@ -480,6 +488,73 @@
 		}
 		html += '</section>';
 
+		return html;
+	}
+
+	function buildCartItemsHtml(state) {
+		var items = state.frontendStore && state.frontendStore.cart && Array.isArray(state.frontendStore.cart.items)
+			? state.frontendStore.cart.items
+			: [];
+		var html = '';
+
+		html += '<section class="mp-cc-cart-list" aria-label="' + escapeHtml(getUiText('step_1.title', 'Cart items')) + '">';
+		html += '<div class="mp-cc-cart-list__items" data-mp-cc-item-list="1">';
+
+		if (!items.length) {
+			html += '<div class="mp-cc-cart-list__empty">';
+			html += '<p class="mp-cc-empty">' + escapeHtml(getUiText('step_1.empty_cart', 'Cart is empty')) + '</p>';
+			html += '</div>';
+			html += '</div></section>';
+			return html;
+		}
+
+		for (var i = 0; i < items.length; i += 1) {
+			var item = items[i] || {};
+			var itemKey = String(item.key || 'item-' + i);
+			var productId = Number(item.product_id || 0);
+			var variationId = Number(item.variation_id || 0);
+			var title = item.name ? String(item.name) : getUiText('step_1.title', 'Product');
+			var priceHtml = item.price_html ? String(item.price_html) : '';
+			var sku = item.sku ? String(item.sku) : '';
+			var variationText = item.variation_text ? String(item.variation_text) : '';
+			var imageUrl = item.image_url ? String(item.image_url) : '';
+			var qty = Number(item.quantity || 0);
+			var subtotal = item.line_subtotal ? String(item.line_subtotal) : '';
+
+			html += '<article class="mp-cc-cart-item"';
+			html += ' data-cart-item-key="' + escapeHtml(itemKey) + '"';
+			html += ' data-product-id="' + escapeHtml(productId) + '"';
+			html += ' data-variation-id="' + escapeHtml(variationId) + '"';
+			html += '>';
+			html += '<div class="mp-cc-cart-item__media">';
+			if (imageUrl) {
+				html += '<img src="' + escapeHtml(imageUrl) + '" alt="" loading="lazy" />';
+			} else {
+				html += '<div class="mp-cc-cart-item__placeholder" aria-hidden="true"></div>';
+			}
+			html += '</div>';
+			html += '<div class="mp-cc-cart-item__body">';
+			html += '<h3 class="mp-cc-cart-item__title" title="' + escapeHtml(title) + '">' + escapeHtml(title) + '</h3>';
+			if (priceHtml) {
+				html += '<div class="mp-cc-cart-item__price">' + priceHtml + '</div>';
+			}
+			html += '<dl class="mp-cc-cart-item__meta">';
+			if (sku) {
+				html += '<div class="mp-cc-cart-item__meta-row"><dt>SKU</dt><dd>' + escapeHtml(sku) + '</dd></div>';
+			}
+			if (variationText) {
+				html += '<div class="mp-cc-cart-item__meta-row"><dt>' + escapeHtml(getUiText('step_1.positions_count', 'Details')) + '</dt><dd>' + escapeHtml(variationText) + '</dd></div>';
+			}
+			html += '</dl>';
+			html += '<div class="mp-cc-cart-item__footer">';
+			html += '<span class="mp-cc-cart-item__qty" data-cart-qty="' + escapeHtml(qty) + '">' + escapeHtml(qty) + ' ×</span>';
+			html += '<span class="mp-cc-cart-item__subtotal">' + (subtotal || '—') + '</span>';
+			html += '</div>';
+			html += '</div>';
+			html += '</article>';
+		}
+
+		html += '</div></section>';
 		return html;
 	}
 

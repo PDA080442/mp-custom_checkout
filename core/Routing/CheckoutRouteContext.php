@@ -28,6 +28,7 @@ final class CheckoutRouteContext {
 			'is_admin'        => is_admin(),
 			'is_plain_permalinks' => CheckoutPermalinkCompatibility::is_plain_permalinks(),
 			'feature_flags'   => FeatureFlagResolver::all(),
+			'cart'            => self::collect_cart_data(),
 		);
 
 		$flow = CheckoutSessionService::get_public_state();
@@ -77,5 +78,76 @@ final class CheckoutRouteContext {
 		}
 
 		return null;
+	}
+
+	/**
+	 * Снимок корзины для шага 1 (позиции + summary).
+	 *
+	 * @return array<string, mixed>
+	 */
+	private static function collect_cart_data(): array {
+		$result = array(
+			'items'    => array(),
+			'summary'  => array(
+				'items_count' => 0,
+				'subtotal'    => '',
+			),
+		);
+
+		if ( ! function_exists( 'WC' ) || ! WC()->cart instanceof \WC_Cart ) {
+			return $result;
+		}
+
+		$cart = WC()->cart;
+		foreach ( (array) $cart->get_cart() as $cart_item_key => $cart_item ) {
+			if ( ! is_array( $cart_item ) ) {
+				continue;
+			}
+			$product = isset( $cart_item['data'] ) && $cart_item['data'] instanceof \WC_Product ? $cart_item['data'] : null;
+			if ( ! $product ) {
+				continue;
+			}
+
+			$variation_text = '';
+			if ( function_exists( 'wc_get_formatted_cart_item_data' ) ) {
+				$variation_text = trim( wp_strip_all_tags( wc_get_formatted_cart_item_data( $cart_item, true ) ) );
+			}
+
+			$name = (string) $product->get_name();
+			if ( '' === $name ) {
+				$name = __( 'Товар', 'mp-custom-checkout' );
+			}
+
+			$image_url = '';
+			$image_id  = (int) $product->get_image_id();
+			if ( $image_id > 0 ) {
+				$url = wp_get_attachment_image_url( $image_id, 'woocommerce_thumbnail' );
+				$image_url = is_string( $url ) ? $url : '';
+			}
+
+			$qty = isset( $cart_item['quantity'] ) ? max( 0, (int) $cart_item['quantity'] ) : 0;
+			$line_subtotal = '';
+			if ( function_exists( 'WC' ) && WC()->cart ) {
+				$line_subtotal = WC()->cart->get_product_subtotal( $product, $qty );
+			}
+
+			$result['items'][] = array(
+				'key'            => (string) $cart_item_key,
+				'product_id'     => isset( $cart_item['product_id'] ) ? (int) $cart_item['product_id'] : 0,
+				'variation_id'   => isset( $cart_item['variation_id'] ) ? (int) $cart_item['variation_id'] : 0,
+				'name'           => $name,
+				'price_html'     => $product->get_price_html(),
+				'sku'            => (string) $product->get_sku(),
+				'variation_text' => $variation_text,
+				'image_url'      => $image_url,
+				'quantity'       => $qty,
+				'line_subtotal'  => (string) $line_subtotal,
+			);
+		}
+
+		$result['summary']['items_count'] = (int) $cart->get_cart_contents_count();
+		$result['summary']['subtotal']    = (string) $cart->get_cart_subtotal();
+
+		return $result;
 	}
 }
