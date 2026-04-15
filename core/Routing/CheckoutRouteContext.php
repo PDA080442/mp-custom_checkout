@@ -30,12 +30,15 @@ final class CheckoutRouteContext {
 		$flow = CheckoutSessionService::get_flow();
 		if ( ! empty( $flow ) ) {
 			$step_manager = new CheckoutStepManager( $flow );
+			$scenario     = isset( $flow['scenario'] ) ? (string) $flow['scenario'] : '';
+			$scenario     = CheckoutScenarioRules::sanitize_scenario( $scenario );
 			$context['checkout_flow'] = array(
 				'context_id'   => isset( $flow['context_id'] ) ? (string) $flow['context_id'] : '',
 				'current_step' => (string) ( $step_manager->get_current_step_id() ?? '' ),
-				'scenario'     => isset( $flow['scenario'] ) ? (string) $flow['scenario'] : '',
+				'scenario'     => $scenario,
 				'steps'        => array_values( $step_manager->get_registered_steps() ),
 				'visible_steps' => $step_manager->get_visible_step_ids(),
+				'scenario_rules' => CheckoutScenarioRules::build( $scenario ),
 			);
 		}
 

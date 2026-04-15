@@ -108,6 +108,24 @@ final class CheckoutAjaxHooks {
 			);
 		}
 
+		if ( 'session_set_scenario' === $sub_action ) {
+			$scenario = isset( $_POST['scenario'] ) ? sanitize_key( wp_unslash( $_POST['scenario'] ) ) : '';
+			if ( '' === $scenario ) {
+				wp_send_json_error(
+					array( 'code' => 'invalid_scenario', 'message' => __( 'Не указан сценарий оформления.', 'mp-custom-checkout' ) ),
+					400
+				);
+			}
+
+			CheckoutSessionService::set_scenario( $scenario );
+			wp_send_json_success(
+				array(
+					'sub_action' => $sub_action,
+					'scenario'   => $scenario,
+				)
+			);
+		}
+
 		if ( 'session_get_state' === $sub_action ) {
 			wp_send_json_success(
 				array(
