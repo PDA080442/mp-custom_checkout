@@ -8,6 +8,7 @@
 namespace MP\CustomCheckout\Hooks;
 
 use MP\CustomCheckout\DependencyFailureGuard;
+use MP\CustomCheckout\Routing\CheckoutEntryService;
 use MP\CustomCheckout\Routing\CheckoutPermalinkCompatibility;
 use MP\CustomCheckout\Routing\CheckoutRouteController;
 
@@ -28,6 +29,8 @@ final class PluginHooksRegistrar {
 		CheckoutRouteHooks::register();
 		CheckoutRouteController::register();
 		CheckoutAjaxHooks::register();
+		CheckoutEntryAjaxHooks::register();
+		CheckoutEntryFrontendHooks::register();
 		DiagnosticsHooks::register();
 
 		add_action( 'woocommerce_init', array( __CLASS__, 'register_woocommerce_dependent_hooks' ), 30 );
@@ -41,6 +44,7 @@ final class PluginHooksRegistrar {
 			return;
 		}
 
+		CheckoutEntryService::register();
 		OrderMetaHooks::register();
 		EmailHooks::register();
 		SuccessScreenHooks::register();

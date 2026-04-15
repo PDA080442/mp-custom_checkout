@@ -8,6 +8,7 @@
 namespace MP\CustomCheckout\Routing;
 
 use MP\CustomCheckout\DependencyFailureGuard;
+use MP\CustomCheckout\Settings\SafeSettingsResolver;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -51,6 +52,9 @@ final class CheckoutEntryGuard {
 		}
 
 		if ( self::requires_sticky_cart_entry() && ! self::has_entry_session_flag() ) {
+			if ( apply_filters( 'mp_custom_checkout_bypass_entry_gate', false ) ) {
+				return true;
+			}
 			self::$last_failure_code = 'entry_not_allowed';
 			return false;
 		}
@@ -62,17 +66,15 @@ final class CheckoutEntryGuard {
 	 * Требуется ли явный вход из кастомной корзины (сессионный флаг).
 	 */
 	private static function requires_sticky_cart_entry(): bool {
-		return (bool) apply_filters( 'mp_custom_checkout_require_entry_gate', false );
+		$default = (bool) SafeSettingsResolver::get( 'general.require_entry_gate', true );
+
+		return (bool) apply_filters( 'mp_custom_checkout_require_entry_gate', $default );
 	}
 
 	/**
-	 * Флаг допустимого входа в checkout (устанавливается сценарием корзины).
+	 * Флаг допустимого входа в checkout (сессия WooCommerce).
 	 */
 	private static function has_entry_session_flag(): bool {
-		if ( ! function_exists( 'WC' ) || ! WC()->session ) {
-			return false;
-		}
-
-		return (bool) WC()->session->get( 'mp_cc_checkout_entry', false );
+		return CheckoutEntryService::has_entry_eligibility();
 	}
 }

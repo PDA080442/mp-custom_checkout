@@ -39,11 +39,7 @@ final class CheckoutRouteFallback {
 	 * @param array<string, mixed> $context Контекст.
 	 */
 	private static function resolve_redirect_url( string $reason_code, array $context ): string {
-		if ( function_exists( 'wc_get_cart_url' ) ) {
-			return wc_get_cart_url();
-		}
-
-		return home_url( '/' );
+		return CheckoutReturnPaths::get_url_for_reason( $reason_code, $context );
 	}
 
 	/**
