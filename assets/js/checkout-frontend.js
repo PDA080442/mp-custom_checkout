@@ -218,6 +218,14 @@
 		return startOfDay(date);
 	}
 
+	function formatIsoDateForUi(value) {
+		var date = parseIsoDate(value);
+		if (!date) {
+			return String(value || '');
+		}
+		return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+	}
+
 	function monthKeyFromDate(date) {
 		return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0')].join('-');
 	}
@@ -1371,6 +1379,12 @@
 		if (state.currentStepId === 'contact_payment' && scenarioLabel) {
 			html += '<div class="mp-cc-summary-card__scenario" data-final-review-scenario="1">';
 			html += '<p class="mp-cc-summary-card__scenario-title"><strong>' + escapeHtml(getUiText('step_2.title', 'Способ получения')) + ':</strong> ' + escapeHtml(scenarioLabel) + '</p>';
+			var selectedDate = state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.date
+				? String(state.frontendStore.fulfillment.date.selected_date || '')
+				: '';
+			if (selectedDate) {
+				html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(getUiText('step_3.title', 'Дата получения')) + ':</strong> ' + escapeHtml(formatIsoDateForUi(selectedDate)) + '</p>';
+			}
 			if (scenario === 'pickup' && pickupPoint && pickupPoint.title) {
 				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(String(pickupPoint.title)) + '</p>';
 				if (pickupPoint.address) {
@@ -1639,8 +1653,19 @@
 				step_id: 'date',
 				context_id: state.flowContextId,
 				answers: dateBox
-			}).fail(function () {
-				notify(getUiText('step_3.date_save_failed', 'Не удалось сохранить выбранную дату.'), 'error');
+			}).then(function (response) {
+				if (!response || !response.success || !response.data) {
+					throw new Error('date_save_empty_response');
+				}
+				if (response.data.flow) {
+					syncFromFlow(state, response.data.flow, response.data.cart || {});
+					render(state, $app);
+				}
+			}).fail(function (xhr) {
+				var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
+				var message = payload.message || getUiText('step_3.date_save_failed', 'Не удалось сохранить выбранную дату.');
+				notify(message, 'error');
+				syncStoreWithBackend(state, $app);
 			});
 		});
 

@@ -27,6 +27,7 @@ final class EmailHooks {
 
 		add_action( 'woocommerce_email_order_meta', array( __CLASS__, 'render_email_order_meta' ), 10, 4 );
 		add_action( 'mp_custom_checkout_email_order_meta', array( __CLASS__, 'render_scenario_meta' ), 10, 4 );
+		add_action( 'mp_custom_checkout_email_order_meta', array( __CLASS__, 'render_selected_date_meta' ), 11, 4 );
 		add_action( 'mp_custom_checkout_email_order_meta', array( __CLASS__, 'render_pickup_point_meta' ), 12, 4 );
 		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'render_scenario_admin' ), 12, 1 );
 		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'render_pickup_point_admin' ), 15, 1 );
@@ -89,6 +90,31 @@ final class EmailHooks {
 	}
 
 	/**
+	 * Вывод выбранной даты в email заказа.
+	 *
+	 * @param \WC_Order $order Заказ.
+	 * @param bool      $sent_to_admin Админу.
+	 * @param bool      $plain_text Текстовый формат.
+	 * @param \WC_Email|false $email Письмо.
+	 */
+	public static function render_selected_date_meta( $order, $sent_to_admin, $plain_text, $email = null ): void {
+		unset( $sent_to_admin, $email );
+		if ( ! $order instanceof \WC_Order ) {
+			return;
+		}
+		$date_label = self::get_order_date_label( $order );
+		if ( '' === $date_label ) {
+			return;
+		}
+		$title = __( 'Дата получения', 'mp-custom-checkout' );
+		if ( $plain_text ) {
+			echo "\n" . sanitize_text_field( $title ) . ': ' . sanitize_text_field( $date_label ) . "\n";
+			return;
+		}
+		echo '<p><strong>' . esc_html( $title ) . ':</strong> ' . esc_html( $date_label ) . '</p>';
+	}
+
+	/**
 	 * Вывод сценария в карточке заказа WooCommerce (админка).
 	 *
 	 * @param \WC_Order $order Заказ.
@@ -99,9 +125,15 @@ final class EmailHooks {
 		}
 		$scenario_label = self::get_order_scenario_label( $order );
 		if ( '' === $scenario_label ) {
-			return;
+			$scenario_label = '';
 		}
-		echo '<p><strong>' . esc_html__( 'Сценарий получения', 'mp-custom-checkout' ) . ':</strong> ' . esc_html( $scenario_label ) . '</p>';
+		$date_label = self::get_order_date_label( $order );
+		if ( '' !== $scenario_label ) {
+			echo '<p><strong>' . esc_html__( 'Сценарий получения', 'mp-custom-checkout' ) . ':</strong> ' . esc_html( $scenario_label ) . '</p>';
+		}
+		if ( '' !== $date_label ) {
+			echo '<p><strong>' . esc_html__( 'Дата получения', 'mp-custom-checkout' ) . ':</strong> ' . esc_html( $date_label ) . '</p>';
+		}
 	}
 
 	/**
@@ -176,10 +208,14 @@ final class EmailHooks {
 			$result[ $key ] = $label;
 			if ( 'order_status' === $key || 'order_total' === $key ) {
 				$result['mp_cc_scenario'] = __( 'Сценарий', 'mp-custom-checkout' );
+				$result['mp_cc_selected_date'] = __( 'Дата получения', 'mp-custom-checkout' );
 			}
 		}
 		if ( ! isset( $result['mp_cc_scenario'] ) ) {
 			$result['mp_cc_scenario'] = __( 'Сценарий', 'mp-custom-checkout' );
+		}
+		if ( ! isset( $result['mp_cc_selected_date'] ) ) {
+			$result['mp_cc_selected_date'] = __( 'Дата получения', 'mp-custom-checkout' );
 		}
 		return $result;
 	}
@@ -188,7 +224,7 @@ final class EmailHooks {
 	 * Рендер сценария в колонке списка заказов (legacy table).
 	 */
 	public static function render_scenario_order_list_column( string $column, int $post_id ): void {
-		if ( 'mp_cc_scenario' !== $column ) {
+		if ( ! in_array( $column, array( 'mp_cc_scenario', 'mp_cc_selected_date' ), true ) ) {
 			return;
 		}
 		$order = wc_get_order( $post_id );
@@ -196,7 +232,7 @@ final class EmailHooks {
 			echo '&mdash;';
 			return;
 		}
-		$label = self::get_order_scenario_label( $order );
+		$label = 'mp_cc_scenario' === $column ? self::get_order_scenario_label( $order ) : self::get_order_date_label( $order );
 		echo '' !== $label ? esc_html( $label ) : '&mdash;';
 	}
 
@@ -207,7 +243,7 @@ final class EmailHooks {
 	 * @param int|\WC_Order|null $order_or_id Заказ или ID.
 	 */
 	public static function render_scenario_order_list_column_hpos( string $column, $order_or_id ): void {
-		if ( 'mp_cc_scenario' !== $column ) {
+		if ( ! in_array( $column, array( 'mp_cc_scenario', 'mp_cc_selected_date' ), true ) ) {
 			return;
 		}
 		$order = $order_or_id instanceof \WC_Order ? $order_or_id : wc_get_order( (int) $order_or_id );
@@ -215,7 +251,7 @@ final class EmailHooks {
 			echo '&mdash;';
 			return;
 		}
-		$label = self::get_order_scenario_label( $order );
+		$label = 'mp_cc_scenario' === $column ? self::get_order_scenario_label( $order ) : self::get_order_date_label( $order );
 		echo '' !== $label ? esc_html( $label ) : '&mdash;';
 	}
 
@@ -238,5 +274,21 @@ final class EmailHooks {
 
 		$candidate = '' !== trim( $scenario_label ) ? $scenario_label : $payload_label;
 		return CheckoutScenarioRules::normalize_label_for_output( $candidate, $scenario_id );
+	}
+
+	private static function get_order_date_label( \WC_Order $order ): string {
+		$date_label = (string) $order->get_meta( '_mp_cc_selected_date_label', true );
+		$date_iso   = (string) $order->get_meta( '_mp_cc_selected_date', true );
+		if ( '' !== trim( $date_label ) ) {
+			return sanitize_text_field( $date_label );
+		}
+		if ( '' === trim( $date_iso ) ) {
+			return '';
+		}
+		$dt = \DateTimeImmutable::createFromFormat( 'Y-m-d', $date_iso, wp_timezone() );
+		if ( $dt instanceof \DateTimeImmutable ) {
+			return $dt->format( 'd.m.Y' );
+		}
+		return sanitize_text_field( $date_iso );
 	}
 }
