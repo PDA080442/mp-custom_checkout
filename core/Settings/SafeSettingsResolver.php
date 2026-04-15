@@ -53,6 +53,55 @@ final class SafeSettingsResolver {
 				);
 				continue;
 			}
+			if ( OptionKeys::SECTION_STEP_1 === $section_key ) {
+				$tree[ $section_key ] = array(
+					'labels' => array(
+						'title'          => 'Корзина',
+						'summary_title'  => 'Сводка заказа',
+						'subtotal_label' => 'Подытог',
+						'items_label'    => 'Позиций',
+						'continue_label' => 'Продолжить оформление',
+						'return_label'   => 'Вернуться в магазин',
+						'empty_title'    => 'Корзина пуста',
+					),
+					'product_meta_visibility' => array(
+						'show_image'      => true,
+						'show_sku'        => true,
+						'show_variation'  => true,
+						'show_price'      => true,
+						'show_subtotal'   => true,
+					),
+					'quantity_controls' => array(
+						'enabled'            => true,
+						'allow_manual_input' => true,
+						'show_increment'     => true,
+						'show_decrement'     => true,
+					),
+					'empty_state' => array(
+						'message'     => 'Добавьте товары, чтобы продолжить оформление.',
+						'cta_label'   => 'Вернуться в магазин',
+						'cta_enabled' => true,
+					),
+					'style_controls' => array(
+						'card_compact'       => false,
+						'card_emphasis'      => 'default',
+						'summary_emphasis'   => 'default',
+					),
+					'layout_order' => array(
+						'secondary_order' => array( 'price', 'sku', 'variation', 'quantity', 'subtotal', 'remove' ),
+					),
+					'responsive' => array(
+						'desktop_mode'       => 'comfortable',
+						'tablet_mode'        => 'comfortable',
+						'mobile_mode'        => 'compact',
+						'hide_media_mobile'  => false,
+					),
+					'admin_preview' => array(
+						'enabled' => true,
+					),
+				);
+				continue;
+			}
 
 			$tree[ $section_key ] = array();
 		}
