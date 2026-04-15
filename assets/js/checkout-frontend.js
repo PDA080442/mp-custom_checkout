@@ -240,22 +240,54 @@
 		var scenario = normalizeScenarioId(state.frontendStore.fulfillment.scenario || '');
 		var rules = getScenarioRulesById(scenario);
 		var dateRules = rules.date_rules && typeof rules.date_rules === 'object' ? rules.date_rules : {};
-		var leadTime = Math.max(0, Number(dateRules.lead_time_days || 0));
+		var leadTime = Math.max(1, Number(dateRules.lead_time_days || 1));
 		var maxDays = Math.max(1, Number(dateRules.max_days_ahead || 14));
 		var allowWeekends = dateRules.allow_weekends !== false;
 		var today = startOfDay(new Date());
-		var earliest = addDays(today, leadTime);
-		var latest = addDays(today, maxDays);
+		var minByRules = parseIsoDate(dateRules.min_date || '');
+		var maxByRules = parseIsoDate(dateRules.max_date || '');
+		var earliest = minByRules || addDays(today, leadTime);
+		var latest = maxByRules || addDays(today, maxDays);
+		if (earliest < addDays(today, 1)) {
+			earliest = addDays(today, 1);
+		}
+		if (latest < earliest) {
+			latest = earliest;
+		}
+		var allowedWeekdays = Array.isArray(dateRules.allowed_weekdays) ? dateRules.allowed_weekdays.map(function (value) {
+			return Number(value);
+		}).filter(function (value) {
+			return Number.isFinite(value) && value >= 0 && value <= 6;
+		}) : [];
+		if (!allowedWeekdays.length) {
+			allowedWeekdays = allowWeekends ? [0, 1, 2, 3, 4, 5, 6] : [1, 2, 3, 4, 5];
+		}
+		var blockedDates = Array.isArray(dateRules.blocked_dates) ? dateRules.blocked_dates : [];
+		var blockedMap = {};
+		for (var b = 0; b < blockedDates.length; b += 1) {
+			blockedMap[String(blockedDates[b] || '')] = true;
+		}
+		var availableDates = Array.isArray(dateRules.available_dates) ? dateRules.available_dates : [];
+		var availableMap = {};
+		for (var a = 0; a < availableDates.length; a += 1) {
+			availableMap[String(availableDates[a] || '')] = true;
+		}
+		var hasServerAvailability = availableDates.length > 0;
 		var firstAvailable = null;
 		var pointer = new Date(earliest.getTime());
 		while (pointer <= latest) {
-			var pointerWeekend = pointer.getDay() === 0 || pointer.getDay() === 6;
-			if (allowWeekends || !pointerWeekend) {
+			var pointerIso = isoDate(pointer);
+			var pointerWeekday = pointer.getDay();
+			var allowedByWeekday = allowedWeekdays.indexOf(pointerWeekday) > -1;
+			var allowedByServer = !hasServerAvailability || Boolean(availableMap[pointerIso]);
+			var allowedByBlocked = !blockedMap[pointerIso];
+			if (allowedByWeekday && allowedByServer && allowedByBlocked) {
 				firstAvailable = new Date(pointer.getTime());
 				break;
 			}
 			pointer = addDays(pointer, 1);
 		}
+		var hasAnyAvailable = Boolean(firstAvailable);
 		if (!firstAvailable) {
 			firstAvailable = new Date(earliest.getTime());
 		}
@@ -275,9 +307,12 @@
 		var monthLabel = monthStart.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
 		var selectedDate = String(dateStore.selected_date || '');
 		var selected = parseIsoDate(selectedDate);
-		if (!selected || selected < earliest || selected > latest || (!allowWeekends && (selected.getDay() === 0 || selected.getDay() === 6))) {
+		if (!selected || selected < earliest || selected > latest || allowedWeekdays.indexOf(selected.getDay()) === -1 || blockedMap[selectedDate] || (hasServerAvailability && !availableMap[selectedDate])) {
 			selected = firstAvailable;
 			selectedDate = isoDate(firstAvailable);
+		}
+		if (!hasAnyAvailable) {
+			selectedDate = '';
 		}
 
 		var gridStart = addDays(monthStart, -((monthStart.getDay() + 6) % 7));
@@ -287,9 +322,12 @@
 			var date = addDays(gridStart, i);
 			var inMonth = date.getMonth() === monthStart.getMonth();
 			var weekend = date.getDay() === 0 || date.getDay() === 6;
-			var outOfRange = date < earliest || date > latest;
-			var disabled = outOfRange || (!allowWeekends && weekend);
 			var value = isoDate(date);
+			var outOfRange = date < earliest || date > latest;
+			var blockedByManualDate = Boolean(blockedMap[value]);
+			var allowedByWeekdayDate = allowedWeekdays.indexOf(date.getDay()) > -1;
+			var allowedByServerDate = !hasServerAvailability || Boolean(availableMap[value]);
+			var disabled = outOfRange || blockedByManualDate || !allowedByWeekdayDate || !allowedByServerDate;
 			days.push({
 				value: value,
 				label: date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }),
@@ -307,6 +345,7 @@
 		return {
 			scenario: scenario,
 			selectedDate: selectedDate,
+			hasAnyAvailable: hasAnyAvailable,
 			monthLabel: monthLabel,
 			monthKey: monthKeyFromDate(monthStart),
 			minMonthKey: monthKeyFromDate(earliestMonth),
@@ -376,7 +415,11 @@
 		}
 		html += '</div>';
 		html += '</div>';
-		html += '<p class="mp-cc-date-step__helper" id="mp-cc-date-helper">' + escapeHtml(model.helper) + '</p>';
+		if (!model.hasAnyAvailable) {
+			html += '<p class="mp-cc-date-step__helper" id="mp-cc-date-helper">' + escapeHtml(getUiText('step_3.no_dates', 'Нет доступных дат. Выберите другой сценарий или свяжитесь с поддержкой.')) + '</p>';
+		} else {
+			html += '<p class="mp-cc-date-step__helper" id="mp-cc-date-helper">' + escapeHtml(model.helper) + '</p>';
+		}
 		html += '</section>';
 		return html;
 	}
@@ -557,7 +600,7 @@
 			return;
 		}
 		var model = buildDateCalendarModel(state);
-		if (!model || !model.selectedDate) {
+		if (!model || !model.selectedDate || !model.hasAnyAvailable) {
 			return;
 		}
 		dateBox.selected_date = model.selectedDate;
