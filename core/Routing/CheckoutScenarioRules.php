@@ -51,7 +51,28 @@ final class CheckoutScenarioRules {
 		$map      = ScenarioStepRegistry::scenarios();
 
 		$label = isset( $map[ $scenario ] ) ? (string) $map[ $scenario ] : 'Самовывоз';
-		return sanitize_text_field( $label );
+		return self::normalize_label_for_output( $label, $scenario );
+	}
+
+	/**
+	 * Нормализация сценарного label для storage/email/admin/list/review.
+	 */
+	public static function normalize_label_for_output( string $label, string $scenario = '' ): string {
+		$label = sanitize_text_field( wp_strip_all_tags( $label ) );
+		$label = trim( preg_replace( '/\s+/', ' ', $label ) ?? '' );
+		if ( '' !== $label ) {
+			return $label;
+		}
+
+		$scenario = self::sanitize_scenario( $scenario );
+		if ( ScenarioStepRegistry::SCENARIO_KRASNOYARSK_DELIVERY === $scenario ) {
+			return 'Доставка по Красноярску';
+		}
+		if ( ScenarioStepRegistry::SCENARIO_OTHER_CITY_DELIVERY === $scenario ) {
+			return 'Доставка в другой город';
+		}
+
+		return 'Самовывоз';
 	}
 
 	/**
