@@ -19,16 +19,17 @@ final class CheckoutDateAvailabilityEngine {
 	 */
 	public static function build_rules( string $scenario ): array {
 		$scenario = CheckoutScenarioRules::sanitize_scenario( $scenario );
+		$settings = SafeSettingsResolver::get_section( 'step_3' );
 		$timezone = wp_timezone();
 		$today    = ( new \DateTimeImmutable( 'now', $timezone ) )->setTime( 0, 0, 0 );
 
-		$lead_time_days = self::lead_time_days( $scenario );
-		$max_days_ahead = self::max_days_ahead( $scenario );
+		$lead_time_days = self::lead_time_days( $scenario, $settings );
+		$max_days_ahead = self::max_days_ahead( $scenario, $settings );
 		$min_date       = $today->modify( '+' . $lead_time_days . ' days' );
 		$max_date       = $today->modify( '+' . $max_days_ahead . ' days' );
 
-		$allowed_weekdays = self::allowed_weekdays( $scenario );
-		$blocked_dates    = self::blocked_dates();
+		$allowed_weekdays = self::allowed_weekdays( $scenario, $settings );
+		$blocked_dates    = self::blocked_dates( $settings );
 		$available_dates  = self::available_dates( $min_date, $max_date, $allowed_weekdays, $blocked_dates );
 
 		return array(
@@ -41,6 +42,13 @@ final class CheckoutDateAvailabilityEngine {
 			'allowed_weekdays' => array_values( $allowed_weekdays ),
 			'blocked_dates'    => array_values( $blocked_dates ),
 			'available_dates'  => $available_dates,
+			'diagnostics'      => array(
+				'scenario'              => $scenario,
+				'timezone'              => wp_timezone_string(),
+				'total_available_dates' => count( $available_dates ),
+				'total_blocked_dates'   => count( $blocked_dates ),
+				'source'                => 'server_engine_v1',
+			),
 		);
 	}
 
@@ -54,15 +62,20 @@ final class CheckoutDateAvailabilityEngine {
 		return 'intercity_delivery_windows';
 	}
 
-	private static function lead_time_days( string $scenario ): int {
+	private static function lead_time_days( string $scenario, array $settings ): int {
 		// Same-day и прошедшие даты запрещены всегда: минимум +1 день.
-		if ( ScenarioStepRegistry::SCENARIO_OTHER_CITY_DELIVERY === $scenario ) {
-			return 2;
+		$configured = isset( $settings['min_lead_time_days'][ $scenario ] ) ? (int) $settings['min_lead_time_days'][ $scenario ] : 0;
+		if ( $configured > 0 ) {
+			return max( 1, $configured );
 		}
-		return 1;
+		return ScenarioStepRegistry::SCENARIO_OTHER_CITY_DELIVERY === $scenario ? 2 : 1;
 	}
 
-	private static function max_days_ahead( string $scenario ): int {
+	private static function max_days_ahead( string $scenario, array $settings ): int {
+		$configured = isset( $settings['max_days_ahead'][ $scenario ] ) ? (int) $settings['max_days_ahead'][ $scenario ] : 0;
+		if ( $configured > 0 ) {
+			return $configured;
+		}
 		if ( ScenarioStepRegistry::SCENARIO_PICKUP === $scenario ) {
 			return 14;
 		}
@@ -75,13 +88,12 @@ final class CheckoutDateAvailabilityEngine {
 	/**
 	 * @return array<int, int>
 	 */
-	private static function allowed_weekdays( string $scenario ): array {
+	private static function allowed_weekdays( string $scenario, array $settings ): array {
 		$defaults = array(
 			ScenarioStepRegistry::SCENARIO_PICKUP              => array( 1, 2, 3, 4, 5, 6 ),
 			ScenarioStepRegistry::SCENARIO_KRASNOYARSK_DELIVERY => array( 1, 2, 3, 4, 5, 6 ),
 			ScenarioStepRegistry::SCENARIO_OTHER_CITY_DELIVERY  => array( 1, 3, 5 ),
 		);
-		$settings = SafeSettingsResolver::get_section( 'step_3' );
 		$raw      = isset( $settings['weekday_rules'][ $scenario ] ) && is_array( $settings['weekday_rules'][ $scenario ] )
 			? $settings['weekday_rules'][ $scenario ]
 			: ( $defaults[ $scenario ] ?? array( 1, 2, 3, 4, 5 ) );
@@ -107,8 +119,7 @@ final class CheckoutDateAvailabilityEngine {
 	/**
 	 * @return array<int, string>
 	 */
-	private static function blocked_dates(): array {
-		$settings = SafeSettingsResolver::get_section( 'step_3' );
+	private static function blocked_dates( array $settings ): array {
 		$raw      = array();
 		if ( isset( $settings['holiday_dates'] ) && is_array( $settings['holiday_dates'] ) ) {
 			$raw = array_merge( $raw, $settings['holiday_dates'] );

@@ -197,6 +197,17 @@
 		return value || fallback;
 	}
 
+	function getStepThreeCalendarStyle() {
+		var config = getStepThreeConfig();
+		var style = config && config.calendar_style && typeof config.calendar_style === 'object' ? config.calendar_style : {};
+		return {
+			density: String(style.density || 'comfortable'),
+			dayShape: String(style.day_shape || 'rounded'),
+			highlightStyle: String(style.highlight_style || 'accent'),
+			showWeekendTint: style.show_weekend_tint !== false
+		};
+	}
+
 	function getPickupPointById(pointId) {
 		var pickup = getPickupConfig();
 		var points = pickup.points || [];
@@ -412,11 +423,12 @@
 
 	function buildDateCalendarHtml(state) {
 		var model = buildDateCalendarModel(state);
+		var style = getStepThreeCalendarStyle();
 		var weekdays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 		var html = '';
 		var i;
 
-		html += '<section class="mp-cc-date-step" aria-labelledby="mp-cc-date-title">';
+		html += '<section class="mp-cc-date-step mp-cc-date-step--' + escapeHtml(style.density) + ' mp-cc-date-step--shape-' + escapeHtml(style.dayShape) + ' mp-cc-date-step--highlight-' + escapeHtml(style.highlightStyle) + (style.showWeekendTint ? ' mp-cc-date-step--weekend-tint' : '') + '" aria-labelledby="mp-cc-date-title">';
 		html += '<header class="mp-cc-date-step__header">';
 		html += '<h4 class="mp-cc-date-step__title" id="mp-cc-date-title">' + escapeHtml(getStepThreeTitle()) + '</h4>';
 		html += '<div class="mp-cc-date-step__month-nav">';

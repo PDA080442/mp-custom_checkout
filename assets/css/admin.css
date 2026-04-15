@@ -205,6 +205,18 @@
 	margin: 4px 0;
 }
 
+.mp-cc-admin-preview__date-rules {
+	margin-top: 12px;
+	padding: 10px;
+	border: 1px dashed #c8d7ea;
+	border-radius: 8px;
+	background: #f7fbff;
+}
+
+.mp-cc-admin-preview__date-rules p {
+	margin: 4px 0;
+}
+
 .mp-cc-admin-step1-row td {
 	position: relative;
 }
