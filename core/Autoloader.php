@@ -23,6 +23,8 @@ final class Autoloader {
 		return array(
 			'MP\\CustomCheckout\\Admin\\'       => MP_CUSTOM_CHECKOUT_PATH . 'admin/',
 			'MP\\CustomCheckout\\Frontend\\'    => MP_CUSTOM_CHECKOUT_PATH . 'frontend/',
+			'MP\\CustomCheckout\\Checkout\\'    => MP_CUSTOM_CHECKOUT_PATH . 'core/Checkout/',
+			'MP\\CustomCheckout\\Core\\'        => MP_CUSTOM_CHECKOUT_PATH . 'core/',
 			'MP\\CustomCheckout\\Integrations\\' => MP_CUSTOM_CHECKOUT_PATH . 'integrations/',
 			'MP\\CustomCheckout\\'              => MP_CUSTOM_CHECKOUT_PATH . 'core/',
 		);
