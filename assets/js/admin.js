@@ -105,6 +105,136 @@
 		};
 	}
 
+	function getOfficeHoursPreviewConfigFromRuntime() {
+		var source = window.mpCcAdmin && window.mpCcAdmin.stepThreeConfig ? window.mpCcAdmin.stepThreeConfig : {};
+		var copy = source.copy || {};
+		var pickup = source.conditions_copy && source.conditions_copy.pickup && typeof source.conditions_copy.pickup === 'object'
+			? source.conditions_copy.pickup
+			: {};
+		var pc = window.mpCcAdmin && window.mpCcAdmin.pickupConfig ? window.mpCcAdmin.pickupConfig : {};
+		var points = pc.points && Array.isArray(pc.points) ? pc.points : [];
+		var point = points.length ? points[0] : null;
+		return {
+			previewEnabled: Boolean(copy.admin_preview && copy.admin_preview.enabled !== false),
+			officeBlockTitle: String(pickup.office_block_title || ''),
+			officeAddress: String(pickup.office_address || ''),
+			officeDescription: String(pickup.office_description || ''),
+			officeHoursPlain: String(pickup.office_hours_plain || ''),
+			officeHours: Array.isArray(pickup.office_hours) ? pickup.office_hours : [],
+			convenienceHelper: String(pickup.convenience_helper || ''),
+			criticalNotice: String(pickup.critical_notice || ''),
+			showMultiOfficeSlot: pickup.show_multi_office_slot !== false,
+			pointTitle: point && point.title ? String(point.title) : '',
+			pointAddress: point && point.address ? String(point.address) : '',
+			pointDescription: point && point.description ? String(point.description) : ''
+		};
+	}
+
+	function trimNonEmptyAdmin(value) {
+		var s = String(value || '').trim();
+		return s ? s : '';
+	}
+
+	function readLiveOfficeHoursPreviewConfig(base) {
+		var cfg = $.extend(true, {}, base);
+		var p = 'mp_custom_checkout_settings[step_3][conditions_copy][pickup]';
+		cfg.officeBlockTitle = readFormValue(p + '[office_block_title]', cfg.officeBlockTitle);
+		cfg.officeAddress = readFormValue(p + '[office_address]', cfg.officeAddress);
+		cfg.officeDescription = readFormValue(p + '[office_description]', cfg.officeDescription);
+		cfg.officeHoursPlain = readFormValue(p + '[office_hours_plain]', cfg.officeHoursPlain);
+		cfg.convenienceHelper = readFormValue(p + '[convenience_helper]', cfg.convenienceHelper);
+		cfg.criticalNotice = readFormValue(p + '[critical_notice]', cfg.criticalNotice);
+		cfg.showMultiOfficeSlot = Boolean(readFormValue(p + '[show_multi_office_slot]', cfg.showMultiOfficeSlot));
+		return cfg;
+	}
+
+	function renderOfficeHoursPreview(cfg) {
+		var officeTitle = trimNonEmptyAdmin(cfg.officeBlockTitle) || 'Офис и график работы';
+		var address = trimNonEmptyAdmin(cfg.officeAddress);
+		if (!address && cfg.pointAddress) {
+			address = String(cfg.pointAddress);
+		}
+		var pointName = trimNonEmptyAdmin(cfg.pointTitle) ? String(cfg.pointTitle) : '';
+		var desc = trimNonEmptyAdmin(cfg.officeDescription);
+		if (!desc && cfg.pointDescription) {
+			desc = String(cfg.pointDescription);
+		}
+		if (!desc) {
+			desc = 'Выдача заказа в офисе самовывоза после уведомления о готовности.';
+		}
+		var plain = trimNonEmptyAdmin(cfg.officeHoursPlain);
+		var hours = Array.isArray(cfg.officeHours) ? cfg.officeHours : [];
+		var hoursClean = [];
+		var i;
+		for (i = 0; i < hours.length; i += 1) {
+			var slot = trimNonEmptyAdmin(hours[i]);
+			if (slot) {
+				hoursClean.push(slot);
+			}
+		}
+		if (!plain && !hoursClean.length) {
+			hoursClean = ['10:00–13:00', '13:00–17:00', '17:00–20:00'];
+		}
+		var helper = trimNonEmptyAdmin(cfg.convenienceHelper) || 'Можно приехать в удобное время в рамках указанного расписания — уточните готовность заказа по уведомлению.';
+		var critical = trimNonEmptyAdmin(cfg.criticalNotice);
+		var showMulti = cfg.showMultiOfficeSlot !== false;
+
+		var html = '';
+		html += '<section class="mp-cc-admin-preview mp-cc-admin-preview--office" id="mp-cc-admin-office-preview">';
+		html += '<h2>Офис и график (шаг 3, самовывоз)</h2>';
+		html += '<p class="mp-cc-admin-preview--office__lead">Так блок отображается в карточке условий при выборе самовывоза. Адрес подставляется из настроек ниже или из точки самовывоза.</p>';
+		html += '<div class="mp-cc-pickup-office">';
+		html += '<div class="mp-cc-pickup-office__head">';
+		html += '<h3 class="mp-cc-pickup-office__heading">' + escapeHtml(officeTitle) + '</h3>';
+		html += '</div>';
+		if (pointName) {
+			html += '<p class="mp-cc-pickup-office__point-name">' + escapeHtml(pointName) + '</p>';
+		}
+		if (address) {
+			html += '<p class="mp-cc-pickup-office__address">' + escapeHtml(address) + '</p>';
+		}
+		html += '<p class="mp-cc-pickup-office__description">' + escapeHtml(desc) + '</p>';
+		html += '<div class="mp-cc-pickup-office__hours" aria-label="Часы выдачи">';
+		if (plain) {
+			html += '<div class="mp-cc-pickup-office__schedule mp-cc-pickup-office__schedule--plain">';
+			var lines = plain.split(/\r?\n/);
+			var firstLine = true;
+			for (i = 0; i < lines.length; i += 1) {
+				var line = trimNonEmptyAdmin(lines[i]);
+				if (!line) {
+					continue;
+				}
+				html += '<p class="mp-cc-pickup-office__line' + (firstLine ? ' mp-cc-pickup-office__line--key' : '') + '">' + escapeHtml(line) + '</p>';
+				firstLine = false;
+			}
+			html += '</div>';
+		} else {
+			html += '<div class="mp-cc-pickup-office__schedule mp-cc-pickup-office__schedule--chips">';
+			html += '<div class="mp-cc-pickup-office__chips" role="list">';
+			for (i = 0; i < hoursClean.length; i += 1) {
+				html += '<span class="mp-cc-pickup-office__chip' + (i === 0 ? ' mp-cc-pickup-office__chip--key' : '') + '" role="listitem">' + escapeHtml(hoursClean[i]) + '</span>';
+			}
+			html += '</div>';
+			html += '</div>';
+		}
+		html += '</div>';
+		if (critical) {
+			html += '<div class="mp-cc-pickup-office__critical" role="note">';
+			html += '<span class="mp-cc-pickup-office__critical-icon" aria-hidden="true">!</span>';
+			html += '<p class="mp-cc-pickup-office__critical-text">' + escapeHtml(critical) + '</p>';
+			html += '</div>';
+		}
+		html += '<p class="mp-cc-pickup-office__helper">' + escapeHtml(helper) + '</p>';
+		if (showMulti) {
+			html += '<div class="mp-cc-pickup-office__multi-slot" data-mp-cc-multi-office="1">';
+			html += '<span class="mp-cc-pickup-office__multi-slot-label">' + escapeHtml('Дополнительные точки самовывоза будут отображаться здесь при подключении.') + '</span>';
+			html += '</div>';
+		}
+		html += '</div>';
+		html += '</section>';
+		return html;
+	}
+
 	function getDefaults() {
 		var source = window.mpCcAdmin && window.mpCcAdmin.stepOneDefaults ? window.mpCcAdmin.stepOneDefaults : {};
 		return (source && typeof source === 'object') ? source : {};
@@ -381,7 +511,14 @@
 			'copy][errors][invalid_date': 'Текст ошибки для недоступной даты.',
 			'copy][errors][empty_date': 'Текст ошибки, если дата не выбрана.',
 			'holiday_dates': 'Список праздничных дат YYYY-MM-DD (массив).',
-			'closed_dates': 'Список вручную закрытых дат YYYY-MM-DD (массив).'
+			'closed_dates': 'Список вручную закрытых дат YYYY-MM-DD (массив).',
+			'conditions_copy][pickup][office_block_title': 'Заголовок блока «Офис и график» на шаге условий (самовывоз).',
+			'conditions_copy][pickup][office_address': 'Адрес офиса (если пусто — подставляется из точки самовывоза).',
+			'conditions_copy][pickup][office_description': 'Описание выдачи в офисе.',
+			'conditions_copy][pickup][office_hours_plain': 'Текстовое расписание (строки); если заполнено, чипы по слотам скрываются.',
+			'conditions_copy][pickup][convenience_helper': 'Подсказка о визите в удобное время в рабочие часы.',
+			'conditions_copy][pickup][critical_notice': 'Важное предупреждение (выделяется в блоке офиса).',
+			'conditions_copy][pickup][show_multi_office_slot': 'Показывать слот для будущих дополнительных точек самовывоза.'
 		};
 		$rows.each(function () {
 			var $row = $(this);
@@ -445,6 +582,7 @@
 		var config = getConfigFromRuntime();
 		var scenarioConfig = getScenarioConfigFromRuntime();
 		var dateStepConfig = getDateStepConfigFromRuntime();
+		var officeHoursPreviewConfig = getOfficeHoursPreviewConfigFromRuntime();
 		var defaults = getDefaults();
 		var flags = window.mpCcAdmin && window.mpCcAdmin.featureFlags ? window.mpCcAdmin.featureFlags : {};
 		if (!config.previewEnabled || flags.admin_live_preview === false) {
@@ -464,6 +602,9 @@
 		if (dateStepConfig.previewEnabled) {
 			$wrap.append(renderDatePreview(dateStepConfig));
 		}
+		if (officeHoursPreviewConfig.previewEnabled) {
+			$wrap.append(renderOfficeHoursPreview(officeHoursPreviewConfig));
+		}
 		enhanceStepOneFields();
 		enhanceStepThreeFields();
 		refreshStepThreeEmptyIndicators();
@@ -478,6 +619,10 @@
 			if (dateStepConfig.previewEnabled) {
 				var nextDateConfig = readLiveDateStepConfig(dateStepConfig);
 				$('#mp-cc-admin-date-preview').replaceWith(renderDatePreview(nextDateConfig));
+			}
+			if (officeHoursPreviewConfig.previewEnabled) {
+				var nextOfficeCfg = readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig);
+				$('#mp-cc-admin-office-preview').replaceWith(renderOfficeHoursPreview(nextOfficeCfg));
 			}
 		};
 		$(document).on('input change', '[name^="mp_custom_checkout_settings[step_1]"]', function () {

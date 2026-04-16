@@ -425,6 +425,99 @@
 		return getConditionsCardTitle(scenario, block, rules);
 	}
 
+	function getPickupPointForConditions(state) {
+		var scenarioData = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenarioData || {}) : {};
+		var point = scenarioData.pickup_point && typeof scenarioData.pickup_point === 'object' ? scenarioData.pickup_point : null;
+		if (!point) {
+			point = getPickupPointById('');
+		}
+		return point;
+	}
+
+	function buildPickupOfficeBlockHtml(state, block) {
+		var point = getPickupPointForConditions(state);
+		var officeTitle = trimNonEmpty(block.office_block_title) || getUiText('step_3.pickup_office_block_title', 'Офис и график работы');
+		var address = trimNonEmpty(block.office_address);
+		if (!address && point && point.address) {
+			address = String(point.address);
+		}
+		var pointName = point && point.title ? String(point.title) : '';
+		var desc = trimNonEmpty(block.office_description);
+		if (!desc && point && point.description) {
+			desc = String(point.description);
+		}
+		if (!desc) {
+			desc = getUiText('step_3.pickup_office_default', 'Выдача заказа в офисе самовывоза после уведомления о готовности.');
+		}
+		var plain = trimNonEmpty(block.office_hours_plain);
+		var hours = Array.isArray(block.office_hours) ? block.office_hours : [];
+		var hoursClean = [];
+		var i;
+		for (i = 0; i < hours.length; i += 1) {
+			var slot = trimNonEmpty(hours[i]);
+			if (slot) {
+				hoursClean.push(slot);
+			}
+		}
+		if (!plain && !hoursClean.length) {
+			hoursClean = ['10:00–13:00', '13:00–17:00', '17:00–20:00'];
+		}
+		var helper = trimNonEmpty(block.convenience_helper) || getUiText('step_3.pickup_convenience_helper', 'Можно приехать в удобное время в рамках указанного расписания — уточните готовность заказа по уведомлению.');
+		var critical = trimNonEmpty(block.critical_notice);
+		var showMulti = block.show_multi_office_slot !== false;
+
+		var html = '';
+		html += '<div class="mp-cc-pickup-office">';
+		html += '<div class="mp-cc-pickup-office__head">';
+		html += '<h3 class="mp-cc-pickup-office__heading">' + escapeHtml(officeTitle) + '</h3>';
+		html += '</div>';
+		if (pointName) {
+			html += '<p class="mp-cc-pickup-office__point-name">' + escapeHtml(pointName) + '</p>';
+		}
+		if (address) {
+			html += '<p class="mp-cc-pickup-office__address">' + escapeHtml(address) + '</p>';
+		}
+		html += '<p class="mp-cc-pickup-office__description">' + escapeHtml(desc) + '</p>';
+		html += '<div class="mp-cc-pickup-office__hours" aria-label="' + escapeHtml(getUiText('step_3.pickup_hours_label', 'Часы выдачи')) + '">';
+		if (plain) {
+			html += '<div class="mp-cc-pickup-office__schedule mp-cc-pickup-office__schedule--plain">';
+			var lines = plain.split(/\r?\n/);
+			var firstLine = true;
+			for (i = 0; i < lines.length; i += 1) {
+				var line = trimNonEmpty(lines[i]);
+				if (!line) {
+					continue;
+				}
+				html += '<p class="mp-cc-pickup-office__line' + (firstLine ? ' mp-cc-pickup-office__line--key' : '') + '">' + escapeHtml(line) + '</p>';
+				firstLine = false;
+			}
+			html += '</div>';
+		} else {
+			html += '<div class="mp-cc-pickup-office__schedule mp-cc-pickup-office__schedule--chips">';
+			html += '<div class="mp-cc-pickup-office__chips" role="list">';
+			for (i = 0; i < hoursClean.length; i += 1) {
+				html += '<span class="mp-cc-pickup-office__chip' + (i === 0 ? ' mp-cc-pickup-office__chip--key' : '') + '" role="listitem">' + escapeHtml(hoursClean[i]) + '</span>';
+			}
+			html += '</div>';
+			html += '</div>';
+		}
+		html += '</div>';
+		if (critical) {
+			html += '<div class="mp-cc-pickup-office__critical" role="note">';
+			html += '<span class="mp-cc-pickup-office__critical-icon" aria-hidden="true">!</span>';
+			html += '<p class="mp-cc-pickup-office__critical-text">' + escapeHtml(critical) + '</p>';
+			html += '</div>';
+		}
+		html += '<p class="mp-cc-pickup-office__helper">' + escapeHtml(helper) + '</p>';
+		if (showMulti) {
+			html += '<div class="mp-cc-pickup-office__multi-slot" data-mp-cc-multi-office="1">';
+			html += '<span class="mp-cc-pickup-office__multi-slot-label">' + escapeHtml(getUiText('step_3.pickup_multi_office_hint', 'Дополнительные точки самовывоза будут отображаться здесь при подключении.')) + '</span>';
+			html += '</div>';
+		}
+		html += '</div>';
+		return html;
+	}
+
 	function buildConditionsStepHtml(state) {
 		var scenario = normalizeScenarioId(state.frontendStore.fulfillment.scenario || '');
 		var dateState = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
@@ -456,25 +549,8 @@
 			html += '<p class="mp-cc-conditions-card__text mp-cc-conditions-card__accent">' + escapeHtml(ocLog) + '</p>';
 		} else {
 			var puBody = trimNonEmpty(block.body) || getUiText('step_3.pickup_conditions', 'Заказ выдается в точке самовывоза после подтверждения готовности. Пожалуйста, дождитесь уведомления перед визитом.');
-			var puOffice = trimNonEmpty(block.office_description) || getUiText('step_3.pickup_office_default', 'Выдача заказа в офисе самовывоза после уведомления о готовности.');
-			var hours = Array.isArray(block.office_hours) ? block.office_hours : [];
-			var hoursClean = [];
-			for (i = 0; i < hours.length; i += 1) {
-				var slot = trimNonEmpty(hours[i]);
-				if (slot) {
-					hoursClean.push(slot);
-				}
-			}
-			if (!hoursClean.length) {
-				hoursClean = ['10:00–13:00', '13:00–17:00', '17:00–20:00'];
-			}
 			html += '<p class="mp-cc-conditions-card__text">' + escapeHtml(puBody) + '</p>';
-			html += '<p class="mp-cc-conditions-card__text">' + escapeHtml(puOffice) + '</p>';
-			html += '<div class="mp-cc-conditions-card__pickup-graph" aria-label="' + escapeHtml(getUiText('step_3.pickup_hours_label', 'Часы выдачи')) + '">';
-			for (i = 0; i < hoursClean.length; i += 1) {
-				html += '<span>' + escapeHtml(hoursClean[i]) + '</span>';
-			}
-			html += '</div>';
+			html += buildPickupOfficeBlockHtml(state, block);
 		}
 		html += '</article>';
 		html += '</div>';

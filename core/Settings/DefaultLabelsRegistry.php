@@ -63,7 +63,6 @@ final class DefaultLabelsRegistry {
 				'pickup_office_block_title' => 'Офис и график работы',
 				'pickup_convenience_helper' => 'Можно приехать в удобное время в рамках указанного расписания — уточните готовность заказа по уведомлению.',
 				'pickup_multi_office_hint'  => 'Дополнительные точки самовывоза будут отображаться здесь при подключении.',
-				'critical_notice_prefix'    => 'Важно:',
 			),
 			'step_4' => array(
 				'title' => 'Контакты и оплата',

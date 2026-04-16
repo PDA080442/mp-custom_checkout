@@ -51,9 +51,16 @@ final class AdminAssetsHooks {
 		}
 
 		wp_enqueue_style(
+			'mp-cc-checkout-frontend',
+			MP_CUSTOM_CHECKOUT_URL . 'assets/css/checkout-frontend.css',
+			array(),
+			MP_CUSTOM_CHECKOUT_VERSION
+		);
+
+		wp_enqueue_style(
 			self::HANDLE_STYLE,
 			MP_CUSTOM_CHECKOUT_URL . 'assets/css/admin.css',
-			array(),
+			array( 'mp-cc-checkout-frontend' ),
 			MP_CUSTOM_CHECKOUT_VERSION
 		);
 

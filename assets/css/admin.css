@@ -118,6 +118,17 @@
 	background: #f8f9fb;
 }
 
+/* Превью блока офиса / графика (шаг 3, самовывоз) — классы .mp-cc-pickup-office в checkout-frontend.css */
+.mp-cc-admin-preview--office {
+	margin-top: 16px;
+}
+
+.mp-cc-admin-preview--office__lead {
+	margin: 0 0 10px;
+	font-size: 12px;
+	color: #646970;
+}
+
 .mp-cc-admin-preview--scenario {
 	margin-top: 14px;
 }
