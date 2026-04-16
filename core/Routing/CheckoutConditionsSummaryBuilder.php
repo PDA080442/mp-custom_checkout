@@ -141,11 +141,6 @@ final class CheckoutConditionsSummaryBuilder {
 		}
 		$lines[] = $helper;
 
-		$show_multi = ! array_key_exists( 'show_multi_office_slot', $block ) || false !== $block['show_multi_office_slot'];
-		if ( $show_multi ) {
-			$lines[] = self::label( 'pickup_multi_office_hint', 'Дополнительные точки самовывоза будут отображаться здесь при подключении.' );
-		}
-
 		return $lines;
 	}
 
@@ -187,6 +182,71 @@ final class CheckoutConditionsSummaryBuilder {
 		}
 		$lines[] = $log;
 		return $lines;
+	}
+
+	/**
+	 * Текст для заказа: сохранённый meta или сборка из мета заказа (старые заказы без meta, просмотр в админке).
+	 */
+	public static function get_summary_for_order( \WC_Order $order ): string {
+		$text = trim( (string) $order->get_meta( self::ORDER_META_KEY, true ) );
+		if ( '' !== $text ) {
+			return $text;
+		}
+
+		$scenario = CheckoutScenarioRules::sanitize_scenario( (string) $order->get_meta( '_mp_cc_scenario_id', true ) );
+		if ( '' === $scenario ) {
+			return '';
+		}
+
+		$flow = self::synthetic_flow_from_order( $order );
+		$text = self::build_for_flow( $scenario, $flow );
+
+		/**
+		 * Текст условий при отображении (если в заказе не было сохранено поле meta).
+		 *
+		 * @param string               $text     Текст.
+		 * @param \WC_Order            $order    Заказ.
+		 * @param string               $scenario Сценарий.
+		 * @param array<string, mixed> $flow     Синтетический flow из мета заказа.
+		 */
+		return (string) apply_filters( 'mp_custom_checkout_order_conditions_summary', $text, $order, $scenario, $flow );
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private static function synthetic_flow_from_order( \WC_Order $order ): array {
+		$pickup_point = array();
+		$payload_raw  = (string) $order->get_meta( '_mp_cc_pickup_point_payload', true );
+		if ( '' !== $payload_raw ) {
+			$decoded = json_decode( $payload_raw, true );
+			if ( is_array( $decoded ) ) {
+				$pickup_point = $decoded;
+			}
+		}
+		$id = (string) $order->get_meta( '_mp_cc_pickup_point_id', true );
+		if ( empty( $pickup_point ) && '' !== $id ) {
+			$pickup_point = array(
+				'id'            => $id,
+				'title'         => (string) $order->get_meta( '_mp_cc_pickup_point_title', true ),
+				'address'       => (string) $order->get_meta( '_mp_cc_pickup_point_address', true ),
+				'description'   => (string) $order->get_meta( '_mp_cc_pickup_point_description', true ),
+			);
+		}
+
+		$selected_date = (string) $order->get_meta( '_mp_cc_selected_date', true );
+
+		return array(
+			'scenario' => (string) $order->get_meta( '_mp_cc_scenario_id', true ),
+			'answers'  => array(
+				'scenario'        => array(
+					'pickup_point' => $pickup_point,
+				),
+				'date_conditions' => array(
+					'selected_date' => $selected_date,
+				),
+			),
+		);
 	}
 
 	private static function normalize_plain_schedule( string $plain ): string {

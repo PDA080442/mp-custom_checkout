@@ -181,7 +181,7 @@ final class EmailHooks {
 	 * @param \WC_Email|false $email Письмо.
 	 */
 	public static function render_conditions_summary_meta( $order, $sent_to_admin, $plain_text, $email = null ): void {
-		unset( $sent_to_admin, $email );
+		unset( $email );
 		if ( ! $order instanceof \WC_Order ) {
 			return;
 		}
@@ -193,18 +193,26 @@ final class EmailHooks {
 
 		$title = __( 'Условия получения', 'mp-custom-checkout' );
 		if ( $plain_text ) {
-			echo "\n" . sanitize_text_field( $title ) . ":\n" . self::normalize_plain_block( $text ) . "\n";
+			$lead = $sent_to_admin
+				? '[' . __( 'Администратору', 'mp-custom-checkout' ) . '] '
+				: '';
+			echo "\n" . $lead . sanitize_text_field( $title ) . ":\n" . self::normalize_plain_block( $text ) . "\n";
 			return;
 		}
 
-		echo '<div class="mp-cc-email-conditions-summary">';
+		$wrap_class = 'mp-cc-email-conditions-summary';
+		if ( $sent_to_admin ) {
+			$wrap_class .= ' mp-cc-email-conditions-summary--to-admin';
+		}
+
+		echo '<div class="' . esc_attr( $wrap_class ) . '">';
 		echo '<p><strong>' . esc_html( $title ) . '</strong></p>';
 		echo '<div class="mp-cc-email-conditions-summary__body">' . self::format_conditions_html( $text ) . '</div>';
 		echo '</div>';
 	}
 
 	/**
-	 * Карточка заказа: полный текст условий (сохранённый meta).
+	 * Карточка заказа: полный текст условий (meta или восстановление из сценария/точки/даты).
 	 *
 	 * @param \WC_Order $order Заказ.
 	 */
@@ -289,8 +297,13 @@ final class EmailHooks {
 			return;
 		}
 		if ( 'mp_cc_conditions' === $column ) {
+			$full  = self::get_order_conditions_summary_for_list_tooltip( $order );
 			$short = self::get_order_conditions_summary_short( $order );
-			echo '' !== $short ? esc_html( $short ) : '&mdash;';
+			if ( '' === $short ) {
+				echo '&mdash;';
+				return;
+			}
+			echo '<span class="mp-cc-order-list-conditions" title="' . esc_attr( $full ) . '">' . esc_html( $short ) . '</span>';
 			return;
 		}
 		$label = 'mp_cc_scenario' === $column ? self::get_order_scenario_label( $order ) : self::get_order_date_label( $order );
@@ -313,8 +326,13 @@ final class EmailHooks {
 			return;
 		}
 		if ( 'mp_cc_conditions' === $column ) {
+			$full  = self::get_order_conditions_summary_for_list_tooltip( $order );
 			$short = self::get_order_conditions_summary_short( $order );
-			echo '' !== $short ? esc_html( $short ) : '&mdash;';
+			if ( '' === $short ) {
+				echo '&mdash;';
+				return;
+			}
+			echo '<span class="mp-cc-order-list-conditions" title="' . esc_attr( $full ) . '">' . esc_html( $short ) . '</span>';
 			return;
 		}
 		$label = 'mp_cc_scenario' === $column ? self::get_order_scenario_label( $order ) : self::get_order_date_label( $order );
@@ -359,12 +377,18 @@ final class EmailHooks {
 	}
 
 	private static function get_order_conditions_summary( \WC_Order $order ): string {
-		$text = (string) $order->get_meta( CheckoutConditionsSummaryBuilder::ORDER_META_KEY, true );
-		return trim( $text );
+		return trim( CheckoutConditionsSummaryBuilder::get_summary_for_order( $order ) );
 	}
 
 	private static function get_order_conditions_summary_short( \WC_Order $order ): string {
 		$text = self::get_order_conditions_summary( $order );
+		return self::truncate_conditions_one_line( $text );
+	}
+
+	/**
+	 * @return string Краткая строка для списка заказов (обрезка по длине).
+	 */
+	private static function truncate_conditions_one_line( string $text ): string {
 		if ( '' === $text ) {
 			return '';
 		}
@@ -380,6 +404,13 @@ final class EmailHooks {
 			return substr( $one_line, 0, $max - 1 ) . '…';
 		}
 		return $one_line;
+	}
+
+	/**
+	 * Полный текст для подсказки title в списке заказов.
+	 */
+	private static function get_order_conditions_summary_for_list_tooltip( \WC_Order $order ): string {
+		return self::get_order_conditions_summary( $order );
 	}
 
 	private static function normalize_plain_block( string $text ): string {

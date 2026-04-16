@@ -337,9 +337,6 @@
 			}
 			var helper = trimNonEmpty(block.convenience_helper) || getUiText('step_3.pickup_convenience_helper', 'Можно приехать в удобное время в рамках указанного расписания — уточните готовность заказа по уведомлению.');
 			lines.push(helper);
-			if (block.show_multi_office_slot !== false) {
-				lines.push(getUiText('step_3.pickup_multi_office_hint', 'Дополнительные точки самовывоза будут отображаться здесь при подключении.'));
-			}
 		}
 		var filtered = [];
 		for (i = 0; i < lines.length; i += 1) {

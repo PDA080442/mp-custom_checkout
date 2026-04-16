@@ -288,3 +288,13 @@
 .mp-cc-order-conditions-meta__body .mp-cc-conditions-para:last-child {
 	margin-bottom: 0;
 }
+
+.mp-cc-order-list-conditions {
+	cursor: help;
+	display: inline-block;
+	max-width: 28em;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	vertical-align: top;
+}
