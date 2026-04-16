@@ -411,12 +411,19 @@ final class AdminMenuHooks {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			return;
 		}
+		if ( 'POST' !== strtoupper( (string) ( $_SERVER['REQUEST_METHOD'] ?? '' ) ) ) {
+			return;
+		}
 		$action = isset( $_POST['mp_cc_logs_action'] ) ? sanitize_key( wp_unslash( (string) $_POST['mp_cc_logs_action'] ) ) : '';
 		if ( '' === $action ) {
 			return;
 		}
 		$page = isset( $_REQUEST['page'] ) ? sanitize_key( wp_unslash( (string) $_REQUEST['page'] ) ) : '';
 		if ( self::PAGE_SLUG !== $page ) {
+			return;
+		}
+		$tab = isset( $_REQUEST['tab'] ) ? sanitize_key( wp_unslash( (string) $_REQUEST['tab'] ) ) : '';
+		if ( OptionKeys::SECTION_LOGS !== $tab ) {
 			return;
 		}
 		check_admin_referer( 'mp_cc_logs_actions', 'mp_cc_logs_nonce' );
