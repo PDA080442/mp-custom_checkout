@@ -503,6 +503,12 @@ final class EmailHooks {
 
 		$email = trim( (string) $order->get_billing_email() );
 		$phone = trim( (string) $order->get_billing_phone() );
+		$birthdate_raw = trim( (string) $order->get_meta( '_mp_cc_billing_birthdate', true ) );
+		$birthdate = $birthdate_raw;
+		$birth_dt = \DateTimeImmutable::createFromFormat( 'Y-m-d', $birthdate_raw, wp_timezone() );
+		if ( $birth_dt instanceof \DateTimeImmutable ) {
+			$birthdate = $birth_dt->format( 'd.m.Y' );
+		}
 
 		$address_parts = array_filter(
 			array(
@@ -528,6 +534,9 @@ final class EmailHooks {
 		}
 		if ( '' !== $phone ) {
 			$lines[] = __( 'Телефон', 'mp-custom-checkout' ) . ': ' . $phone;
+		}
+		if ( '' !== $birthdate ) {
+			$lines[] = __( 'Дата рождения', 'mp-custom-checkout' ) . ': ' . $birthdate;
 		}
 		if ( '' !== $address ) {
 			$lines[] = __( 'Адрес', 'mp-custom-checkout' ) . ': ' . $address;

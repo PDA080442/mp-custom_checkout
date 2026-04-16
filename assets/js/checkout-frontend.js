@@ -214,11 +214,12 @@
 				title: '',
 				intro: '',
 				patronymic_required: false,
-				field_order: ['last_name', 'first_name', 'patronymic', 'email', 'phone'],
+				field_order: ['last_name', 'first_name', 'patronymic', 'birthdate', 'email', 'phone'],
 				field_visibility: {
 					last_name: true,
 					first_name: true,
 					patronymic: true,
+					birthdate: true,
 					email: true,
 					phone: true
 				},
@@ -226,6 +227,7 @@
 					last_name: true,
 					first_name: true,
 					patronymic: false,
+					birthdate: true,
 					email: true,
 					phone: true
 				},
@@ -233,6 +235,7 @@
 					last_name: '',
 					first_name: '',
 					patronymic: '',
+					birthdate: '',
 					email: '',
 					phone: ''
 				},
@@ -240,6 +243,7 @@
 					last_name: '',
 					first_name: '',
 					patronymic: '',
+					birthdate: '',
 					email: '',
 					phone: '',
 					country_code: ''
@@ -247,7 +251,13 @@
 				hints: {
 					email: '',
 					phone: '',
-					patronymic: ''
+					patronymic: '',
+					birthdate: ''
+				},
+				validation_messages: {
+					birthdate_required: '',
+					birthdate_invalid: '',
+					birthdate_range: ''
 				},
 				phone_country_codes: [
 					{ dial: '+7', iso: 'RU', national_digits: 10 },
@@ -327,6 +337,7 @@
 			last_name: 'Фамилия',
 			first_name: 'Имя',
 			patronymic: 'Отчество',
+			birthdate: 'Дата рождения',
 			email: 'Email',
 			phone: 'Телефон',
 			country_code: 'Код страны'
@@ -335,6 +346,7 @@
 			last_name: 'step_4.contact_last_name',
 			first_name: 'step_4.contact_first_name',
 			patronymic: 'step_4.contact_patronymic',
+			birthdate: 'step_4.contact_birthdate',
 			email: 'step_4.contact_email',
 			phone: 'step_4.contact_phone',
 			country_code: 'step_4.contact_country_code'
@@ -352,14 +364,28 @@
 		var fb = {
 			email: 'На этот адрес отправим подтверждение заказа.',
 			phone: 'Введите номер без кода страны — он выбран слева.',
-			patronymic: 'Укажите при наличии.'
+			patronymic: 'Укажите при наличии.',
+			birthdate: 'Используем для корректной обработки заказа и персонализации сервиса.'
 		};
 		var path = {
 			email: 'step_4.contact_hint_email',
 			phone: 'step_4.contact_hint_phone',
-			patronymic: 'step_4.contact_hint_patronymic'
+			patronymic: 'step_4.contact_hint_patronymic',
+			birthdate: 'step_4.contact_hint_birthdate'
 		};
 		return getUiText(path[key] || 'step_4.title', fb[key] || '');
+	}
+
+	function getBirthdateErrorText(code) {
+		var cfg = getStepFourConfig();
+		var vm = cfg.contact_block && cfg.contact_block.validation_messages ? cfg.contact_block.validation_messages : {};
+		if (code === 'required') {
+			return trimNonEmpty(vm.birthdate_required) || getUiText('step_4.contact_error_birthdate_required', 'Укажите дату рождения.');
+		}
+		if (code === 'invalid') {
+			return trimNonEmpty(vm.birthdate_invalid) || getUiText('step_4.contact_error_birthdate_invalid', 'Введите корректную дату рождения.');
+		}
+		return trimNonEmpty(vm.birthdate_range) || getUiText('step_4.contact_error_birthdate_range', 'Допустимый возраст: от 0 до 120 лет.');
 	}
 
 	function getAddressGeoMerged() {
@@ -675,6 +701,39 @@
 			errors.billing_patronymic = 'required';
 			ok = false;
 		}
+		if (isContactFieldVisible('birthdate')) {
+			var birthRaw = trimNonEmpty(contact.billing_birthdate);
+			if (isContactFieldRequired('birthdate') && !birthRaw) {
+				errors.billing_birthdate = 'required';
+				ok = false;
+			} else if (birthRaw) {
+				var m = birthRaw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+				if (!m) {
+					errors.billing_birthdate = 'invalid';
+					ok = false;
+				} else {
+					var yyyy = Number(m[1]);
+					var mm = Number(m[2]) - 1;
+					var dd = Number(m[3]);
+					var date = new Date(yyyy, mm, dd);
+					if (date.getFullYear() !== yyyy || date.getMonth() !== mm || date.getDate() !== dd) {
+						errors.billing_birthdate = 'invalid';
+						ok = false;
+					} else {
+						var today = new Date();
+						var age = today.getFullYear() - yyyy;
+						var beforeBirthday = (today.getMonth() < mm) || (today.getMonth() === mm && today.getDate() < dd);
+						if (beforeBirthday) {
+							age -= 1;
+						}
+						if (age < 0 || age > 120) {
+							errors.billing_birthdate = 'range';
+							ok = false;
+						}
+					}
+				}
+			}
+		}
 		if (isContactFieldVisible('email') && isContactFieldRequired('email') && !trimNonEmpty(contact.billing_email)) {
 			errors.billing_email = 'required';
 			ok = false;
@@ -787,9 +846,10 @@
 		var errLast = getContactFieldError(state, 'billing_last_name');
 		var errFirst = getContactFieldError(state, 'billing_first_name');
 		var errPat = getContactFieldError(state, 'billing_patronymic');
+		var errBirth = getContactFieldError(state, 'billing_birthdate');
 		var errEmail = getContactFieldError(state, 'billing_email');
 		var errPhone = getContactFieldError(state, 'billing_phone_national');
-		var order = Array.isArray(block.field_order) ? block.field_order : ['last_name', 'first_name', 'patronymic', 'email', 'phone'];
+		var order = Array.isArray(block.field_order) ? block.field_order : ['last_name', 'first_name', 'patronymic', 'birthdate', 'email', 'phone'];
 		var seen = {};
 		var ordered = [];
 		var oi;
@@ -801,7 +861,7 @@
 			seen[k] = true;
 			ordered.push(k);
 		}
-		var fallbackOrder = ['last_name', 'first_name', 'patronymic', 'email', 'phone'];
+		var fallbackOrder = ['last_name', 'first_name', 'patronymic', 'birthdate', 'email', 'phone'];
 		for (oi = 0; oi < fallbackOrder.length; oi++) {
 			if (!seen[fallbackOrder[oi]]) {
 				ordered.push(fallbackOrder[oi]);
@@ -879,6 +939,24 @@
 			html += '<p class="mp-cc-field-error" id="mp-cc-contact-patronymic-err" role="alert">' + escapeHtml(getUiText('step_4.contact_error_required', 'Заполните это поле.')) + '</p>';
 		}
 		html += '</div>';
+				continue;
+			}
+			if (field === 'birthdate') {
+				html += '<div class="mp-cc-contact__field mp-cc-contact__field--span-1">';
+				html += '<label class="mp-cc-field-label" for="mp-cc-contact-birthdate">' + escapeHtml(getContactLabel('birthdate')) + '</label>';
+				html += '<input type="date" class="mp-cc-input' + (errBirth ? ' is-invalid' : '') + '" id="mp-cc-contact-birthdate" name="billing_birthdate" autocomplete="bday" ';
+				html += 'value="' + escapeHtml(String(contact.billing_birthdate || '')) + '" ';
+				html += 'data-contact-field="billing_birthdate"' + (isContactFieldRequired('birthdate') ? ' aria-required="true"' : '');
+				var pBirth = getContactPlaceholder('birthdate');
+				if (pBirth) { html += ' placeholder="' + escapeHtml(pBirth) + '"'; }
+				html += ' max="' + escapeHtml((new Date()).toISOString().slice(0, 10)) + '"';
+				html += errBirth ? ' aria-invalid="true"' : '';
+				html += '/>';
+				html += '<p class="mp-cc-field-hint" id="mp-cc-contact-birthdate-hint">' + escapeHtml(getContactHint('birthdate')) + '</p>';
+				if (errBirth) {
+					html += '<p class="mp-cc-field-error" id="mp-cc-contact-birthdate-err" role="alert">' + escapeHtml(getBirthdateErrorText(errBirth)) + '</p>';
+				}
+				html += '</div>';
 				continue;
 			}
 			if (field === 'email') {
@@ -2846,7 +2924,7 @@
 			var contactAddress = [contact.country, contact.state, contact.city, contact.address_1, contact.address_2, contact.postcode]
 				.filter(function (part) { return trimNonEmpty(part); })
 				.join(', ');
-			var hasContactReview = trimNonEmpty(fullName) || trimNonEmpty(contact.billing_email) || trimNonEmpty(contact.billing_phone) || trimNonEmpty(contactAddress);
+			var hasContactReview = trimNonEmpty(fullName) || trimNonEmpty(contact.billing_birthdate) || trimNonEmpty(contact.billing_email) || trimNonEmpty(contact.billing_phone) || trimNonEmpty(contactAddress);
 			if (hasContactReview) {
 				html += '<div class="mp-cc-summary-card__scenario" data-final-review-contact="1">';
 				html += '<p class="mp-cc-summary-card__scenario-title"><strong>' + escapeHtml(getUiText('step_4.title', 'Контактные данные')) + '</strong></p>';
@@ -2858,6 +2936,9 @@
 				}
 				if (trimNonEmpty(contact.billing_phone)) {
 					html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(getUiText('step_4.contact_phone', 'Телефон')) + ':</strong> ' + escapeHtml(String(contact.billing_phone)) + '</p>';
+				}
+				if (trimNonEmpty(contact.billing_birthdate)) {
+					html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(getUiText('step_4.contact_birthdate', 'Дата рождения')) + ':</strong> ' + escapeHtml(formatIsoDateForUi(String(contact.billing_birthdate))) + '</p>';
 				}
 				if (trimNonEmpty(contactAddress)) {
 					html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(getUiText('step_4.address_block_title', 'Адрес')) + ':</strong> ' + escapeHtml(contactAddress) + '</p>';
