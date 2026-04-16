@@ -320,6 +320,16 @@
 				giftCard: '-100 ₽',
 				tax: '200 ₽',
 				total: '4 060 ₽'
+			},
+			contact: {
+				fullName: 'Иван Иванов',
+				emailMasked: 'iv***@example.com',
+				phoneMasked: '+7 *** ***-45-67'
+			},
+			fulfillment: {
+				scenario: 'Самовывоз',
+				date: '2026-04-20',
+				pickupPoint: 'Офис на Мира, 10'
 			}
 		};
 	}
@@ -358,12 +368,86 @@
 		html += '<div class="mp-cc-admin-preview-area__header">';
 		html += '<h2>Live Checkout Preview</h2>';
 		html += '<div class="mp-cc-admin-preview-area__actions">';
+		html += '<button type="button" class="button button-secondary" data-mp-cc-progress-style="digits">Прогресс: 1/2/3</button>';
+		html += '<button type="button" class="button button-secondary" data-mp-cc-progress-style="labels">Прогресс: названия</button>';
+		html += '<button type="button" class="button button-secondary" data-mp-cc-progress-style="dots">Прогресс: точки</button>';
 		html += '<button type="button" class="button button-secondary" data-mp-cc-preview-reset="1">Сбросить превью</button>';
 		html += '<button type="button" class="button button-secondary" data-mp-cc-tab-reset="1">Сбросить настройки вкладки по умолчанию</button>';
 		html += '</div>';
 		html += '</div>';
 		html += '<p class="mp-cc-admin-preview-area__warning" data-mp-cc-preview-warning="1" hidden>В превью есть несохранённые изменения.</p>';
+		html += '<nav class="mp-cc-admin-flow-nav" data-mp-cc-preview-flow-nav="1" aria-label="Preview checkout steps"></nav>';
+		html += '<div class="mp-cc-admin-flow-progress" data-mp-cc-preview-progress="1"></div>';
 		html += '<div class="mp-cc-admin-preview-area__body" data-mp-cc-preview-body="1"></div>';
+		html += '</section>';
+		return html;
+	}
+
+	function getPreviewStepItems() {
+		return [
+			{ id: 'step_1', label: 'Шаг 1: Корзина' },
+			{ id: 'step_2', label: 'Шаг 2: Дата' },
+			{ id: 'step_3', label: 'Шаг 3: Условия' },
+			{ id: 'step_4', label: 'Шаг 4: Контакты и оплата' },
+			{ id: 'success', label: 'Success' }
+		];
+	}
+
+	function renderFlowStepSwitcher(activeStepId) {
+		var items = getPreviewStepItems();
+		var html = '';
+		for (var i = 0; i < items.length; i += 1) {
+			var step = items[i];
+			var activeClass = step.id === activeStepId ? ' is-active' : '';
+			html += '<button type="button" class="button mp-cc-admin-flow-nav__button' + activeClass + '" data-mp-cc-preview-step="' + escapeHtml(step.id) + '">' + escapeHtml(step.label) + '</button>';
+		}
+		return html;
+	}
+
+	function renderFlowProgress(activeStepId, styleVariant) {
+		var items = getPreviewStepItems();
+		var activeIndex = 0;
+		var i;
+		for (i = 0; i < items.length; i += 1) {
+			if (items[i].id === activeStepId) {
+				activeIndex = i;
+				break;
+			}
+		}
+		var html = '';
+		html += '<ol class="mp-cc-admin-flow-progress__list" data-variant="' + escapeHtml(styleVariant) + '">';
+		for (i = 0; i < items.length; i += 1) {
+			var label = items[i].label;
+			var number = String(i + 1);
+			var stateClass = i < activeIndex ? ' is-done' : (i === activeIndex ? ' is-active' : '');
+			html += '<li class="mp-cc-admin-flow-progress__item' + stateClass + '">';
+			if (styleVariant === 'labels') {
+				html += '<span class="mp-cc-admin-flow-progress__token">' + escapeHtml(label) + '</span>';
+			} else if (styleVariant === 'dots') {
+				html += '<span class="mp-cc-admin-flow-progress__dot" aria-hidden="true"></span>';
+				html += '<span class="screen-reader-text">' + escapeHtml(label) + '</span>';
+			} else {
+				html += '<span class="mp-cc-admin-flow-progress__token">' + escapeHtml(number) + '</span>';
+			}
+			html += '</li>';
+		}
+		html += '</ol>';
+		return html;
+	}
+
+	function renderSuccessPreview(runtime) {
+		var rt = runtime && typeof runtime === 'object' ? runtime : {};
+		var summary = rt.summary && typeof rt.summary === 'object' ? rt.summary : {};
+		var contact = rt.contact && typeof rt.contact === 'object' ? rt.contact : {};
+		var fulfillment = rt.fulfillment && typeof rt.fulfillment === 'object' ? rt.fulfillment : {};
+		var html = '';
+		html += '<section class="mp-cc-admin-preview mp-cc-admin-preview--success" id="mp-cc-admin-success-preview">';
+		html += '<h2>Success Screen Preview</h2>';
+		html += '<div class="mp-cc-admin-preview__date-grid">';
+		html += '<article><strong>Fulfillment</strong><p>Сценарий: ' + escapeHtml(String(fulfillment.scenario || '—')) + '</p><p>Дата: ' + escapeHtml(String(fulfillment.date || '—')) + '</p><p>Точка: ' + escapeHtml(String(fulfillment.pickupPoint || '—')) + '</p></article>';
+		html += '<article><strong>Contact Summary</strong><p>' + escapeHtml(String(contact.fullName || '—')) + '</p><p>' + escapeHtml(String(contact.emailMasked || '—')) + '</p><p>' + escapeHtml(String(contact.phoneMasked || '—')) + '</p></article>';
+		html += '<article><strong>Financial Summary</strong><p>Subtotal: ' + escapeHtml(String(summary.subtotal || '—')) + '</p><p>Shipping: ' + escapeHtml(String(summary.shipping || '—')) + '</p><p>Total: <strong>' + escapeHtml(String(summary.total || '—')) + '</strong></p></article>';
+		html += '</div>';
 		html += '</section>';
 		return html;
 	}
@@ -988,6 +1072,8 @@
 		var settingsDefaults = getSettingsDefaults();
 		var previewStore = createPreviewStore({
 			runtime: createPreviewRuntimeMock(),
+			activeStep: 'step_1',
+			progressStyle: 'digits',
 			dirty: false
 		});
 		var flags = window.mpCcAdmin && window.mpCcAdmin.featureFlags ? window.mpCcAdmin.featureFlags : {};
@@ -1008,20 +1094,28 @@
 		refreshStepThreeEmptyIndicators();
 
 		var mountPreviews = function (nextConfig, nextScenarioConfig, nextDateConfig, nextOfficeConfig, nextStepFourConfig) {
+			var previewState = previewStore.getState();
+			var activeStep = previewState.activeStep || 'step_1';
+			var progressStyle = previewState.progressStyle || 'digits';
 			var html = '';
-			html += renderPreview(nextConfig);
-			if (nextScenarioConfig.previewEnabled) {
-				html += renderScenarioPreview(nextScenarioConfig);
-			}
-			if (nextDateConfig.previewEnabled) {
+			if (activeStep === 'step_1') {
+				html += renderPreview(nextConfig);
+			} else if (activeStep === 'step_2' && nextDateConfig.previewEnabled) {
 				html += renderDatePreview(nextDateConfig);
-			}
-			if (nextOfficeConfig.previewEnabled) {
+			} else if (activeStep === 'step_3' && nextOfficeConfig.previewEnabled) {
 				html += renderOfficeHoursPreview(nextOfficeConfig);
-			}
-			if (nextStepFourConfig.previewEnabled) {
+				if (nextScenarioConfig.previewEnabled) {
+					html += renderScenarioPreview(nextScenarioConfig);
+				}
+			} else if (activeStep === 'step_4' && nextStepFourConfig.previewEnabled) {
 				html += renderStepFourPreview(nextStepFourConfig);
+			} else if (activeStep === 'success') {
+				html += renderSuccessPreview(previewState.runtime);
+			} else {
+				html += renderPreview(nextConfig);
 			}
+			$('[data-mp-cc-preview-flow-nav="1"]').html(renderFlowStepSwitcher(activeStep));
+			$('[data-mp-cc-preview-progress="1"]').html(renderFlowProgress(activeStep, progressStyle));
 			$('[data-mp-cc-preview-body="1"]').html(html);
 		};
 
@@ -1060,6 +1154,24 @@
 		$(document).on('click', '[data-mp-cc-preview-reset]', function () {
 			previewStore.reset();
 			mountPreviews(config, scenarioConfig, dateStepConfig, officeHoursPreviewConfig, stepFourConfig);
+			updatePreviewWarning();
+		});
+		$(document).on('click', '[data-mp-cc-preview-step]', function () {
+			var stepId = String($(this).data('mpCcPreviewStep') || '');
+			if (!stepId) {
+				return;
+			}
+			previewStore.setState({ activeStep: stepId, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
+		$(document).on('click', '[data-mp-cc-progress-style]', function () {
+			var style = String($(this).data('mpCcProgressStyle') || '');
+			if (!style) {
+				return;
+			}
+			previewStore.setState({ progressStyle: style, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
 			updatePreviewWarning();
 		});
 		$(document).on('click', '[data-mp-cc-tab-reset]', function () {
