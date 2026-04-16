@@ -153,6 +153,7 @@ final class OrderMetaHooks {
 
 		$custom_meta_map = array(
 			'_mp_cc_billing_patronymic'   => 'billing_patronymic',
+			'_mp_cc_billing_gender'       => 'billing_gender',
 			'_mp_cc_phone_country_iso'    => 'phone_country_iso',
 			'_mp_cc_phone_dial_code'      => 'phone_dial_code',
 			'_mp_cc_billing_phone_local'  => 'billing_phone_national',

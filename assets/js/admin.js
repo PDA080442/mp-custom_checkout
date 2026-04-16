@@ -139,12 +139,13 @@
 			contact: {
 				title: String(contact.title || 'Контактные данные'),
 				intro: String(contact.intro || ''),
-				fieldOrder: Array.isArray(contact.field_order) ? contact.field_order : ['last_name', 'first_name', 'patronymic', 'email', 'phone'],
+				fieldOrder: Array.isArray(contact.field_order) ? contact.field_order : ['last_name', 'first_name', 'patronymic', 'gender', 'email', 'phone'],
 				fieldVisibility: contact.field_visibility && typeof contact.field_visibility === 'object' ? contact.field_visibility : {},
 				fieldRequired: contact.field_required && typeof contact.field_required === 'object' ? contact.field_required : {},
 				labels: contact.labels && typeof contact.labels === 'object' ? contact.labels : {},
 				placeholders: contact.placeholders && typeof contact.placeholders === 'object' ? contact.placeholders : {},
 				hints: contact.hints && typeof contact.hints === 'object' ? contact.hints : {},
+				genderOptions: contact.gender_options && typeof contact.gender_options === 'object' ? contact.gender_options : {},
 				layout: contact.layout && typeof contact.layout === 'object' ? contact.layout : {},
 				states: contact.field_state_styles && typeof contact.field_state_styles === 'object' ? contact.field_state_styles : {}
 			},
@@ -411,6 +412,9 @@
 			if (hint) {
 				html += '<p>hint: ' + escapeHtml(hint) + '</p>';
 			}
+			if (key === 'gender') {
+				html += '<p>select options: [' + escapeHtml(String(cfg.contact.genderOptions.placeholder || '')) + '], ' + escapeHtml(String(cfg.contact.genderOptions.male || '')) + ', ' + escapeHtml(String(cfg.contact.genderOptions.female || '')) + '</p>';
+			}
 			html += '</article>';
 		}
 		html += '</div>';
@@ -506,6 +510,14 @@
 		var p = 'mp_custom_checkout_settings[step_4][contact_block]';
 		cfg.contact.title = readFormValue(p + '[title]', cfg.contact.title);
 		cfg.contact.intro = readFormValue(p + '[intro]', cfg.contact.intro);
+		cfg.contact.labels.gender = readFormValue(p + '[labels][gender]', cfg.contact.labels.gender || 'Пол');
+		cfg.contact.placeholders.gender = readFormValue(p + '[placeholders][gender]', cfg.contact.placeholders.gender || '');
+		cfg.contact.hints.gender = readFormValue(p + '[hints][gender]', cfg.contact.hints.gender || '');
+		cfg.contact.genderOptions.placeholder = readFormValue(p + '[gender_options][placeholder]', cfg.contact.genderOptions.placeholder || 'Не указывать');
+		cfg.contact.genderOptions.male = readFormValue(p + '[gender_options][male]', cfg.contact.genderOptions.male || 'Мужчина');
+		cfg.contact.genderOptions.female = readFormValue(p + '[gender_options][female]', cfg.contact.genderOptions.female || 'Женщина');
+		cfg.contact.fieldVisibility.gender = Boolean(readFormValue(p + '[field_visibility][gender]', cfg.contact.fieldVisibility.gender !== false));
+		cfg.contact.fieldRequired.gender = Boolean(readFormValue(p + '[field_required][gender]', cfg.contact.fieldRequired.gender === true));
 		cfg.contact.layout.desktop_columns = Number(readFormValue(p + '[layout][desktop_columns]', cfg.contact.layout.desktop_columns || 3));
 		cfg.contact.layout.tablet_columns = Number(readFormValue(p + '[layout][tablet_columns]', cfg.contact.layout.tablet_columns || 2));
 		cfg.contact.layout.mobile_columns = Number(readFormValue(p + '[layout][mobile_columns]', cfg.contact.layout.mobile_columns || 1));

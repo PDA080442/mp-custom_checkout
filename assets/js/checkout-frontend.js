@@ -214,11 +214,12 @@
 				title: '',
 				intro: '',
 				patronymic_required: false,
-				field_order: ['last_name', 'first_name', 'patronymic', 'email', 'phone'],
+				field_order: ['last_name', 'first_name', 'patronymic', 'gender', 'email', 'phone'],
 				field_visibility: {
 					last_name: true,
 					first_name: true,
 					patronymic: true,
+					gender: true,
 					email: true,
 					phone: true
 				},
@@ -226,6 +227,7 @@
 					last_name: true,
 					first_name: true,
 					patronymic: false,
+					gender: false,
 					email: true,
 					phone: true
 				},
@@ -233,6 +235,7 @@
 					last_name: '',
 					first_name: '',
 					patronymic: '',
+					gender: '',
 					email: '',
 					phone: ''
 				},
@@ -240,6 +243,7 @@
 					last_name: '',
 					first_name: '',
 					patronymic: '',
+					gender: '',
 					email: '',
 					phone: '',
 					country_code: ''
@@ -247,7 +251,13 @@
 				hints: {
 					email: '',
 					phone: '',
-					patronymic: ''
+					patronymic: '',
+					gender: ''
+				},
+				gender_options: {
+					placeholder: '',
+					male: '',
+					female: ''
 				},
 				phone_country_codes: [
 					{ dial: '+7', iso: 'RU', national_digits: 10 },
@@ -327,6 +337,7 @@
 			last_name: 'Фамилия',
 			first_name: 'Имя',
 			patronymic: 'Отчество',
+			gender: 'Пол',
 			email: 'Email',
 			phone: 'Телефон',
 			country_code: 'Код страны'
@@ -335,6 +346,7 @@
 			last_name: 'step_4.contact_last_name',
 			first_name: 'step_4.contact_first_name',
 			patronymic: 'step_4.contact_patronymic',
+			gender: 'step_4.contact_gender',
 			email: 'step_4.contact_email',
 			phone: 'step_4.contact_phone',
 			country_code: 'step_4.contact_country_code'
@@ -352,14 +364,26 @@
 		var fb = {
 			email: 'На этот адрес отправим подтверждение заказа.',
 			phone: 'Введите номер без кода страны — он выбран слева.',
-			patronymic: 'Укажите при наличии.'
+			patronymic: 'Укажите при наличии.',
+			gender: ''
 		};
 		var path = {
 			email: 'step_4.contact_hint_email',
 			phone: 'step_4.contact_hint_phone',
-			patronymic: 'step_4.contact_hint_patronymic'
+			patronymic: 'step_4.contact_hint_patronymic',
+			gender: 'step_4.contact_hint_gender'
 		};
 		return getUiText(path[key] || 'step_4.title', fb[key] || '');
+	}
+
+	function getGenderOptions() {
+		var cfg = getStepFourConfig();
+		var go = cfg.contact_block && cfg.contact_block.gender_options ? cfg.contact_block.gender_options : {};
+		return {
+			placeholder: trimNonEmpty(go.placeholder) || getUiText('step_4.contact_gender_placeholder', 'Не указывать'),
+			male: trimNonEmpty(go.male) || getUiText('step_4.contact_gender_male', 'Мужчина'),
+			female: trimNonEmpty(go.female) || getUiText('step_4.contact_gender_female', 'Женщина')
+		};
 	}
 
 	function getAddressGeoMerged() {
@@ -675,6 +699,10 @@
 			errors.billing_patronymic = 'required';
 			ok = false;
 		}
+		if (isContactFieldVisible('gender') && isContactFieldRequired('gender') && !trimNonEmpty(contact.billing_gender)) {
+			errors.billing_gender = 'required';
+			ok = false;
+		}
 		if (isContactFieldVisible('email') && isContactFieldRequired('email') && !trimNonEmpty(contact.billing_email)) {
 			errors.billing_email = 'required';
 			ok = false;
@@ -787,9 +815,10 @@
 		var errLast = getContactFieldError(state, 'billing_last_name');
 		var errFirst = getContactFieldError(state, 'billing_first_name');
 		var errPat = getContactFieldError(state, 'billing_patronymic');
+		var errGender = getContactFieldError(state, 'billing_gender');
 		var errEmail = getContactFieldError(state, 'billing_email');
 		var errPhone = getContactFieldError(state, 'billing_phone_national');
-		var order = Array.isArray(block.field_order) ? block.field_order : ['last_name', 'first_name', 'patronymic', 'email', 'phone'];
+		var order = Array.isArray(block.field_order) ? block.field_order : ['last_name', 'first_name', 'patronymic', 'gender', 'email', 'phone'];
 		var seen = {};
 		var ordered = [];
 		var oi;
@@ -801,7 +830,8 @@
 			seen[k] = true;
 			ordered.push(k);
 		}
-		var fallbackOrder = ['last_name', 'first_name', 'patronymic', 'email', 'phone'];
+		var fallbackOrder = ['last_name', 'first_name', 'patronymic', 'gender', 'email', 'phone'];
+		var genderOptions = getGenderOptions();
 		for (oi = 0; oi < fallbackOrder.length; oi++) {
 			if (!seen[fallbackOrder[oi]]) {
 				ordered.push(fallbackOrder[oi]);
@@ -879,6 +909,26 @@
 			html += '<p class="mp-cc-field-error" id="mp-cc-contact-patronymic-err" role="alert">' + escapeHtml(getUiText('step_4.contact_error_required', 'Заполните это поле.')) + '</p>';
 		}
 		html += '</div>';
+				continue;
+			}
+			if (field === 'gender') {
+				html += '<div class="mp-cc-contact__field mp-cc-contact__field--span-1">';
+				html += '<label class="mp-cc-field-label" for="mp-cc-contact-gender">' + escapeHtml(getContactLabel('gender')) + '</label>';
+				html += '<select id="mp-cc-contact-gender" class="mp-cc-select' + (errGender ? ' is-invalid' : '') + '" data-contact-field="billing_gender"';
+				html += isContactFieldRequired('gender') ? ' aria-required="true"' : '';
+				html += errGender ? ' aria-invalid="true"' : '';
+				html += '>';
+				html += '<option value="">' + escapeHtml(genderOptions.placeholder) + '</option>';
+				html += '<option value="male"' + (String(contact.billing_gender || '') === 'male' ? ' selected' : '') + '>' + escapeHtml(genderOptions.male) + '</option>';
+				html += '<option value="female"' + (String(contact.billing_gender || '') === 'female' ? ' selected' : '') + '>' + escapeHtml(genderOptions.female) + '</option>';
+				html += '</select>';
+				if (trimNonEmpty(getContactHint('gender'))) {
+					html += '<p class="mp-cc-field-hint">' + escapeHtml(getContactHint('gender')) + '</p>';
+				}
+				if (errGender) {
+					html += '<p class="mp-cc-field-error" id="mp-cc-contact-gender-err" role="alert">' + escapeHtml(getUiText('step_4.contact_error_required', 'Заполните это поле.')) + '</p>';
+				}
+				html += '</div>';
 				continue;
 			}
 			if (field === 'email') {
@@ -2840,13 +2890,15 @@
 		}
 		if (state.currentStepId === 'contact_payment') {
 			var contact = state.frontendStore && state.frontendStore.form ? (state.frontendStore.form.contact || {}) : {};
+			var gOpt = getGenderOptions();
+			var genderLabel = String(contact.billing_gender || '') === 'male' ? gOpt.male : (String(contact.billing_gender || '') === 'female' ? gOpt.female : '');
 			var fullName = [contact.billing_last_name, contact.billing_first_name, contact.billing_patronymic]
 				.filter(function (part) { return trimNonEmpty(part); })
 				.join(' ');
 			var contactAddress = [contact.country, contact.state, contact.city, contact.address_1, contact.address_2, contact.postcode]
 				.filter(function (part) { return trimNonEmpty(part); })
 				.join(', ');
-			var hasContactReview = trimNonEmpty(fullName) || trimNonEmpty(contact.billing_email) || trimNonEmpty(contact.billing_phone) || trimNonEmpty(contactAddress);
+			var hasContactReview = trimNonEmpty(fullName) || trimNonEmpty(genderLabel) || trimNonEmpty(contact.billing_email) || trimNonEmpty(contact.billing_phone) || trimNonEmpty(contactAddress);
 			if (hasContactReview) {
 				html += '<div class="mp-cc-summary-card__scenario" data-final-review-contact="1">';
 				html += '<p class="mp-cc-summary-card__scenario-title"><strong>' + escapeHtml(getUiText('step_4.title', 'Контактные данные')) + '</strong></p>';
@@ -2858,6 +2910,9 @@
 				}
 				if (trimNonEmpty(contact.billing_phone)) {
 					html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(getUiText('step_4.contact_phone', 'Телефон')) + ':</strong> ' + escapeHtml(String(contact.billing_phone)) + '</p>';
+				}
+				if (trimNonEmpty(genderLabel)) {
+					html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(getUiText('step_4.contact_gender', 'Пол')) + ':</strong> ' + escapeHtml(genderLabel) + '</p>';
 				}
 				if (trimNonEmpty(contactAddress)) {
 					html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(getUiText('step_4.address_block_title', 'Адрес')) + ':</strong> ' + escapeHtml(contactAddress) + '</p>';
@@ -3255,7 +3310,7 @@
 			});
 		});
 
-		$app.find('[data-contact-field]').off('input blur').on('input', function () {
+		$app.find('[data-contact-field]').off('input change blur').on('input change', function () {
 			var key = String($(this).data('contact-field') || '');
 			if (!key) {
 				return;

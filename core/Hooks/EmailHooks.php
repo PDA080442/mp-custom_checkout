@@ -503,6 +503,13 @@ final class EmailHooks {
 
 		$email = trim( (string) $order->get_billing_email() );
 		$phone = trim( (string) $order->get_billing_phone() );
+		$gender_raw = trim( (string) $order->get_meta( '_mp_cc_billing_gender', true ) );
+		$gender = '';
+		if ( 'male' === $gender_raw ) {
+			$gender = __( 'Мужчина', 'mp-custom-checkout' );
+		} elseif ( 'female' === $gender_raw ) {
+			$gender = __( 'Женщина', 'mp-custom-checkout' );
+		}
 
 		$address_parts = array_filter(
 			array(
@@ -528,6 +535,9 @@ final class EmailHooks {
 		}
 		if ( '' !== $phone ) {
 			$lines[] = __( 'Телефон', 'mp-custom-checkout' ) . ': ' . $phone;
+		}
+		if ( '' !== $gender ) {
+			$lines[] = __( 'Пол', 'mp-custom-checkout' ) . ': ' . $gender;
 		}
 		if ( '' !== $address ) {
 			$lines[] = __( 'Адрес', 'mp-custom-checkout' ) . ': ' . $address;
