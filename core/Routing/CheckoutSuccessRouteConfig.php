@@ -7,6 +7,8 @@
 
 namespace MP\CustomCheckout\Routing;
 
+use MP\CustomCheckout\Checkout\Routing\CheckoutPermalinkCompatibility;
+
 defined( 'ABSPATH' ) || exit;
 
 /**

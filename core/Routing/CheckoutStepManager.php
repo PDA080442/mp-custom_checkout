@@ -7,6 +7,7 @@
 
 namespace MP\CustomCheckout\Routing;
 
+use MP\CustomCheckout\Checkout\Routing\CheckoutSessionService;
 use MP\CustomCheckout\Contracts\CheckoutStepManagerInterface;
 use MP\CustomCheckout\Settings\DefaultFeatureFlagsRegistry;
 use MP\CustomCheckout\Settings\FeatureFlagResolver;

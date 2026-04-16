@@ -37,6 +37,7 @@ final class PluginHooksRegistrar {
 	 * Подключение всех регистраторов хуков.
 	 */
 	public static function register(): void {
+		ActivationRewriteHooks::register();
 		FrontendAssetsHooks::register();
 		AdminAssetsHooks::register();
 		AdminMenuHooks::register();

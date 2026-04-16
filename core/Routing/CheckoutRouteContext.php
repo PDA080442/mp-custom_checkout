@@ -7,6 +7,8 @@
 
 namespace MP\CustomCheckout\Routing;
 
+use MP\CustomCheckout\Checkout\Routing\CheckoutPermalinkCompatibility;
+use MP\CustomCheckout\Checkout\Routing\CheckoutSessionService;
 use MP\CustomCheckout\Settings\FeatureFlagResolver;
 
 defined( 'ABSPATH' ) || exit;
