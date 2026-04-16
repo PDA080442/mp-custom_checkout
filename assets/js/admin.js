@@ -1272,12 +1272,27 @@
 			} else {
 				html += renderPreview(nextConfig, previewState);
 			}
+			var flowNavHtml = renderFlowStepSwitcher(activeStep);
+			var progressHtml = renderFlowProgress(activeStep, progressStyle);
+			var signature = [
+				activeStep,
+				progressStyle,
+				String(previewState.device || 'desktop'),
+				String(previewState.interactionState || 'default'),
+				String(previewState.runtimeState || 'default'),
+				html
+			].join('|');
+			var lastSignature = String(previewStore.getState().lastRenderSignature || '');
+			if (signature === lastSignature) {
+				return;
+			}
+			previewStore.setState({ lastRenderSignature: signature });
 			$('[data-mp-cc-preview-body="1"]').html(html);
 			$('[data-mp-cc-preview-body="1"]').attr('data-device', String(previewState.device || 'desktop'));
 			$('[data-mp-cc-preview-body="1"]').attr('data-interaction', String(previewState.interactionState || 'default'));
 			$('[data-mp-cc-preview-body="1"]').attr('data-runtime', String(previewState.runtimeState || 'default'));
-			$('[data-mp-cc-preview-flow-nav="1"]').html(renderFlowStepSwitcher(activeStep));
-			$('[data-mp-cc-preview-progress="1"]').html(renderFlowProgress(activeStep, progressStyle));
+			$('[data-mp-cc-preview-flow-nav="1"]').html(flowNavHtml);
+			$('[data-mp-cc-preview-progress="1"]').html(progressHtml);
 		};
 
 		var updatePreviewWarning = function () {

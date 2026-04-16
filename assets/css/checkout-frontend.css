@@ -1282,6 +1282,7 @@
 	.mp-cc-summary-card {
 		position: sticky;
 		top: 1rem;
+		contain: layout paint;
 	}
 }
 
@@ -1294,6 +1295,7 @@
 		padding: 0.85rem;
 		max-height: 70vh;
 		overflow: auto;
+		will-change: transform;
 	}
 
 	/* На мобилке оставляем в липком блоке только финансовые строки. */

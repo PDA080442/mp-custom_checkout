@@ -24,6 +24,8 @@
 	var draftSaveTimer = null;
 	var pendingCheckoutRequests = 0;
 	var isClientErrorLoggingBound = false;
+	var stepTransitionTimer = 0;
+	var qtyInputDebounceTimers = {};
 
 	function getUiText(path, fallback) {
 		var source = (window.mpCcCheckout && window.mpCcCheckout.uiText) ? window.mpCcCheckout.uiText : {};
@@ -3063,6 +3065,9 @@ function buildGiftCardBlockHtml(state) {
 				if (!response || !response.success) {
 					return $.Deferred().reject(response).promise();
 				}
+				if (response.data && response.data.flow) {
+					syncFromFlow(state, response.data.flow, response.data.cart || {});
+				}
 				state.currentStepId = targetStepId;
 				state.frontendStore.steps.current = targetStepId;
 				if (targetStepId !== 'contact_payment') {
@@ -3083,7 +3088,7 @@ function buildGiftCardBlockHtml(state) {
 						}
 					})
 				);
-				return syncStoreWithBackend(state, $app);
+				return $.Deferred().resolve().promise();
 			}).fail(function (xhr) {
 				var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
 				var code = payload.code ? String(payload.code) : '';
@@ -3940,8 +3945,11 @@ function buildGiftCardBlockHtml(state) {
 		if (prefersReducedMotion()) {
 			return;
 		}
-		$app.addClass('is-step-transition');
-		window.setTimeout(function () {
+		window.clearTimeout(stepTransitionTimer);
+		window.requestAnimationFrame(function () {
+			$app.addClass('is-step-transition');
+		});
+		stepTransitionTimer = window.setTimeout(function () {
 			$app.removeClass('is-step-transition');
 		}, animationDurationMs);
 	}
@@ -3976,6 +3984,7 @@ function buildGiftCardBlockHtml(state) {
 		var $progress = $(selectors.progress);
 		var $actions = $(selectors.actions);
 		var $summary = $(selectors.summary);
+		state.__renderCache = state.__renderCache || { stepHtml: '', summaryHtml: '', progressHtml: '', actionsHtml: '' };
 
 		if (!state.visibleSteps.length) {
 			$app.html('<p class="mp-cc-empty">No steps available.</p>');
@@ -3988,19 +3997,51 @@ function buildGiftCardBlockHtml(state) {
 		ensureContactDefaults(state);
 		ensureDiscountDefaults(state);
 
-		$app.html(buildStepPanelHtml(state));
-		$summary.html(buildSummaryHtml(state));
-		applyStepOnePresentation(state);
-		animateSummaryUpdate(state, $summary);
+		var nextStepHtml = buildStepPanelHtml(state);
+		var nextSummaryHtml = buildSummaryHtml(state);
+		var nextProgressHtml = '';
+		var nextActionsHtml = '';
+		var isStepChanged = state.__renderCache.stepHtml !== nextStepHtml;
+		var isSummaryChanged = state.__renderCache.summaryHtml !== nextSummaryHtml;
+		var isProgressChanged = false;
+		var isActionsChanged = false;
 		if (isFlagEnabled(state, flagNames.multiStepFlow, true)) {
-			$progress.html(buildProgressHtml(state));
-			$actions.html(buildNavHtml(state));
+			nextProgressHtml = buildProgressHtml(state);
+			nextActionsHtml = buildNavHtml(state);
+			isProgressChanged = state.__renderCache.progressHtml !== nextProgressHtml;
+			isActionsChanged = state.__renderCache.actionsHtml !== nextActionsHtml;
+		}
+		if (isStepChanged) {
+			$app.html(nextStepHtml);
+			state.__renderCache.stepHtml = nextStepHtml;
+		}
+		if (isSummaryChanged) {
+			$summary.html(nextSummaryHtml);
+			state.__renderCache.summaryHtml = nextSummaryHtml;
+			animateSummaryUpdate(state, $summary);
+		}
+		applyStepOnePresentation(state);
+		if (isFlagEnabled(state, flagNames.multiStepFlow, true)) {
+			if (isProgressChanged) {
+				$progress.html(nextProgressHtml);
+				state.__renderCache.progressHtml = nextProgressHtml;
+			}
+			if (isActionsChanged) {
+				$actions.html(nextActionsHtml);
+				state.__renderCache.actionsHtml = nextActionsHtml;
+			}
 		} else {
 			$progress.empty();
 			$actions.empty();
+			state.__renderCache.progressHtml = '';
+			state.__renderCache.actionsHtml = '';
 		}
-		bindHandlers(state, $app, $progress, $actions);
-		focusStepHeading($app);
+		if (isStepChanged || isSummaryChanged || isProgressChanged || isActionsChanged) {
+			bindHandlers(state, $app, $progress, $actions);
+		}
+		if (isStepChanged) {
+			focusStepHeading($app);
+		}
 
 		document.dispatchEvent(
 			new CustomEvent('mp_cc_store_synced', {
@@ -4067,6 +4108,18 @@ function buildGiftCardBlockHtml(state) {
 				return;
 			}
 			applyQuantityChange(state, $app, $item, Number($input.val() || 0));
+		});
+		$app.find('[data-cart-qty-input]').off('input').on('input', function () {
+			var $input = $(this);
+			var $item = $input.closest('[data-cart-item-key]');
+			var itemKey = String($item.data('cart-item-key') || '');
+			if (!$item.length || !itemKey) {
+				return;
+			}
+			window.clearTimeout(qtyInputDebounceTimers[itemKey] || 0);
+			qtyInputDebounceTimers[itemKey] = window.setTimeout(function () {
+				applyQuantityChange(state, $app, $item, Number($input.val() || 0));
+			}, 220);
 		});
 
 		$app.find('[data-cart-remove]').off('click').on('click', function () {
