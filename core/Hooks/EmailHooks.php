@@ -303,6 +303,12 @@ final class EmailHooks {
 			return;
 		}
 		$lines = self::build_contact_lines_for_output( $order );
+		$gender = trim( (string) $order->get_meta( '_mp_cc_gender', true ) );
+		if ( 'male' === $gender ) {
+			$lines[] = __( 'Пол', 'mp-custom-checkout' ) . ': ' . __( 'Мужчина', 'mp-custom-checkout' );
+		} elseif ( 'female' === $gender ) {
+			$lines[] = __( 'Пол', 'mp-custom-checkout' ) . ': ' . __( 'Женщина', 'mp-custom-checkout' );
+		}
 		if ( empty( $lines ) ) {
 			return;
 		}

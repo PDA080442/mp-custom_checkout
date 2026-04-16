@@ -214,11 +214,12 @@
 				title: '',
 				intro: '',
 				patronymic_required: false,
-				field_order: ['last_name', 'first_name', 'patronymic', 'birthdate', 'email', 'phone'],
+				field_order: ['last_name', 'first_name', 'patronymic', 'gender', 'birthdate', 'email', 'phone'],
 				field_visibility: {
 					last_name: true,
 					first_name: true,
 					patronymic: true,
+					gender: true,
 					birthdate: true,
 					email: true,
 					phone: true
@@ -227,6 +228,7 @@
 					last_name: true,
 					first_name: true,
 					patronymic: false,
+					gender: false,
 					birthdate: true,
 					email: true,
 					phone: true
@@ -235,6 +237,7 @@
 					last_name: '',
 					first_name: '',
 					patronymic: '',
+					gender: '',
 					birthdate: '',
 					email: '',
 					phone: ''
@@ -243,6 +246,7 @@
 					last_name: '',
 					first_name: '',
 					patronymic: '',
+					gender: '',
 					birthdate: '',
 					email: '',
 					phone: '',
@@ -252,7 +256,13 @@
 					email: '',
 					phone: '',
 					patronymic: '',
+					gender: '',
 					birthdate: ''
+				},
+				gender_options: {
+					placeholder: '',
+					male: '',
+					female: ''
 				},
 				validation_messages: {
 					birthdate_required: '',
@@ -337,6 +347,7 @@
 			last_name: 'Фамилия',
 			first_name: 'Имя',
 			patronymic: 'Отчество',
+			gender: 'Пол',
 			birthdate: 'Дата рождения',
 			email: 'Email',
 			phone: 'Телефон',
@@ -346,6 +357,7 @@
 			last_name: 'step_4.contact_last_name',
 			first_name: 'step_4.contact_first_name',
 			patronymic: 'step_4.contact_patronymic',
+			gender: 'step_4.contact_gender',
 			birthdate: 'step_4.contact_birthdate',
 			email: 'step_4.contact_email',
 			phone: 'step_4.contact_phone',
@@ -365,15 +377,27 @@
 			email: 'На этот адрес отправим подтверждение заказа.',
 			phone: 'Введите номер без кода страны — он выбран слева.',
 			patronymic: 'Укажите при наличии.',
+			gender: 'Необязательное поле.',
 			birthdate: 'Используем для корректной обработки заказа и персонализации сервиса.'
 		};
 		var path = {
 			email: 'step_4.contact_hint_email',
 			phone: 'step_4.contact_hint_phone',
 			patronymic: 'step_4.contact_hint_patronymic',
+			gender: 'step_4.contact_hint_gender',
 			birthdate: 'step_4.contact_hint_birthdate'
 		};
 		return getUiText(path[key] || 'step_4.title', fb[key] || '');
+	}
+
+	function getGenderOptions() {
+		var cfg = getStepFourConfig();
+		var go = cfg.contact_block && cfg.contact_block.gender_options ? cfg.contact_block.gender_options : {};
+		return {
+			placeholder: trimNonEmpty(go.placeholder) || getUiText('step_4.contact_gender_placeholder', 'Не указывать'),
+			male: trimNonEmpty(go.male) || getUiText('step_4.contact_gender_male', 'Мужчина'),
+			female: trimNonEmpty(go.female) || getUiText('step_4.contact_gender_female', 'Женщина')
+		};
 	}
 
 	function getBirthdateErrorText(code) {
@@ -701,6 +725,10 @@
 			errors.billing_patronymic = 'required';
 			ok = false;
 		}
+		if (isContactFieldVisible('gender') && isContactFieldRequired('gender') && !trimNonEmpty(contact.billing_gender)) {
+			errors.billing_gender = 'required';
+			ok = false;
+		}
 		if (isContactFieldVisible('birthdate')) {
 			var birthRaw = trimNonEmpty(contact.billing_birthdate);
 			if (isContactFieldRequired('birthdate') && !birthRaw) {
@@ -846,10 +874,11 @@
 		var errLast = getContactFieldError(state, 'billing_last_name');
 		var errFirst = getContactFieldError(state, 'billing_first_name');
 		var errPat = getContactFieldError(state, 'billing_patronymic');
+		var errGender = getContactFieldError(state, 'billing_gender');
 		var errBirth = getContactFieldError(state, 'billing_birthdate');
 		var errEmail = getContactFieldError(state, 'billing_email');
 		var errPhone = getContactFieldError(state, 'billing_phone_national');
-		var order = Array.isArray(block.field_order) ? block.field_order : ['last_name', 'first_name', 'patronymic', 'birthdate', 'email', 'phone'];
+		var order = Array.isArray(block.field_order) ? block.field_order : ['last_name', 'first_name', 'patronymic', 'gender', 'birthdate', 'email', 'phone'];
 		var seen = {};
 		var ordered = [];
 		var oi;
@@ -861,7 +890,8 @@
 			seen[k] = true;
 			ordered.push(k);
 		}
-		var fallbackOrder = ['last_name', 'first_name', 'patronymic', 'birthdate', 'email', 'phone'];
+		var fallbackOrder = ['last_name', 'first_name', 'patronymic', 'gender', 'birthdate', 'email', 'phone'];
+		var genderOptions = getGenderOptions();
 		for (oi = 0; oi < fallbackOrder.length; oi++) {
 			if (!seen[fallbackOrder[oi]]) {
 				ordered.push(fallbackOrder[oi]);
@@ -939,6 +969,26 @@
 			html += '<p class="mp-cc-field-error" id="mp-cc-contact-patronymic-err" role="alert">' + escapeHtml(getUiText('step_4.contact_error_required', 'Заполните это поле.')) + '</p>';
 		}
 		html += '</div>';
+				continue;
+			}
+			if (field === 'gender') {
+				html += '<div class="mp-cc-contact__field mp-cc-contact__field--span-1">';
+				html += '<label class="mp-cc-field-label" for="mp-cc-contact-gender">' + escapeHtml(getContactLabel('gender')) + '</label>';
+				html += '<select id="mp-cc-contact-gender" class="mp-cc-select' + (errGender ? ' is-invalid' : '') + '" data-contact-field="billing_gender"';
+				html += isContactFieldRequired('gender') ? ' aria-required="true"' : '';
+				html += errGender ? ' aria-invalid="true"' : '';
+				html += '>';
+				html += '<option value="">' + escapeHtml(genderOptions.placeholder) + '</option>';
+				html += '<option value="male"' + (String(contact.billing_gender || '') === 'male' ? ' selected' : '') + '>' + escapeHtml(genderOptions.male) + '</option>';
+				html += '<option value="female"' + (String(contact.billing_gender || '') === 'female' ? ' selected' : '') + '>' + escapeHtml(genderOptions.female) + '</option>';
+				html += '</select>';
+				if (trimNonEmpty(getContactHint('gender'))) {
+					html += '<p class="mp-cc-field-hint">' + escapeHtml(getContactHint('gender')) + '</p>';
+				}
+				if (errGender) {
+					html += '<p class="mp-cc-field-error" id="mp-cc-contact-gender-err" role="alert">' + escapeHtml(getUiText('step_4.contact_error_required', 'Заполните это поле.')) + '</p>';
+				}
+				html += '</div>';
 				continue;
 			}
 			if (field === 'birthdate') {
@@ -2921,10 +2971,12 @@
 			var fullName = [contact.billing_last_name, contact.billing_first_name, contact.billing_patronymic]
 				.filter(function (part) { return trimNonEmpty(part); })
 				.join(' ');
+			var gOpt = getGenderOptions();
+			var genderLabel = String(contact.billing_gender || '') === 'male' ? gOpt.male : (String(contact.billing_gender || '') === 'female' ? gOpt.female : '');
 			var contactAddress = [contact.country, contact.state, contact.city, contact.address_1, contact.address_2, contact.postcode]
 				.filter(function (part) { return trimNonEmpty(part); })
 				.join(', ');
-			var hasContactReview = trimNonEmpty(fullName) || trimNonEmpty(contact.billing_birthdate) || trimNonEmpty(contact.billing_email) || trimNonEmpty(contact.billing_phone) || trimNonEmpty(contactAddress);
+			var hasContactReview = trimNonEmpty(fullName) || trimNonEmpty(genderLabel) || trimNonEmpty(contact.billing_birthdate) || trimNonEmpty(contact.billing_email) || trimNonEmpty(contact.billing_phone) || trimNonEmpty(contactAddress);
 			if (hasContactReview) {
 				html += '<div class="mp-cc-summary-card__scenario" data-final-review-contact="1">';
 				html += '<p class="mp-cc-summary-card__scenario-title"><strong>' + escapeHtml(getUiText('step_4.title', 'Контактные данные')) + '</strong></p>';
@@ -2936,6 +2988,9 @@
 				}
 				if (trimNonEmpty(contact.billing_phone)) {
 					html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(getUiText('step_4.contact_phone', 'Телефон')) + ':</strong> ' + escapeHtml(String(contact.billing_phone)) + '</p>';
+				}
+				if (trimNonEmpty(genderLabel)) {
+					html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(getUiText('step_4.contact_gender', 'Пол')) + ':</strong> ' + escapeHtml(genderLabel) + '</p>';
 				}
 				if (trimNonEmpty(contact.billing_birthdate)) {
 					html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(getUiText('step_4.contact_birthdate', 'Дата рождения')) + ':</strong> ' + escapeHtml(formatIsoDateForUi(String(contact.billing_birthdate))) + '</p>';
