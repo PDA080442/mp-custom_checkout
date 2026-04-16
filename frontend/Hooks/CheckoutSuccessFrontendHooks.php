@@ -21,7 +21,7 @@ final class CheckoutSuccessFrontendHooks {
 	}
 
 	public static function maybe_enqueue(): void {
-		if ( ! \MP\CustomCheckout\Routing\CheckoutSuccessRouteHooks::is_success_route() ) {
+		if ( ! \MP\CustomCheckout\Checkout\Routing\CheckoutSuccessRouteHooks::is_success_route() ) {
 			return;
 		}
 		if ( ! DependencyFailureGuard::is_woocommerce_integration_ready() ) {
@@ -32,7 +32,7 @@ final class CheckoutSuccessFrontendHooks {
 	}
 
 	public static function body_class( array $classes ): array {
-		if ( ! \MP\CustomCheckout\Routing\CheckoutSuccessRouteHooks::is_success_route() ) {
+		if ( ! \MP\CustomCheckout\Checkout\Routing\CheckoutSuccessRouteHooks::is_success_route() ) {
 			return $classes;
 		}
 		$classes[] = 'mp-cc-success-page';

@@ -51,7 +51,7 @@ final class FrontendAssetsHooks {
 				'flags'   => FeatureFlagResolver::frontend_payload(),
 				'runtime' => array(
 					'isCheckoutRoute'   => \MP\CustomCheckout\Hooks\CheckoutRouteHooks::is_checkout_route(),
-					'isPlainPermalinks' => \MP\CustomCheckout\Routing\CheckoutPermalinkCompatibility::is_plain_permalinks(),
+					'isPlainPermalinks' => \MP\CustomCheckout\Checkout\Routing\CheckoutPermalinkCompatibility::is_plain_permalinks(),
 					'checkoutUrl'       => \MP\CustomCheckout\Routing\CheckoutRouteConfig::get_checkout_url(),
 				),
 				'endpoints' => array(
