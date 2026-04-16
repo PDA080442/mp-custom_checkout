@@ -368,22 +368,21 @@
 		html += '<div class="mp-cc-admin-preview-area__header">';
 		html += '<h2>Live Checkout Preview</h2>';
 		html += '<div class="mp-cc-admin-preview-area__actions">';
-		html += '<button type="button" class="button button-secondary" data-mp-cc-progress-style="digits">Прогресс: 1/2/3</button>';
-		html += '<button type="button" class="button button-secondary" data-mp-cc-progress-style="labels">Прогресс: названия</button>';
-		html += '<button type="button" class="button button-secondary" data-mp-cc-progress-style="dots">Прогресс: точки</button>';
-		html += '<button type="button" class="button button-secondary" data-mp-cc-scenario="pickup">Самовывоз</button>';
-		html += '<button type="button" class="button button-secondary" data-mp-cc-scenario="krasnoyarsk_delivery">Красноярск</button>';
-		html += '<button type="button" class="button button-secondary" data-mp-cc-scenario="other_city_delivery">Другой город</button>';
-		html += '<button type="button" class="button button-secondary" data-mp-cc-device="desktop">Desktop</button>';
-		html += '<button type="button" class="button button-secondary" data-mp-cc-device="tablet">Tablet</button>';
-		html += '<button type="button" class="button button-secondary" data-mp-cc-device="mobile">Mobile</button>';
-		html += '<button type="button" class="button button-secondary" data-mp-cc-interaction="default">Default</button>';
-		html += '<button type="button" class="button button-secondary" data-mp-cc-interaction="hover">Hover</button>';
-		html += '<button type="button" class="button button-secondary" data-mp-cc-interaction="focus">Focus</button>';
-		html += '<button type="button" class="button button-secondary" data-mp-cc-runtime="error">Error</button>';
-		html += '<button type="button" class="button button-secondary" data-mp-cc-runtime="disabled">Disabled</button>';
-		html += '<button type="button" class="button button-secondary" data-mp-cc-runtime="loading">Loading</button>';
-		html += '<button type="button" class="button button-secondary" data-mp-cc-runtime="success">Success</button>';
+		html += '<label class="mp-cc-admin-preview-area__control">Progress';
+		html += '<select data-mp-cc-progress-style-select="1"><option value="digits">1/2/3</option><option value="labels">Названия</option><option value="dots">Точки</option></select>';
+		html += '</label>';
+		html += '<label class="mp-cc-admin-preview-area__control">Scenario';
+		html += '<select data-mp-cc-scenario-select="1"><option value="pickup">Самовывоз</option><option value="krasnoyarsk_delivery">Красноярск</option><option value="other_city_delivery">Другой город</option></select>';
+		html += '</label>';
+		html += '<label class="mp-cc-admin-preview-area__control">Device';
+		html += '<select data-mp-cc-device-select="1"><option value="desktop">Desktop</option><option value="tablet">Tablet</option><option value="mobile">Mobile</option></select>';
+		html += '</label>';
+		html += '<label class="mp-cc-admin-preview-area__control">Interaction';
+		html += '<select data-mp-cc-interaction-select="1"><option value="default">Default</option><option value="hover">Hover</option><option value="focus">Focus</option></select>';
+		html += '</label>';
+		html += '<label class="mp-cc-admin-preview-area__control">Runtime';
+		html += '<select data-mp-cc-runtime-select="1"><option value="default">Default</option><option value="error">Error</option><option value="disabled">Disabled</option><option value="loading">Loading</option><option value="success">Success</option></select>';
+		html += '</label>';
 		html += '<button type="button" class="button button-secondary" data-mp-cc-preview-reset="1">Сбросить превью</button>';
 		html += '<button type="button" class="button button-secondary" data-mp-cc-tab-reset="1">Сбросить настройки вкладки по умолчанию</button>';
 		html += '</div>';
@@ -1236,6 +1235,11 @@
 		};
 		var rerenderDebounced = debounce(rerender, 120);
 		mountPreviews(config, scenarioConfig, dateStepConfig, officeHoursPreviewConfig, stepFourConfig);
+		$('[data-mp-cc-progress-style-select="1"]').val('digits');
+		$('[data-mp-cc-scenario-select="1"]').val('pickup');
+		$('[data-mp-cc-device-select="1"]').val('desktop');
+		$('[data-mp-cc-interaction-select="1"]').val('default');
+		$('[data-mp-cc-runtime-select="1"]').val('default');
 		updatePreviewWarning();
 
 		$(document).on('input change', '[name^="mp_custom_checkout_settings[step_1]"]', function () {
@@ -1274,12 +1278,30 @@
 			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
 			updatePreviewWarning();
 		});
+		$(document).on('change', '[data-mp-cc-progress-style-select]', function () {
+			var styleSelect = String($(this).val() || '');
+			if (!styleSelect) {
+				return;
+			}
+			previewStore.setState({ progressStyle: styleSelect, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
 		$(document).on('click', '[data-mp-cc-scenario]', function () {
 			var scenario = String($(this).data('mpCcScenario') || '');
 			if (!scenario) {
 				return;
 			}
 			previewStore.setState({ scenario: scenario, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
+		$(document).on('change', '[data-mp-cc-scenario-select]', function () {
+			var scenarioSelect = String($(this).val() || '');
+			if (!scenarioSelect) {
+				return;
+			}
+			previewStore.setState({ scenario: scenarioSelect, dirty: true });
 			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
 			updatePreviewWarning();
 		});
@@ -1292,6 +1314,15 @@
 			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
 			updatePreviewWarning();
 		});
+		$(document).on('change', '[data-mp-cc-device-select]', function () {
+			var deviceSelect = String($(this).val() || '');
+			if (!deviceSelect) {
+				return;
+			}
+			previewStore.setState({ device: deviceSelect, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
 		$(document).on('click', '[data-mp-cc-interaction]', function () {
 			var interaction = String($(this).data('mpCcInteraction') || '');
 			if (!interaction) {
@@ -1301,12 +1332,30 @@
 			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
 			updatePreviewWarning();
 		});
+		$(document).on('change', '[data-mp-cc-interaction-select]', function () {
+			var interactionSelect = String($(this).val() || '');
+			if (!interactionSelect) {
+				return;
+			}
+			previewStore.setState({ interactionState: interactionSelect, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
 		$(document).on('click', '[data-mp-cc-runtime]', function () {
 			var runtimeState = String($(this).data('mpCcRuntime') || '');
 			if (!runtimeState) {
 				return;
 			}
 			previewStore.setState({ runtimeState: runtimeState, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
+		$(document).on('change', '[data-mp-cc-runtime-select]', function () {
+			var runtimeSelect = String($(this).val() || '');
+			if (!runtimeSelect) {
+				return;
+			}
+			previewStore.setState({ runtimeState: runtimeSelect, dirty: true });
 			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
 			updatePreviewWarning();
 		});

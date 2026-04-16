@@ -32,6 +32,18 @@
 	flex-wrap: wrap;
 }
 
+.mp-cc-admin-preview-area__control {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 12px;
+	color: var(--mp-cc-admin-muted, #57606a);
+}
+
+.mp-cc-admin-preview-area__control select {
+	min-width: 120px;
+}
+
 .mp-cc-admin-preview-area__warning {
 	margin: 10px 0 0;
 	padding: 8px 10px;
