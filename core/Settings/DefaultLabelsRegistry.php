@@ -125,6 +125,9 @@ final class DefaultLabelsRegistry {
 				'gift_card_input_label' => 'Код подарочной карты',
 				'gift_card_placeholder' => 'Например, GIFT-123',
 				'gift_card_apply' => 'Применить',
+				'gift_card_empty' => 'Введите код подарочной карты.',
+				'gift_card_success' => 'Подарочная карта применена.',
+				'gift_card_error' => 'Не удалось применить подарочную карту.',
 			),
 			'coupon' => array(
 				'apply'   => 'Применить',

@@ -360,7 +360,10 @@
 				intro: '',
 				input_label: '',
 				placeholder: '',
-				apply_label: ''
+				apply_label: '',
+				empty_message: '',
+				success_message: '',
+				error_message: ''
 			},
 			geo_preview: { enabled: false }
 		}, source);
@@ -825,8 +828,14 @@
 		discounts.coupon_runtime = discounts.coupon_runtime && typeof discounts.coupon_runtime === 'object'
 			? discounts.coupon_runtime
 			: { code: '', state: 'empty', message: '' };
+		discounts.gift_card_runtime = discounts.gift_card_runtime && typeof discounts.gift_card_runtime === 'object'
+			? discounts.gift_card_runtime
+			: { code: '', state: 'empty', message: '' };
 		if (!trimNonEmpty(discounts.coupon_runtime.state)) {
 			discounts.coupon_runtime.state = 'empty';
+		}
+		if (!trimNonEmpty(discounts.gift_card_runtime.state)) {
+			discounts.gift_card_runtime.state = 'empty';
 		}
 		state.frontendStore.discounts = discounts;
 	}
@@ -854,7 +863,10 @@
 			intro: trimNonEmpty(g.intro) || getUiText('step_4.gift_card_intro', 'Введите код подарочной карты.'),
 			inputLabel: trimNonEmpty(g.input_label) || getUiText('step_4.gift_card_input_label', 'Код подарочной карты'),
 			placeholder: trimNonEmpty(g.placeholder) || getUiText('step_4.gift_card_placeholder', 'Например, GIFT-123'),
-			applyLabel: trimNonEmpty(g.apply_label) || getUiText('step_4.gift_card_apply', 'Применить')
+			applyLabel: trimNonEmpty(g.apply_label) || getUiText('step_4.gift_card_apply', 'Применить'),
+			emptyMessage: trimNonEmpty(g.empty_message) || getUiText('step_4.gift_card_empty', 'Введите код подарочной карты.'),
+			successMessage: trimNonEmpty(g.success_message) || getUiText('step_4.gift_card_success', 'Подарочная карта применена.'),
+			errorMessage: trimNonEmpty(g.error_message) || getUiText('step_4.gift_card_error', 'Не удалось применить подарочную карту.')
 		};
 	}
 
@@ -1579,19 +1591,39 @@
 		return html;
 	}
 
-	function buildGiftCardBlockHtml() {
+function buildGiftCardBlockHtml(state) {
 		var copy = getGiftCardCopy();
+		var rt = state.frontendStore && state.frontendStore.discounts && state.frontendStore.discounts.gift_card_runtime
+			? state.frontendStore.discounts.gift_card_runtime
+			: { code: '', state: 'empty', message: '' };
+		var codes = state.frontendStore && state.frontendStore.discounts && Array.isArray(state.frontendStore.discounts.gift_card)
+			? state.frontendStore.discounts.gift_card
+			: [];
 		var html = '';
-		html += '<article class="mp-cc-coupon mp-cc-coupon--gift" data-gift-card-block="1">';
+		html += '<article class="mp-cc-coupon mp-cc-coupon--gift mp-cc-coupon--' + escapeHtml(String(rt.state || 'empty')) + '" data-gift-card-block="1">';
 		html += '<h4 class="mp-cc-coupon__title">' + escapeHtml(copy.title) + '</h4>';
 		if (copy.intro) {
 			html += '<p class="mp-cc-coupon__intro">' + escapeHtml(copy.intro) + '</p>';
 		}
 		html += '<div class="mp-cc-coupon__row">';
 		html += '<label class="mp-cc-field-label" for="mp-cc-gift-card-code">' + escapeHtml(copy.inputLabel) + '</label>';
-		html += '<input type="text" class="mp-cc-input" id="mp-cc-gift-card-code" placeholder="' + escapeHtml(copy.placeholder) + '" />';
-		html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--back mp-cc-coupon__apply" disabled>' + escapeHtml(copy.applyLabel) + '</button>';
+		html += '<input type="text" class="mp-cc-input' + (rt.state === 'error' ? ' is-invalid' : '') + '" id="mp-cc-gift-card-code" data-gift-card-code="1" value="' + escapeHtml(String(rt.code || '')) + '" placeholder="' + escapeHtml(copy.placeholder) + '" />';
+		html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--next mp-cc-coupon__apply" data-gift-card-apply="1">' + escapeHtml(copy.applyLabel) + '</button>';
 		html += '</div>';
+		if (trimNonEmpty(rt.message)) {
+			html += '<p class="mp-cc-field-hint' + (rt.state === 'error' ? ' mp-cc-field-error' : '') + '">' + escapeHtml(String(rt.message)) + '</p>';
+		}
+		if (codes.length) {
+			html += '<div class="mp-cc-coupon__applied">';
+			for (var i = 0; i < codes.length; i += 1) {
+				var gc = String(codes[i] || '');
+				if (!gc) {
+					continue;
+				}
+				html += '<span class="mp-cc-coupon__chip"><span>' + escapeHtml(gc) + '</span></span>';
+			}
+			html += '</div>';
+		}
 		html += '</article>';
 		return html;
 	}
@@ -3973,6 +4005,46 @@
 					syncFromFlow(state, payload.flow || {}, payload.cart || {});
 					render(state, $app);
 				}
+			});
+		});
+
+		$app.find('[data-gift-card-code]').off('input').on('input', function () {
+			ensureDiscountDefaults(state);
+			var discounts = state.frontendStore.discounts || {};
+			var rt = discounts.gift_card_runtime || { code: '', state: 'empty', message: '' };
+			rt.code = String($(this).val() || '');
+			if (trimNonEmpty(rt.code)) {
+				rt.state = 'empty';
+				rt.message = '';
+			}
+			discounts.gift_card_runtime = rt;
+			state.frontendStore.discounts = discounts;
+		});
+
+		$app.find('[data-gift-card-apply]').off('click').on('click', function () {
+			ensureDiscountDefaults(state);
+			var discounts = state.frontendStore.discounts || {};
+			var rt = discounts.gift_card_runtime || { code: '', state: 'empty', message: '' };
+			var copy = getGiftCardCopy();
+			var code = trimNonEmpty(rt.code);
+			if (!code) {
+				rt.state = 'error';
+				rt.message = copy.emptyMessage;
+			} else if (code.length >= 4 && code.toUpperCase().indexOf('GIFT') === 0) {
+				rt.state = 'success';
+				rt.message = copy.successMessage;
+				if (discounts.gift_card.indexOf(code) < 0) {
+					discounts.gift_card.push(code);
+				}
+			} else {
+				rt.state = 'error';
+				rt.message = copy.errorMessage;
+			}
+			discounts.gift_card_runtime = rt;
+			state.frontendStore.discounts = discounts;
+			render(state, $app);
+			saveDiscountDraft(state).fail(function () {
+				notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
 			});
 		});
 
