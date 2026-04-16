@@ -139,7 +139,7 @@
 			contact: {
 				title: String(contact.title || 'Контактные данные'),
 				intro: String(contact.intro || ''),
-				fieldOrder: Array.isArray(contact.field_order) ? contact.field_order : ['last_name', 'first_name', 'patronymic', 'email', 'phone'],
+				fieldOrder: Array.isArray(contact.field_order) ? contact.field_order : ['last_name', 'first_name', 'patronymic', 'birthdate', 'email', 'phone'],
 				fieldVisibility: contact.field_visibility && typeof contact.field_visibility === 'object' ? contact.field_visibility : {},
 				fieldRequired: contact.field_required && typeof contact.field_required === 'object' ? contact.field_required : {},
 				labels: contact.labels && typeof contact.labels === 'object' ? contact.labels : {},
@@ -509,6 +509,11 @@
 		cfg.contact.layout.desktop_columns = Number(readFormValue(p + '[layout][desktop_columns]', cfg.contact.layout.desktop_columns || 3));
 		cfg.contact.layout.tablet_columns = Number(readFormValue(p + '[layout][tablet_columns]', cfg.contact.layout.tablet_columns || 2));
 		cfg.contact.layout.mobile_columns = Number(readFormValue(p + '[layout][mobile_columns]', cfg.contact.layout.mobile_columns || 1));
+		cfg.contact.labels.birthdate = readFormValue(p + '[labels][birthdate]', cfg.contact.labels.birthdate || 'Дата рождения');
+		cfg.contact.placeholders.birthdate = readFormValue(p + '[placeholders][birthdate]', cfg.contact.placeholders.birthdate || '');
+		cfg.contact.hints.birthdate = readFormValue(p + '[hints][birthdate]', cfg.contact.hints.birthdate || '');
+		cfg.contact.fieldVisibility.birthdate = Boolean(readFormValue(p + '[field_visibility][birthdate]', cfg.contact.fieldVisibility.birthdate !== false));
+		cfg.contact.fieldRequired.birthdate = Boolean(readFormValue(p + '[field_required][birthdate]', cfg.contact.fieldRequired.birthdate !== false));
 		cfg.contact.states.invalid_style = readFormValue(p + '[field_state_styles][invalid_style]', cfg.contact.states.invalid_style || 'default');
 		cfg.contact.states.hint_style = readFormValue(p + '[field_state_styles][hint_style]', cfg.contact.states.hint_style || 'default');
 		cfg.contact.states.focus_style = readFormValue(p + '[field_state_styles][focus_style]', cfg.contact.states.focus_style || 'default');
