@@ -319,11 +319,17 @@
 			payment_block: {
 				title: '',
 				intro: '',
+				gateway_order: [],
 				layout: { desktop_columns: 2, tablet_columns: 2, mobile_columns: 1, grid_gap: '0.6rem 0.75rem' },
 				card_style: 'default',
+				card_active_style: 'accent',
+				radio_style: 'default',
+				description_style: 'muted',
 				show_description: true,
 				required: true,
-				error_message: ''
+				error_message: '',
+				messages: { loading: '', success: '', error: '' },
+				diagnostics: { enabled: true }
 			},
 			available_gateways: [],
 			address_block: {
@@ -843,6 +849,8 @@
 	function getAvailablePaymentGateways() {
 		var cfg = getStepFourConfig();
 		var list = Array.isArray(cfg.available_gateways) ? cfg.available_gateways : [];
+		var pb = cfg.payment_block && typeof cfg.payment_block === 'object' ? cfg.payment_block : {};
+		var order = Array.isArray(pb.gateway_order) ? pb.gateway_order : [];
 		var normalized = [];
 		for (var i = 0; i < list.length; i += 1) {
 			var row = list[i] || {};
@@ -856,7 +864,42 @@
 				description: trimNonEmpty(row.description) || ''
 			});
 		}
+		if (!order.length) {
+			return normalized;
+		}
+		var rank = {};
+		for (i = 0; i < order.length; i += 1) {
+			var id = trimNonEmpty(order[i]);
+			if (!id || Object.prototype.hasOwnProperty.call(rank, id)) {
+				continue;
+			}
+			rank[id] = i;
+		}
+		normalized.sort(function (a, b) {
+			var ar = Object.prototype.hasOwnProperty.call(rank, a.id) ? rank[a.id] : 9999;
+			var br = Object.prototype.hasOwnProperty.call(rank, b.id) ? rank[b.id] : 9999;
+			if (ar !== br) {
+				return ar - br;
+			}
+			return String(a.title || '').localeCompare(String(b.title || ''));
+		});
 		return normalized;
+	}
+
+	function maybeSendGatewayRenderDiagnostics(state, issues) {
+		var cfg = getStepFourConfig();
+		var pb = cfg.payment_block && typeof cfg.payment_block === 'object' ? cfg.payment_block : {};
+		var diagnostics = pb.diagnostics && typeof pb.diagnostics === 'object' ? pb.diagnostics : {};
+		if (diagnostics.enabled === false) {
+			return;
+		}
+		if (!Array.isArray(issues) || !issues.length) {
+			return;
+		}
+		postCheckout('gateway_render_diagnostics', {
+			context_id: state.flowContextId,
+			issues: issues
+		});
 	}
 
 	function ensureDiscountDefaults(state) {
@@ -1391,8 +1434,24 @@
 		var intro = trimNonEmpty(pb.intro) || getUiText('step_4.payment_intro', 'Выберите удобный способ оплаты.');
 		var showDescription = pb.show_description !== false;
 		var layout = pb.layout && typeof pb.layout === 'object' ? pb.layout : {};
+		var messages = pb.messages && typeof pb.messages === 'object' ? pb.messages : {};
+		var paymentState = state.frontendStore && state.frontendStore.payment ? String(state.frontendStore.payment.state || 'idle') : 'idle';
+		var diagnosticsIssues = [];
+		if (trimNonEmpty(selected)) {
+			var selectedPresent = false;
+			for (var si = 0; si < gateways.length; si += 1) {
+				if (String(gateways[si].id) === String(selected)) {
+					selectedPresent = true;
+					break;
+				}
+			}
+			if (!selectedPresent) {
+				diagnosticsIssues.push('Selected gateway is missing from available list: ' + selected);
+			}
+		}
+		maybeSendGatewayRenderDiagnostics(state, diagnosticsIssues);
 		var html = '';
-		html += '<section class="mp-cc-payment mp-cc-payment--' + escapeHtml(trimNonEmpty(pb.card_style) || 'default') + '" aria-labelledby="mp-cc-payment-title">';
+		html += '<section class="mp-cc-payment mp-cc-payment--' + escapeHtml(trimNonEmpty(pb.card_style) || 'default') + ' mp-cc-payment--radio-' + escapeHtml(trimNonEmpty(pb.radio_style) || 'default') + ' mp-cc-payment--desc-' + escapeHtml(trimNonEmpty(pb.description_style) || 'muted') + '" aria-labelledby="mp-cc-payment-title">';
 		html += '<header class="mp-cc-payment__header">';
 		html += '<h4 class="mp-cc-payment__title" id="mp-cc-payment-title">' + escapeHtml(title) + '</h4>';
 		if (intro) {
@@ -1403,7 +1462,7 @@
 		for (var gi = 0; gi < gateways.length; gi += 1) {
 			var g = gateways[gi];
 			var isSelected = String(g.id) === String(selected);
-			html += '<label class="mp-cc-payment-card' + (isSelected ? ' is-active' : '') + '">';
+			html += '<label class="mp-cc-payment-card mp-cc-payment-card--active-' + escapeHtml(trimNonEmpty(pb.card_active_style) || 'accent') + (isSelected ? ' is-active' : '') + '">';
 			html += '<input type="radio" class="mp-cc-payment-card__radio' + (errPayment ? ' is-invalid' : '') + '" name="mp_cc_payment_gateway" value="' + escapeHtml(g.id) + '" data-payment-gateway="1"' + (isSelected ? ' checked' : '') + ' />';
 			html += '<span class="mp-cc-payment-card__title">' + escapeHtml(g.title) + '</span>';
 			if (showDescription && g.description) {
@@ -1412,6 +1471,13 @@
 			html += '</label>';
 		}
 		html += '</div>';
+		if (paymentState === 'syncing') {
+			html += '<p class="mp-cc-payment__state mp-cc-payment__state--loading">' + escapeHtml(trimNonEmpty(messages.loading) || getUiText('step_4.payment_loading', 'Сохраняем выбранный способ оплаты...')) + '</p>';
+		} else if (paymentState === 'success') {
+			html += '<p class="mp-cc-payment__state mp-cc-payment__state--success">' + escapeHtml(trimNonEmpty(messages.success) || getUiText('step_4.payment_success', 'Способ оплаты обновлён.')) + '</p>';
+		} else if (paymentState === 'error') {
+			html += '<p class="mp-cc-payment__state mp-cc-payment__state--error">' + escapeHtml(trimNonEmpty(messages.error) || getUiText('step_4.payment_error_switch', 'Не удалось переключить способ оплаты.')) + '</p>';
+		}
 		if (errPayment) {
 			html += '<p class="mp-cc-field-error" role="alert">' + escapeHtml(trimNonEmpty(pb.error_message) || getUiText('step_4.payment_error_required', 'Выберите способ оплаты.')) + '</p>';
 		}
@@ -4052,15 +4118,17 @@ function buildGiftCardBlockHtml(state) {
 				context_id: state.flowContextId
 			}).then(function (response) {
 				var data = response && response.data ? response.data : {};
-				state.frontendStore.payment.state = 'idle';
+				state.frontendStore.payment.state = 'success';
 				if (data.flow || data.cart) {
 					syncFromFlow(state, data.flow || {}, data.cart || {});
 				}
 				render(state, $app);
 			}).fail(function (xhr) {
-				state.frontendStore.payment.state = 'idle';
+				state.frontendStore.payment.state = 'error';
 				var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
-				notify(trimNonEmpty(payload.message) || getUiText('common.error_generic', 'Произошла ошибка. Попробуйте ещё раз.'), 'error');
+				var paymentCfg = getStepFourConfig().payment_block || {};
+				var paymentMessages = paymentCfg.messages && typeof paymentCfg.messages === 'object' ? paymentCfg.messages : {};
+				notify(trimNonEmpty(payload.message) || trimNonEmpty(paymentMessages.error) || getUiText('step_4.payment_error_switch', 'Не удалось переключить способ оплаты.'), 'error');
 				syncStoreWithBackend(state, $app);
 			});
 		});

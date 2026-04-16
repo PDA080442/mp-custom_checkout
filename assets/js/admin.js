@@ -159,7 +159,21 @@
 			},
 			discountLayout: source.discount_layout && typeof source.discount_layout === 'object' ? source.discount_layout : { placement: 'step_4', separate_step_enabled: false, order: ['coupon', 'gift_card'] },
 			discountStyles: source.discount_block_styles && typeof source.discount_block_styles === 'object' ? source.discount_block_styles : { state_empty: 'default', state_success: 'success', state_error: 'error', focus_style: 'default' },
-			payment: payment && typeof payment === 'object' ? payment : {},
+			payment: payment && typeof payment === 'object' ? payment : {
+				title: 'Способ оплаты',
+				intro: 'Выберите удобный способ оплаты.',
+				gateway_order: [],
+				card_style: 'default',
+				card_active_style: 'accent',
+				radio_style: 'default',
+				description_style: 'muted',
+				show_description: true,
+				required: true,
+				error_message: 'Выберите способ оплаты.',
+				messages: { loading: '', success: '', error: '' },
+				layout: { desktop_columns: 2, tablet_columns: 2, mobile_columns: 1, grid_gap: '0.6rem 0.75rem' },
+				diagnostics: { enabled: true }
+			},
 			coupon: source.coupon_block && typeof source.coupon_block === 'object' ? source.coupon_block : {},
 			giftCard: source.gift_card_block && typeof source.gift_card_block === 'object' ? source.gift_card_block : {},
 			geoPreview: source.geo_preview && source.geo_preview.enabled !== false,
@@ -450,6 +464,8 @@
 		html += '<p><strong>Coupon placement:</strong> ' + escapeHtml(String(cfg.discountLayout.placement || 'step_4')) + ', separate-step ready=' + escapeHtml(cfg.discountLayout.separate_step_enabled ? 'yes' : 'no') + '</p>';
 		html += '<p><strong>Discount styles:</strong> empty=' + escapeHtml(String(cfg.discountStyles.state_empty || 'default')) + ', success=' + escapeHtml(String(cfg.discountStyles.state_success || 'success')) + ', error=' + escapeHtml(String(cfg.discountStyles.state_error || 'error')) + '</p>';
 		html += '<p><strong>Payment block:</strong> title="' + escapeHtml(String(cfg.payment.title || 'Способ оплаты')) + '", style=' + escapeHtml(String(cfg.payment.card_style || 'default')) + ', description=' + escapeHtml(cfg.payment.show_description === false ? 'off' : 'on') + '</p>';
+		html += '<p><strong>Payment states:</strong> loading="' + escapeHtml(String((cfg.payment.messages && cfg.payment.messages.loading) || '—')) + '", success="' + escapeHtml(String((cfg.payment.messages && cfg.payment.messages.success) || '—')) + '", error="' + escapeHtml(String((cfg.payment.messages && cfg.payment.messages.error) || '—')) + '"</p>';
+		html += '<p><strong>Payment diagnostics:</strong> ' + escapeHtml(cfg.payment.diagnostics && cfg.payment.diagnostics.enabled === false ? 'off' : 'on') + '</p>';
 		html += '</div>';
 		html += '<div class="mp-cc-admin-preview__date-grid">';
 		html += '<article>';
@@ -465,6 +481,20 @@
 		html += '<p>Label: ' + escapeHtml(String(cfg.giftCard.input_label || 'Код подарочной карты')) + '</p>';
 		html += '<p>Placeholder: ' + escapeHtml(String(cfg.giftCard.placeholder || '')) + '</p>';
 		html += '<p><em>States:</em> empty="' + escapeHtml(String(cfg.giftCard.empty_message || '')) + '", success="' + escapeHtml(String(cfg.giftCard.success_message || '')) + '", error="' + escapeHtml(String(cfg.giftCard.error_message || '')) + '"</p>';
+		html += '</article>';
+		html += '</div>';
+		html += '<div class="mp-cc-admin-preview__date-grid">';
+		html += '<article>';
+		html += '<strong>Payment preview: loading</strong>';
+		html += '<p class="mp-cc-admin-step4-error-sample">' + escapeHtml(String((cfg.payment.messages && cfg.payment.messages.loading) || 'Сохраняем выбранный способ оплаты...')) + '</p>';
+		html += '</article>';
+		html += '<article>';
+		html += '<strong>Payment preview: success</strong>';
+		html += '<p class="mp-cc-admin-step4-error-sample">' + escapeHtml(String((cfg.payment.messages && cfg.payment.messages.success) || 'Способ оплаты обновлён.')) + '</p>';
+		html += '</article>';
+		html += '<article>';
+		html += '<strong>Payment preview: error</strong>';
+		html += '<p class="mp-cc-admin-step4-error-sample">' + escapeHtml(String((cfg.payment.messages && cfg.payment.messages.error) || 'Не удалось переключить способ оплаты.')) + '</p>';
 		html += '</article>';
 		html += '</div>';
 		html += '<p><strong>' + escapeHtml(cfg.address.title) + '</strong></p>';
@@ -616,6 +646,18 @@
 		cfg.payment.layout.tablet_columns = Number(readFormValue(py + '[layout][tablet_columns]', cfg.payment.layout.tablet_columns || 2));
 		cfg.payment.layout.mobile_columns = Number(readFormValue(py + '[layout][mobile_columns]', cfg.payment.layout.mobile_columns || 1));
 		cfg.payment.layout.grid_gap = readFormValue(py + '[layout][grid_gap]', cfg.payment.layout.grid_gap || '0.6rem 0.75rem');
+		cfg.payment.gateway_order = String(readFormValue(py + '[gateway_order]', (cfg.payment.gateway_order || []).join(','))).split(',').map(function (value) {
+			return $.trim(String(value || ''));
+		}).filter(Boolean);
+		cfg.payment.card_active_style = readFormValue(py + '[card_active_style]', cfg.payment.card_active_style || 'accent');
+		cfg.payment.radio_style = readFormValue(py + '[radio_style]', cfg.payment.radio_style || 'default');
+		cfg.payment.description_style = readFormValue(py + '[description_style]', cfg.payment.description_style || 'muted');
+		cfg.payment.messages = cfg.payment.messages && typeof cfg.payment.messages === 'object' ? cfg.payment.messages : {};
+		cfg.payment.messages.loading = readFormValue(py + '[messages][loading]', cfg.payment.messages.loading || 'Сохраняем выбранный способ оплаты...');
+		cfg.payment.messages.success = readFormValue(py + '[messages][success]', cfg.payment.messages.success || 'Способ оплаты обновлён.');
+		cfg.payment.messages.error = readFormValue(py + '[messages][error]', cfg.payment.messages.error || 'Не удалось переключить способ оплаты.');
+		cfg.payment.diagnostics = cfg.payment.diagnostics && typeof cfg.payment.diagnostics === 'object' ? cfg.payment.diagnostics : {};
+		cfg.payment.diagnostics.enabled = Boolean(readFormValue(py + '[diagnostics][enabled]', cfg.payment.diagnostics.enabled !== false));
 		var cp = 'mp_custom_checkout_settings[step_4][coupon_block]';
 		cfg.coupon.title = readFormValue(cp + '[title]', cfg.coupon.title || 'Промокод');
 		cfg.coupon.intro = readFormValue(cp + '[intro]', cfg.coupon.intro || '');

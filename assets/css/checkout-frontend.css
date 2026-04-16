@@ -1821,6 +1821,22 @@
 	box-shadow: 0 0 0 1px color-mix(in srgb, var(--mp-cc-color-accent) 55%, transparent);
 }
 
+.mp-cc-payment-card--active-strong.is-active {
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--mp-cc-color-accent) 72%, transparent);
+}
+
+.mp-cc-payment--radio-muted .mp-cc-payment-card__radio {
+	opacity: 0.75;
+}
+
+.mp-cc-payment--desc-default .mp-cc-payment-card__desc {
+	color: var(--mp-cc-color-text);
+}
+
+.mp-cc-payment--desc-subtle .mp-cc-payment-card__desc {
+	opacity: 0.8;
+}
+
 .mp-cc-payment-card__radio {
 	margin: 0;
 }
@@ -1834,6 +1850,24 @@
 	font-size: 0.78rem;
 	color: var(--mp-cc-color-text-muted);
 	line-height: 1.4;
+}
+
+.mp-cc-payment__state {
+	margin: 0;
+	font-size: 0.78rem;
+	font-weight: 600;
+}
+
+.mp-cc-payment__state--loading {
+	color: var(--mp-cc-color-text-muted);
+}
+
+.mp-cc-payment__state--success {
+	color: #15803d;
+}
+
+.mp-cc-payment__state--error {
+	color: var(--mp-cc-color-error);
 }
 
 @media (max-width: 52rem) {
