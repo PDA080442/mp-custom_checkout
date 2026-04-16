@@ -8,6 +8,7 @@
 namespace MP\CustomCheckout\Hooks;
 
 use MP\CustomCheckout\DependencyFailureGuard;
+use MP\CustomCheckout\Routing\CheckoutConditionsSummaryBuilder;
 use MP\CustomCheckout\Routing\CheckoutScenarioRules;
 
 defined( 'ABSPATH' ) || exit;
@@ -29,8 +30,10 @@ final class EmailHooks {
 		add_action( 'mp_custom_checkout_email_order_meta', array( __CLASS__, 'render_scenario_meta' ), 10, 4 );
 		add_action( 'mp_custom_checkout_email_order_meta', array( __CLASS__, 'render_selected_date_meta' ), 11, 4 );
 		add_action( 'mp_custom_checkout_email_order_meta', array( __CLASS__, 'render_pickup_point_meta' ), 12, 4 );
+		add_action( 'mp_custom_checkout_email_order_meta', array( __CLASS__, 'render_conditions_summary_meta' ), 13, 4 );
 		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'render_scenario_admin' ), 12, 1 );
 		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'render_pickup_point_admin' ), 15, 1 );
+		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'render_conditions_summary_admin' ), 18, 1 );
 		add_filter( 'manage_edit-shop_order_columns', array( __CLASS__, 'add_scenario_order_list_column' ), 25 );
 		add_action( 'manage_shop_order_posts_custom_column', array( __CLASS__, 'render_scenario_order_list_column' ), 25, 2 );
 		add_filter( 'manage_woocommerce_page_wc-orders_columns', array( __CLASS__, 'add_scenario_order_list_column' ), 25 );
@@ -170,6 +173,55 @@ final class EmailHooks {
 	}
 
 	/**
+	 * Вывод сохранённого текста условий получения в email (клиент и админ).
+	 *
+	 * @param \WC_Order       $order Заказ.
+	 * @param bool            $sent_to_admin Админу.
+	 * @param bool            $plain_text Текстовый формат.
+	 * @param \WC_Email|false $email Письмо.
+	 */
+	public static function render_conditions_summary_meta( $order, $sent_to_admin, $plain_text, $email = null ): void {
+		unset( $sent_to_admin, $email );
+		if ( ! $order instanceof \WC_Order ) {
+			return;
+		}
+
+		$text = self::get_order_conditions_summary( $order );
+		if ( '' === $text ) {
+			return;
+		}
+
+		$title = __( 'Условия получения', 'mp-custom-checkout' );
+		if ( $plain_text ) {
+			echo "\n" . sanitize_text_field( $title ) . ":\n" . self::normalize_plain_block( $text ) . "\n";
+			return;
+		}
+
+		echo '<div class="mp-cc-email-conditions-summary">';
+		echo '<p><strong>' . esc_html( $title ) . '</strong></p>';
+		echo '<div class="mp-cc-email-conditions-summary__body">' . self::format_conditions_html( $text ) . '</div>';
+		echo '</div>';
+	}
+
+	/**
+	 * Карточка заказа: полный текст условий (сохранённый meta).
+	 *
+	 * @param \WC_Order $order Заказ.
+	 */
+	public static function render_conditions_summary_admin( $order ): void {
+		if ( ! $order instanceof \WC_Order ) {
+			return;
+		}
+		$text = self::get_order_conditions_summary( $order );
+		if ( '' === $text ) {
+			return;
+		}
+
+		echo '<div class="mp-cc-order-conditions-meta"><p><strong>' . esc_html__( 'Условия получения', 'mp-custom-checkout' ) . '</strong></p>';
+		echo '<div class="mp-cc-order-conditions-meta__body">' . self::format_conditions_html( $text ) . '</div></div>';
+	}
+
+	/**
 	 * Вывод точки самовывоза в админке заказа.
 	 *
 	 * @param \WC_Order $order Заказ.
@@ -209,6 +261,7 @@ final class EmailHooks {
 			if ( 'order_status' === $key || 'order_total' === $key ) {
 				$result['mp_cc_scenario'] = __( 'Сценарий', 'mp-custom-checkout' );
 				$result['mp_cc_selected_date'] = __( 'Дата получения', 'mp-custom-checkout' );
+				$result['mp_cc_conditions'] = __( 'Условия', 'mp-custom-checkout' );
 			}
 		}
 		if ( ! isset( $result['mp_cc_scenario'] ) ) {
@@ -217,6 +270,9 @@ final class EmailHooks {
 		if ( ! isset( $result['mp_cc_selected_date'] ) ) {
 			$result['mp_cc_selected_date'] = __( 'Дата получения', 'mp-custom-checkout' );
 		}
+		if ( ! isset( $result['mp_cc_conditions'] ) ) {
+			$result['mp_cc_conditions'] = __( 'Условия', 'mp-custom-checkout' );
+		}
 		return $result;
 	}
 
@@ -224,12 +280,17 @@ final class EmailHooks {
 	 * Рендер сценария в колонке списка заказов (legacy table).
 	 */
 	public static function render_scenario_order_list_column( string $column, int $post_id ): void {
-		if ( ! in_array( $column, array( 'mp_cc_scenario', 'mp_cc_selected_date' ), true ) ) {
+		if ( ! in_array( $column, array( 'mp_cc_scenario', 'mp_cc_selected_date', 'mp_cc_conditions' ), true ) ) {
 			return;
 		}
 		$order = wc_get_order( $post_id );
 		if ( ! $order instanceof \WC_Order ) {
 			echo '&mdash;';
+			return;
+		}
+		if ( 'mp_cc_conditions' === $column ) {
+			$short = self::get_order_conditions_summary_short( $order );
+			echo '' !== $short ? esc_html( $short ) : '&mdash;';
 			return;
 		}
 		$label = 'mp_cc_scenario' === $column ? self::get_order_scenario_label( $order ) : self::get_order_date_label( $order );
@@ -243,12 +304,17 @@ final class EmailHooks {
 	 * @param int|\WC_Order|null $order_or_id Заказ или ID.
 	 */
 	public static function render_scenario_order_list_column_hpos( string $column, $order_or_id ): void {
-		if ( ! in_array( $column, array( 'mp_cc_scenario', 'mp_cc_selected_date' ), true ) ) {
+		if ( ! in_array( $column, array( 'mp_cc_scenario', 'mp_cc_selected_date', 'mp_cc_conditions' ), true ) ) {
 			return;
 		}
 		$order = $order_or_id instanceof \WC_Order ? $order_or_id : wc_get_order( (int) $order_or_id );
 		if ( ! $order instanceof \WC_Order ) {
 			echo '&mdash;';
+			return;
+		}
+		if ( 'mp_cc_conditions' === $column ) {
+			$short = self::get_order_conditions_summary_short( $order );
+			echo '' !== $short ? esc_html( $short ) : '&mdash;';
 			return;
 		}
 		$label = 'mp_cc_scenario' === $column ? self::get_order_scenario_label( $order ) : self::get_order_date_label( $order );
@@ -290,5 +356,49 @@ final class EmailHooks {
 			return $dt->format( 'd.m.Y' );
 		}
 		return sanitize_text_field( $date_iso );
+	}
+
+	private static function get_order_conditions_summary( \WC_Order $order ): string {
+		$text = (string) $order->get_meta( CheckoutConditionsSummaryBuilder::ORDER_META_KEY, true );
+		return trim( $text );
+	}
+
+	private static function get_order_conditions_summary_short( \WC_Order $order ): string {
+		$text = self::get_order_conditions_summary( $order );
+		if ( '' === $text ) {
+			return '';
+		}
+		$one_line = trim( preg_replace( '/\s+/', ' ', $text ) ?? '' );
+		$max      = 140;
+		if ( function_exists( 'mb_strlen' ) && function_exists( 'mb_substr' ) ) {
+			if ( mb_strlen( $one_line ) > $max ) {
+				return mb_substr( $one_line, 0, $max - 1 ) . '…';
+			}
+			return $one_line;
+		}
+		if ( strlen( $one_line ) > $max ) {
+			return substr( $one_line, 0, $max - 1 ) . '…';
+		}
+		return $one_line;
+	}
+
+	private static function normalize_plain_block( string $text ): string {
+		$text = str_replace( array( "\r\n", "\r" ), "\n", $text );
+		return trim( $text );
+	}
+
+	private static function format_conditions_html( string $text ): string {
+		$text = self::normalize_plain_block( $text );
+		$paras  = explode( "\n\n", $text );
+		$out    = '';
+		foreach ( $paras as $para ) {
+			$para = trim( $para );
+			if ( '' === $para ) {
+				continue;
+			}
+			$inner = nl2br( esc_html( $para ), false );
+			$out .= '<p class="mp-cc-conditions-para">' . $inner . '</p>';
+		}
+		return $out ? $out : '<p class="mp-cc-conditions-para">' . esc_html( $text ) . '</p>';
 	}
 }
