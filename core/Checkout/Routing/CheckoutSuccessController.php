@@ -5,15 +5,14 @@
  * @package MP_Custom_Checkout
  */
 
-namespace MP\CustomCheckout\Routing;
+namespace MP\CustomCheckout\Checkout\Routing;
 
 use MP\CustomCheckout\DependencyFailureGuard;
+use MP\CustomCheckout\Routing\CheckoutReturnPaths;
+use MP\CustomCheckout\Routing\CheckoutSuccessPresenter;
 
 defined( 'ABSPATH' ) || exit;
 
-/**
- * Class CheckoutSuccessController
- */
 final class CheckoutSuccessController {
 
 	/**
@@ -63,11 +62,6 @@ final class CheckoutSuccessController {
 			exit;
 		}
 
-		/**
-		 * Заказ и ключ валидны — данные для привязки к gateway и статусу.
-		 *
-		 * @param \WC_Order $order Заказ.
-		 */
 		do_action( 'mp_custom_checkout_success_validate_order', $order );
 
 		nocache_headers();
@@ -75,12 +69,6 @@ final class CheckoutSuccessController {
 
 		$presenter = CheckoutSuccessPresenter::build( $order );
 
-		/**
-		 * Экран успеха: расширения, аналитика.
-		 *
-		 * @param int       $order_id ID заказа.
-		 * @param \WC_Order $order    Заказ.
-		 */
 		do_action( 'mp_custom_checkout_success_screen', $order->get_id(), $order );
 
 		$mp_cc_success_presenter = $presenter;

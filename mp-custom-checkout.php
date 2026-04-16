@@ -25,6 +25,7 @@ define( 'MP_CUSTOM_CHECKOUT_TEXT_DOMAIN', 'mp-custom-checkout' );
 require_once MP_CUSTOM_CHECKOUT_PATH . 'core/Autoloader.php';
 
 \MP\CustomCheckout\Autoloader::register();
+\MP\CustomCheckout\Compatibility\ClassAliasRegistry::register();
 
 register_activation_hook( MP_CUSTOM_CHECKOUT_FILE, array( \MP\CustomCheckout\Activator::class, 'activate' ) );
 register_deactivation_hook( MP_CUSTOM_CHECKOUT_FILE, array( \MP\CustomCheckout\Deactivator::class, 'deactivate' ) );

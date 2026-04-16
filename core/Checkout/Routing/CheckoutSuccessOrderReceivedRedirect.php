@@ -6,15 +6,13 @@
  * @package MP_Custom_Checkout
  */
 
-namespace MP\CustomCheckout\Routing;
+namespace MP\CustomCheckout\Checkout\Routing;
 
 use MP\CustomCheckout\DependencyFailureGuard;
+use MP\CustomCheckout\Routing\CheckoutSuccessRouteConfig;
 
 defined( 'ABSPATH' ) || exit;
 
-/**
- * Class CheckoutSuccessOrderReceivedRedirect
- */
 final class CheckoutSuccessOrderReceivedRedirect {
 
 	/**
@@ -70,22 +68,11 @@ final class CheckoutSuccessOrderReceivedRedirect {
 			return;
 		}
 
-		/**
-		 * Разрешить редирект на кастомный success (например для отладки gateway).
-		 *
-		 * @param bool     $allow    Разрешить редирект.
-		 * @param \WC_Order $order   Заказ.
-		 */
 		$allow = apply_filters( 'mp_custom_checkout_redirect_order_received_to_success', true, $order );
 		if ( ! $allow ) {
 			return;
 		}
 
-		/**
-		 * Совместимость: стандартный хук thank you до ухода со страницы WC.
-		 *
-		 * @param int $order_id ID заказа.
-		 */
 		do_action( 'woocommerce_thankyou', $order_id );
 
 		$url = CheckoutSuccessRouteConfig::get_success_url( $order_id, $order_key );
