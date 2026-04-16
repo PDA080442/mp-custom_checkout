@@ -3413,7 +3413,7 @@ function buildGiftCardBlockHtml(state) {
 		var html = '';
 		var i;
 
-		html += '<ol class="mp-cc-progress" role="list" aria-label="Checkout steps">';
+		html += '<ol class="mp-cc-progress" role="list" aria-label="' + escapeHtml(getUiText('checkout.progress_label', 'Checkout steps')) + '">';
 		for (i = 0; i < state.visibleSteps.length; i += 1) {
 			var step = state.visibleSteps[i];
 			var canGo = i <= state.maxReachedIndex;
@@ -3431,7 +3431,7 @@ function buildGiftCardBlockHtml(state) {
 			}
 
 			html += '<li class="' + classes.join(' ') + '">';
-			html += '<button type="button" class="mp-cc-progress__btn" data-step="' + step.id + '"';
+			html += '<button type="button" class="mp-cc-progress__btn" data-step="' + step.id + '" data-step-index="' + i + '"';
 			html += canGo ? '' : ' disabled';
 			html += isCurrent ? ' aria-current="step"' : '';
 			html += '>';
@@ -4018,8 +4018,10 @@ function buildGiftCardBlockHtml(state) {
 			return;
 		}
 		var safeMessage = escapeHtml(message || '');
-		var safeLevel = level === 'error' ? 'error' : 'info';
-		container.innerHTML = '<div class="mp-cc-notice mp-cc-notice--' + safeLevel + '" role="alert">' + safeMessage + '</div>';
+		var safeLevel = level === 'error' ? 'error' : (level === 'success' ? 'success' : 'info');
+		var role = safeLevel === 'error' ? 'alert' : 'status';
+		var live = safeLevel === 'error' ? 'assertive' : 'polite';
+		container.innerHTML = '<div class="mp-cc-notice mp-cc-notice--' + safeLevel + '" role="' + role + '" aria-live="' + live + '" aria-atomic="true">' + safeMessage + '</div>';
 	}
 
 	function focusStepHeading($app) {
@@ -4203,6 +4205,32 @@ function buildGiftCardBlockHtml(state) {
 				return;
 			}
 			setCurrentStep(state, $app, String(target));
+		});
+		$progress.find('.mp-cc-progress__btn').off('keydown').on('keydown', function (event) {
+			var key = String(event.key || '');
+			if (key !== 'ArrowRight' && key !== 'ArrowLeft' && key !== 'ArrowDown' && key !== 'ArrowUp' && key !== 'Home' && key !== 'End') {
+				return;
+			}
+			var $buttons = $progress.find('.mp-cc-progress__btn');
+			var idx = $buttons.index(this);
+			if (idx < 0) {
+				return;
+			}
+			var next = idx;
+			if (key === 'ArrowRight' || key === 'ArrowDown') {
+				next = Math.min($buttons.length - 1, idx + 1);
+			} else if (key === 'ArrowLeft' || key === 'ArrowUp') {
+				next = Math.max(0, idx - 1);
+			} else if (key === 'Home') {
+				next = 0;
+			} else if (key === 'End') {
+				next = $buttons.length - 1;
+			}
+			event.preventDefault();
+			var $next = $buttons.eq(next);
+			if ($next.length) {
+				$next.trigger('focus');
+			}
 		});
 
 		$app.find('[data-cart-qty-btn]').off('click').on('click', function () {
