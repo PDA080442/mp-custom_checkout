@@ -8,6 +8,7 @@
 namespace MP\CustomCheckout\Admin\Hooks;
 
 use MP\CustomCheckout\Admin\Config\AdminTabRegistry;
+use MP\CustomCheckout\Diagnostics\CheckoutHealthChecks;
 use MP\CustomCheckout\Logging\CheckoutLogStore;
 use MP\CustomCheckout\Settings\AdminSectionsRegistry;
 use MP\CustomCheckout\Settings\OptionKeys;
@@ -469,7 +470,29 @@ final class AdminMenuHooks {
 				OptionKeys::KEY_REGISTRY,
 				'logic'
 			);
+			self::render_health_checks_group();
 		}
+	}
+
+	private static function render_health_checks_group(): void {
+		$checks = CheckoutHealthChecks::collect();
+		if ( empty( $checks ) ) {
+			return;
+		}
+		echo '<details class="mp-cc-admin-shell__fieldset" open>';
+		echo '<summary><span>' . esc_html__( 'Checkout Health Checks', 'mp-custom-checkout' ) . '</span><em class="mp-cc-admin-shell__type-badge mp-cc-admin-shell__type-badge--validation">' . esc_html__( 'сервис', 'mp-custom-checkout' ) . '</em></summary>';
+		foreach ( $checks as $check ) {
+			$status = isset( $check['status'] ) ? (string) $check['status'] : 'ok';
+			$name = isset( $check['name'] ) ? (string) $check['name'] : '';
+			$message = isset( $check['message'] ) ? (string) $check['message'] : '';
+			$badge_class = 'mp-cc-admin-shell__scenario-badge';
+			if ( 'fail' === $status ) {
+				$badge_class .= ' is-risky';
+			}
+			echo '<p><strong>' . esc_html( $name ) . '</strong> <span class="' . esc_attr( $badge_class ) . '">' . esc_html( strtoupper( $status ) ) . '</span><br />' . esc_html( $message ) . '</p>';
+		}
+		echo '<p><a class="button button-small" href="' . esc_url( admin_url( 'admin.php?page=' . self::PAGE_SLUG . '&tab=' . OptionKeys::SECTION_LOGS ) ) . '">' . esc_html__( 'Открыть логи checkout', 'mp-custom-checkout' ) . '</a></p>';
+		echo '</details>';
 	}
 
 	/**

@@ -383,6 +383,12 @@
 		html += '<label class="mp-cc-admin-preview-area__control">Runtime';
 		html += '<select data-mp-cc-runtime-select="1"><option value="default">Default</option><option value="error">Error</option><option value="disabled">Disabled</option><option value="loading">Loading</option><option value="success">Success</option></select>';
 		html += '</label>';
+		html += '<label class="mp-cc-admin-preview-area__control">Sandbox';
+		html += '<select data-mp-cc-sandbox-select="1"><option value="pickup_happy_path">Pickup happy path</option><option value="delivery_with_coupon">Delivery + coupon</option><option value="payment_error_case">Payment error</option></select>';
+		html += '</label>';
+		html += '<button type="button" class="button button-secondary" data-mp-cc-test-util="fulfillment">Test: fulfillment</button>';
+		html += '<button type="button" class="button button-secondary" data-mp-cc-test-util="discounts">Test: discounts</button>';
+		html += '<button type="button" class="button button-secondary" data-mp-cc-test-util="validation_payment">Test: validation/payment</button>';
 		html += '<button type="button" class="button button-secondary" data-mp-cc-preview-reset="1">Сбросить превью</button>';
 		html += '<button type="button" class="button button-secondary" data-mp-cc-tab-reset="1">Сбросить настройки вкладки по умолчанию</button>';
 		html += '</div>';
@@ -509,11 +515,67 @@
 			html += '<p>' + escapeHtml(config.shippingLabel || 'Доставка') + ': ' + escapeHtml(summary.shipping || '—') + '</p>';
 		}
 		html += '<p>' + escapeHtml(config.discountLabel || 'Скидка') + ': ' + escapeHtml(summary.discount || '—') + '</p>';
+		html += '<p>' + escapeHtml(config.giftCardLabel || 'Подарочная карта') + ': ' + escapeHtml(summary.giftCard || '—') + '</p>';
 		html += '<p><strong>' + escapeHtml(config.totalLabel || 'Итого') + ': ' + escapeHtml(summary.total || '—') + '</strong></p>';
 		html += '</div>';
-		html += '<div class="mp-cc-admin-summary-review__order"><strong>Order review</strong><p>Сценарий: ' + escapeHtml(scenario) + '</p><p>Runtime: ' + escapeHtml(String((previewState && previewState.runtimeState) || 'default')) + '</p></div>';
+		html += '<div class="mp-cc-admin-summary-review__order"><strong>Order review (mock)</strong><p>Сценарий: ' + escapeHtml(scenario) + '</p><p>Runtime: ' + escapeHtml(String((previewState && previewState.runtimeState) || 'default')) + '</p><p>Товары: Rose Perfume x1, Gift Box x2</p></div>';
 		html += '</div>';
 		return html;
+	}
+
+	function applySandboxScenario(previewStore, scenarioKey) {
+		var key = String(scenarioKey || '');
+		if (key === 'delivery_with_coupon') {
+			previewStore.setState({
+				scenario: 'krasnoyarsk_delivery',
+				runtimeState: 'success',
+				runtime: {
+					summary: {
+						items: 3,
+						subtotal: '3 670 ₽',
+						shipping: '490 ₽',
+						discount: '-500 ₽',
+						giftCard: '0 ₽',
+						tax: '200 ₽',
+						total: '3 860 ₽'
+					},
+					fulfillment: {
+						scenario: 'Доставка по Красноярску',
+						date: '2026-04-22',
+						pickupPoint: 'Курьер'
+					}
+				}
+			});
+			return;
+		}
+		if (key === 'payment_error_case') {
+			previewStore.setState({
+				scenario: 'other_city_delivery',
+				runtimeState: 'error',
+				runtime: {
+					summary: {
+						items: 3,
+						subtotal: '3 670 ₽',
+						shipping: '700 ₽',
+						discount: '-0 ₽',
+						giftCard: '-100 ₽',
+						tax: '250 ₽',
+						total: '4 520 ₽'
+					},
+					fulfillment: {
+						scenario: 'Доставка в другой город',
+						date: '2026-04-25',
+						pickupPoint: 'Транспортная компания'
+					}
+				}
+			});
+			return;
+		}
+		previewStore.setState({
+			scenario: 'pickup',
+			runtimeState: 'default',
+			runtime: createPreviewRuntimeMock()
+		});
 	}
 
 	function renderSuccessPreview(runtime) {
@@ -1240,6 +1302,7 @@
 		$('[data-mp-cc-device-select="1"]').val('desktop');
 		$('[data-mp-cc-interaction-select="1"]').val('default');
 		$('[data-mp-cc-runtime-select="1"]').val('default');
+		$('[data-mp-cc-sandbox-select="1"]').val('pickup_happy_path');
 		updatePreviewWarning();
 
 		$(document).on('input change', '[name^="mp_custom_checkout_settings[step_1]"]', function () {
@@ -1356,6 +1419,39 @@
 				return;
 			}
 			previewStore.setState({ runtimeState: runtimeSelect, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
+		$(document).on('change', '[data-mp-cc-sandbox-select]', function () {
+			var sandbox = String($(this).val() || '');
+			applySandboxScenario(previewStore, sandbox);
+			previewStore.setState({ dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
+		$(document).on('click', '[data-mp-cc-test-util]', function () {
+			var util = String($(this).data('mpCcTestUtil') || '');
+			if (util === 'fulfillment') {
+				previewStore.setState({ scenario: 'other_city_delivery', dirty: true });
+			} else if (util === 'discounts') {
+				previewStore.setState({
+					runtime: {
+						summary: {
+							items: 3,
+							subtotal: '3 670 ₽',
+							shipping: '490 ₽',
+							discount: '-700 ₽',
+							giftCard: '-300 ₽',
+							tax: '160 ₽',
+							total: '3 320 ₽'
+						}
+					},
+					runtimeState: 'success',
+					dirty: true
+				});
+			} else if (util === 'validation_payment') {
+				previewStore.setState({ runtimeState: 'error', interactionState: 'focus', dirty: true });
+			}
 			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
 			updatePreviewWarning();
 		});
