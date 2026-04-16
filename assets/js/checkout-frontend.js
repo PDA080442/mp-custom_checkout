@@ -232,7 +232,31 @@
 					{ dial: '+375', iso: 'BY', national_digits: 9 }
 				],
 				default_phone_country_iso: 'RU'
-			}
+			},
+			address_block: {
+				title: '',
+				intro: '',
+				default_country: 'RU',
+				subfields_order: ['country', 'state', 'city', 'address_1', 'address_2', 'postcode'],
+				subfields_visible: {
+					country: true,
+					state: true,
+					city: true,
+					address_1: true,
+					address_2: true,
+					postcode: true
+				},
+				postcode_max_length: 16,
+				labels: {
+					country: '',
+					state: '',
+					city: '',
+					address_1: '',
+					address_2: '',
+					postcode: ''
+				}
+			},
+			address_geo: {}
 		}, source);
 	}
 
@@ -280,6 +304,157 @@
 			patronymic: 'step_4.contact_hint_patronymic'
 		};
 		return getUiText(path[key] || 'step_4.title', fb[key] || '');
+	}
+
+	function getAddressGeoMerged() {
+		var cfg = getStepFourConfig();
+		return cfg.address_geo && typeof cfg.address_geo === 'object' ? cfg.address_geo : {};
+	}
+
+	function isAddressSubfieldVisible(key) {
+		var cfg = getStepFourConfig();
+		var ab = cfg.address_block || {};
+		var vis = ab.subfields_visible && typeof ab.subfields_visible === 'object' ? ab.subfields_visible : {};
+		return vis[key] !== false;
+	}
+
+	function getAddressLabel(key) {
+		var cfg = getStepFourConfig();
+		var labels = cfg.address_block && cfg.address_block.labels ? cfg.address_block.labels : {};
+		var fromCfg = labels[key] ? String(labels[key]) : '';
+		if (trimNonEmpty(fromCfg)) {
+			return fromCfg;
+		}
+		var path = {
+			country: 'step_4.address_country',
+			state: 'step_4.address_region',
+			city: 'step_4.address_city',
+			address_1: 'step_4.address_line1',
+			address_2: 'step_4.address_line2',
+			postcode: 'step_4.address_postcode'
+		};
+		var fb = {
+			country: 'Страна',
+			state: 'Регион',
+			city: 'Населённый пункт',
+			address_1: 'Улица, дом',
+			address_2: 'Квартира, офис',
+			postcode: 'Почтовый индекс'
+		};
+		return getUiText(path[key] || 'step_4.address_block_title', fb[key] || key);
+	}
+
+	function getSortedCountryCodes(geo) {
+		var out = [];
+		var id;
+		for (id in geo) {
+			if (!Object.prototype.hasOwnProperty.call(geo, id)) {
+				continue;
+			}
+			var row = geo[id];
+			out.push({
+				iso: id,
+				label: row && row.label ? String(row.label) : id
+			});
+		}
+		out.sort(function (a, b) {
+			return a.label.localeCompare(b.label, 'ru');
+		});
+		return out;
+	}
+
+	function getRegionsForCountry(geo, countryIso) {
+		var c = geo[countryIso];
+		if (!c || typeof c !== 'object') {
+			return [];
+		}
+		var regs = c.regions && typeof c.regions === 'object' ? c.regions : {};
+		var out = [];
+		var rid;
+		for (rid in regs) {
+			if (!Object.prototype.hasOwnProperty.call(regs, rid)) {
+				continue;
+			}
+			var row = regs[rid];
+			if (!row || typeof row !== 'object') {
+				continue;
+			}
+			out.push({
+				id: rid,
+				label: String(row.label || rid),
+				settlements: Array.isArray(row.settlements) ? row.settlements : []
+			});
+		}
+		out.sort(function (a, b) {
+			return a.label.localeCompare(b.label, 'ru');
+		});
+		return out;
+	}
+
+	function getSettlementsForRegion(geo, countryIso, regionId) {
+		var c = geo[countryIso];
+		if (!c || !c.regions || !c.regions[regionId]) {
+			return [];
+		}
+		var row = c.regions[regionId];
+		return Array.isArray(row.settlements) ? row.settlements.slice() : [];
+	}
+
+	function isCountryInGeo(geo, countryIso) {
+		return Boolean(geo[countryIso]);
+	}
+
+	function ensureAddressDefaults(state) {
+		if (!state || !state.frontendStore || !state.frontendStore.form) {
+			return;
+		}
+		var contact = state.frontendStore.form.contact || {};
+		var vis = contact.__address_visibility;
+		if (vis && vis.hide_address_fields) {
+			return;
+		}
+		var cfg = getStepFourConfig();
+		var ab = cfg.address_block || {};
+		var defCountry = trimNonEmpty(ab.default_country) ? String(ab.default_country) : 'RU';
+		var geo = getAddressGeoMerged();
+		if (!trimNonEmpty(contact.country)) {
+			contact.country = defCountry;
+		}
+		if (!isCountryInGeo(geo, contact.country)) {
+			contact.country = defCountry;
+		}
+		var regions = getRegionsForCountry(geo, contact.country);
+		if (regions.length && contact.state) {
+			var found = false;
+			var ri;
+			for (ri = 0; ri < regions.length; ri++) {
+				if (regions[ri].id === contact.state) {
+					found = true;
+					break;
+				}
+			}
+			if (!found) {
+				delete contact.state;
+				delete contact.city;
+			}
+		}
+		if (contact.state && trimNonEmpty(contact.city)) {
+			var settlements = getSettlementsForRegion(geo, contact.country, contact.state);
+			if (settlements.length) {
+				var ok = false;
+				var si;
+				for (si = 0; si < settlements.length; si++) {
+					if (settlements[si] === contact.city) {
+						ok = true;
+						break;
+					}
+				}
+				if (!ok) {
+					delete contact.city;
+				}
+			}
+		}
+		state.frontendStore.form.contact = contact;
 	}
 
 	function findPhoneCountryMeta(codes, iso) {
@@ -368,6 +543,10 @@
 			return;
 		}
 		var c = state.frontendStore.form.contact || {};
+		if (!c.__address_visibility) {
+			applyScenarioFieldAvailability(state);
+		}
+		c = state.frontendStore.form.contact || {};
 		var cfg = getStepFourConfig();
 		var block = cfg.contact_block || {};
 		var codes = Array.isArray(block.phone_country_codes) ? block.phone_country_codes : [];
@@ -388,9 +567,11 @@
 		}
 		c.billing_phone = buildFullPhoneE164(c);
 		state.frontendStore.form.contact = c;
+		ensureAddressDefaults(state);
 	}
 
 	function validateContactPaymentStep(state) {
+		ensureContactDefaults(state);
 		var contact = state.frontendStore.form.contact || {};
 		var cfg = getStepFourConfig();
 		var block = cfg.contact_block || {};
@@ -422,6 +603,78 @@
 		if (digits.length !== need) {
 			errors.billing_phone_national = 'incomplete';
 			ok = false;
+		}
+		var addrVis = contact.__address_visibility;
+		if (addrVis && !addrVis.hide_address_fields && addrVis.required_address_fields) {
+			var geo = getAddressGeoMerged();
+			var ab = cfg.address_block || {};
+			var order = Array.isArray(ab.subfields_order)
+				? ab.subfields_order
+				: ['country', 'state', 'city', 'address_1', 'address_2', 'postcode'];
+			var maxZip = Number(ab.postcode_max_length);
+			if (!Number.isFinite(maxZip) || maxZip <= 0) {
+				maxZip = 16;
+			}
+			var ki;
+			for (ki = 0; ki < order.length; ki++) {
+				var ak = order[ki];
+				if (!isAddressSubfieldVisible(ak)) {
+					continue;
+				}
+				if (ak === 'address_2') {
+					continue;
+				}
+				if (ak === 'country') {
+					if (!trimNonEmpty(contact.country)) {
+						errors.country = 'required';
+						ok = false;
+					}
+					continue;
+				}
+				if (ak === 'state') {
+					if (!trimNonEmpty(contact.state)) {
+						errors.state = 'required';
+						ok = false;
+					}
+					continue;
+				}
+				if (ak === 'city') {
+					var settlements = getSettlementsForRegion(geo, contact.country, contact.state);
+					if (!trimNonEmpty(contact.city)) {
+						errors.city = 'required';
+						ok = false;
+					} else if (settlements.length) {
+						var cityOk = false;
+						var ci;
+						for (ci = 0; ci < settlements.length; ci++) {
+							if (settlements[ci] === contact.city) {
+								cityOk = true;
+								break;
+							}
+						}
+						if (!cityOk) {
+							errors.city = 'list';
+							ok = false;
+						}
+					}
+					continue;
+				}
+				if (ak === 'postcode') {
+					var pc = String(contact.postcode || '').trim();
+					if (!pc) {
+						errors.postcode = 'required';
+						ok = false;
+					} else if (pc.length > maxZip) {
+						errors.postcode = 'length';
+						ok = false;
+					}
+					continue;
+				}
+				if (ak === 'address_1' && !trimNonEmpty(contact.address_1)) {
+					errors.address_1 = 'required';
+					ok = false;
+				}
+			}
 		}
 		state.frontendStore.form.errors = state.frontendStore.form.errors || {};
 		state.frontendStore.form.errors.contact = ok ? {} : errors;
@@ -545,6 +798,155 @@
 			html += '<p class="mp-cc-field-error" id="mp-cc-contact-phone-err" role="alert">' + escapeHtml(getUiText('step_4.contact_error_phone', 'Введите номер полностью.')) + '</p>';
 		}
 		html += '</div>';
+		html += '</div>';
+		html += '</section>';
+		return html;
+	}
+
+	function buildAddressBlockHtml(state) {
+		ensureContactDefaults(state);
+		var contact = state.frontendStore.form.contact || {};
+		var vis = contact.__address_visibility;
+		if (vis && vis.hide_address_fields) {
+			return '';
+		}
+		var cfg = getStepFourConfig();
+		var ab = cfg.address_block || {};
+		var geo = getAddressGeoMerged();
+		var countries = getSortedCountryCodes(geo);
+		if (!countries.length) {
+			return '';
+		}
+		var title = trimNonEmpty(ab.title) || getUiText('step_4.address_block_title', 'Адрес доставки');
+		var intro = trimNonEmpty(ab.intro) || getUiText('step_4.address_block_intro', '');
+		var order = Array.isArray(ab.subfields_order)
+			? ab.subfields_order
+			: ['country', 'state', 'city', 'address_1', 'address_2', 'postcode'];
+		var html = '';
+		html += '<section class="mp-cc-address" aria-labelledby="mp-cc-address-title">';
+		html += '<header class="mp-cc-address__header">';
+		html += '<h3 class="mp-cc-address__title" id="mp-cc-address-title">' + escapeHtml(title) + '</h3>';
+		if (intro) {
+			html += '<p class="mp-cc-address__intro" id="mp-cc-address-intro">' + escapeHtml(intro) + '</p>';
+		}
+		html += '</header>';
+		html += '<div class="mp-cc-address__grid">';
+		var idx;
+		for (idx = 0; idx < order.length; idx++) {
+			var key = order[idx];
+			if (!isAddressSubfieldVisible(key)) {
+				continue;
+			}
+			var err = getContactFieldError(state, key);
+			if (key === 'country') {
+				html += '<div class="mp-cc-address__field mp-cc-address__field--country">';
+				html += '<label class="mp-cc-field-label" for="mp-cc-address-country">' + escapeHtml(getAddressLabel('country')) + '</label>';
+				html += '<select id="mp-cc-address-country" class="mp-cc-select' + (err ? ' is-invalid' : '') + '" data-address-country="1" aria-required="true"';
+				html += err ? ' aria-invalid="true"' : '';
+				html += '>';
+				var ci;
+				for (ci = 0; ci < countries.length; ci++) {
+					var co = countries[ci];
+					var sel = co.iso === String(contact.country || '');
+					html += '<option value="' + escapeHtml(co.iso) + '"' + (sel ? ' selected' : '') + '>' + escapeHtml(co.label) + '</option>';
+				}
+				html += '</select>';
+				if (err) {
+					html += '<p class="mp-cc-field-error" id="mp-cc-address-country-err" role="alert">' + escapeHtml(getUiText('step_4.address_error_required', 'Заполните это поле.')) + '</p>';
+				}
+				html += '</div>';
+				continue;
+			}
+			if (key === 'state') {
+				var regions = getRegionsForCountry(geo, contact.country);
+				html += '<div class="mp-cc-address__field mp-cc-address__field--region">';
+				html += '<label class="mp-cc-field-label" for="mp-cc-address-region">' + escapeHtml(getAddressLabel('state')) + '</label>';
+				html += '<select id="mp-cc-address-region" class="mp-cc-select' + (err ? ' is-invalid' : '') + '" data-address-region="1" aria-required="true"';
+				html += err ? ' aria-invalid="true"' : '';
+				html += '>';
+				html += '<option value="">' + escapeHtml(getUiText('step_4.address_region_placeholder', 'Выберите регион')) + '</option>';
+				var ri;
+				for (ri = 0; ri < regions.length; ri++) {
+					var reg = regions[ri];
+					var sr = reg.id === String(contact.state || '');
+					html += '<option value="' + escapeHtml(reg.id) + '"' + (sr ? ' selected' : '') + '>' + escapeHtml(reg.label) + '</option>';
+				}
+				html += '</select>';
+				if (err) {
+					html += '<p class="mp-cc-field-error" id="mp-cc-address-region-err" role="alert">' + escapeHtml(getUiText('step_4.address_error_required', 'Заполните это поле.')) + '</p>';
+				}
+				html += '</div>';
+				continue;
+			}
+			if (key === 'city') {
+				var settlements = getSettlementsForRegion(geo, contact.country, contact.state);
+				html += '<div class="mp-cc-address__field mp-cc-address__field--city">';
+				html += '<label class="mp-cc-field-label" for="mp-cc-address-city">' + escapeHtml(getAddressLabel('city')) + '</label>';
+				if (settlements.length) {
+					html += '<select id="mp-cc-address-city" class="mp-cc-select' + (err ? ' is-invalid' : '') + '" data-address-city="1" aria-required="true"';
+					html += err ? ' aria-invalid="true"' : '';
+					html += '>';
+					html += '<option value="">' + escapeHtml(getUiText('step_4.address_city_placeholder', 'Выберите населённый пункт')) + '</option>';
+					var si;
+					for (si = 0; si < settlements.length; si++) {
+						var st = settlements[si];
+						var cs = st === String(contact.city || '');
+						html += '<option value="' + escapeHtml(st) + '"' + (cs ? ' selected' : '') + '>' + escapeHtml(st) + '</option>';
+					}
+					html += '</select>';
+				} else {
+					html += '<input type="text" class="mp-cc-input' + (err ? ' is-invalid' : '') + '" id="mp-cc-address-city" name="city" autocomplete="address-level2" ';
+					html += 'value="' + escapeHtml(String(contact.city || '')) + '" ';
+					html += 'data-contact-field="city" aria-required="true"';
+					html += err ? ' aria-invalid="true"' : '';
+					html += '/>';
+				}
+				if (err) {
+					var cityMsg = err === 'list' ? getUiText('step_4.address_error_city', 'Выберите населённый пункт из списка.') : getUiText('step_4.address_error_required', 'Заполните это поле.');
+					html += '<p class="mp-cc-field-error" id="mp-cc-address-city-err" role="alert">' + escapeHtml(cityMsg) + '</p>';
+				}
+				html += '</div>';
+				continue;
+			}
+			if (key === 'address_1') {
+				html += '<div class="mp-cc-address__field mp-cc-address__field--line1">';
+				html += '<label class="mp-cc-field-label" for="mp-cc-address-line1">' + escapeHtml(getAddressLabel('address_1')) + '</label>';
+				html += '<input type="text" class="mp-cc-input' + (err ? ' is-invalid' : '') + '" id="mp-cc-address-line1" name="address_1" autocomplete="address-line1" ';
+				html += 'value="' + escapeHtml(String(contact.address_1 || '')) + '" ';
+				html += 'data-contact-field="address_1" aria-required="true"';
+				html += err ? ' aria-invalid="true"' : '';
+				html += '/>';
+				if (err) {
+					html += '<p class="mp-cc-field-error" id="mp-cc-address-line1-err" role="alert">' + escapeHtml(getUiText('step_4.address_error_required', 'Заполните это поле.')) + '</p>';
+				}
+				html += '</div>';
+				continue;
+			}
+			if (key === 'address_2') {
+				html += '<div class="mp-cc-address__field mp-cc-address__field--line2">';
+				html += '<label class="mp-cc-field-label" for="mp-cc-address-line2">' + escapeHtml(getAddressLabel('address_2')) + '</label>';
+				html += '<input type="text" class="mp-cc-input" id="mp-cc-address-line2" name="address_2" autocomplete="address-line2" ';
+				html += 'value="' + escapeHtml(String(contact.address_2 || '')) + '" ';
+				html += 'data-contact-field="address_2"';
+				html += '/>';
+				html += '</div>';
+				continue;
+			}
+			if (key === 'postcode') {
+				var pcMsg = err === 'length' ? getUiText('step_4.address_error_postcode', 'Слишком длинный индекс.') : getUiText('step_4.address_error_required', 'Заполните это поле.');
+				html += '<div class="mp-cc-address__field mp-cc-address__field--postcode">';
+				html += '<label class="mp-cc-field-label" for="mp-cc-address-postcode">' + escapeHtml(getAddressLabel('postcode')) + '</label>';
+				html += '<input type="text" class="mp-cc-input' + (err ? ' is-invalid' : '') + '" id="mp-cc-address-postcode" name="postcode" autocomplete="postal-code" inputmode="text" ';
+				html += 'value="' + escapeHtml(String(contact.postcode || '')) + '" ';
+				html += 'data-contact-field="postcode" aria-required="true"';
+				html += err ? ' aria-invalid="true"' : '';
+				html += '/>';
+				if (err) {
+					html += '<p class="mp-cc-field-error" id="mp-cc-address-postcode-err" role="alert">' + escapeHtml(pcMsg) + '</p>';
+				}
+				html += '</div>';
+			}
+		}
 		html += '</div>';
 		html += '</section>';
 		return html;
@@ -1861,6 +2263,7 @@
 		}
 		if (step && step.id === 'contact_payment') {
 			html += buildContactPaymentHtml(state);
+			html += buildAddressBlockHtml(state);
 		}
 		html += '</div>';
 		if (!isFlagEnabled(state, flagNames.discountPlacement, true)) {
@@ -2661,6 +3064,54 @@
 			state.frontendStore.form.contact = contact;
 			if (state.frontendStore.form.errors && state.frontendStore.form.errors.contact) {
 				delete state.frontendStore.form.errors.contact.billing_phone_national;
+			}
+			render(state, $app);
+			saveCurrentStepDraft(state).fail(function () {
+				notify(getUiText('common.error_generic', 'Не удалось сохранить данные.'), 'error');
+			});
+		});
+
+		$app.find('[data-address-country]').off('change').on('change', function () {
+			var v = String($(this).val() || '');
+			var contact = state.frontendStore.form.contact || {};
+			contact.country = v;
+			contact.state = '';
+			contact.city = '';
+			state.frontendStore.form.contact = contact;
+			if (state.frontendStore.form.errors && state.frontendStore.form.errors.contact) {
+				delete state.frontendStore.form.errors.contact.country;
+				delete state.frontendStore.form.errors.contact.state;
+				delete state.frontendStore.form.errors.contact.city;
+			}
+			render(state, $app);
+			saveCurrentStepDraft(state).fail(function () {
+				notify(getUiText('common.error_generic', 'Не удалось сохранить данные.'), 'error');
+			});
+		});
+
+		$app.find('[data-address-region]').off('change').on('change', function () {
+			var v = String($(this).val() || '');
+			var contact = state.frontendStore.form.contact || {};
+			contact.state = v;
+			contact.city = '';
+			state.frontendStore.form.contact = contact;
+			if (state.frontendStore.form.errors && state.frontendStore.form.errors.contact) {
+				delete state.frontendStore.form.errors.contact.state;
+				delete state.frontendStore.form.errors.contact.city;
+			}
+			render(state, $app);
+			saveCurrentStepDraft(state).fail(function () {
+				notify(getUiText('common.error_generic', 'Не удалось сохранить данные.'), 'error');
+			});
+		});
+
+		$app.find('[data-address-city]').off('change').on('change', function () {
+			var v = String($(this).val() || '');
+			var contact = state.frontendStore.form.contact || {};
+			contact.city = v;
+			state.frontendStore.form.contact = contact;
+			if (state.frontendStore.form.errors && state.frontendStore.form.errors.contact) {
+				delete state.frontendStore.form.errors.contact.city;
 			}
 			render(state, $app);
 			saveCurrentStepDraft(state).fail(function () {

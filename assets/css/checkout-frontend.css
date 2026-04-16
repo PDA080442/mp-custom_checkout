@@ -1705,3 +1705,73 @@
 		flex: 1 1 100%;
 	}
 }
+
+/* Step 4 — structured address (country → region → city, lines, postcode) */
+.mp-cc-address {
+	display: grid;
+	gap: 1rem;
+	max-width: 44rem;
+	margin-top: 1.5rem;
+	padding-top: 1.25rem;
+	border-top: 1px solid var(--mp-cc-color-border);
+}
+
+.mp-cc-address__header {
+	display: grid;
+	gap: 0.35rem;
+}
+
+.mp-cc-address__title {
+	margin: 0;
+	font-size: 1rem;
+	font-weight: 700;
+}
+
+.mp-cc-address__intro {
+	margin: 0;
+	font-size: 0.86rem;
+	color: var(--mp-cc-color-text-muted);
+	line-height: 1.45;
+}
+
+.mp-cc-address__grid {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 0.75rem 1rem;
+	align-items: start;
+}
+
+.mp-cc-address__field {
+	display: grid;
+	gap: 0.3rem;
+	min-width: 0;
+}
+
+.mp-cc-address__field--line1,
+.mp-cc-address__field--line2 {
+	grid-column: 1 / -1;
+}
+
+.mp-cc-address__field--postcode {
+	max-width: 14rem;
+}
+
+@media (max-width: 52rem) {
+	.mp-cc-address__grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.mp-cc-address__field--city {
+		grid-column: 1 / -1;
+	}
+}
+
+@media (max-width: 36rem) {
+	.mp-cc-address__grid {
+		grid-template-columns: 1fr;
+	}
+
+	.mp-cc-address__field--postcode {
+		max-width: none;
+	}
+}

@@ -250,6 +250,70 @@ final class SafeSettingsResolver {
 						),
 						'default_phone_country_iso' => 'RU',
 					),
+					'address_block' => array(
+						'title'               => 'Адрес доставки',
+						'intro'               => 'Укажите адрес, чтобы мы могли доставить заказ.',
+						'default_country'     => 'RU',
+						'subfields_order'     => array( 'country', 'state', 'city', 'address_1', 'address_2', 'postcode' ),
+						'subfields_visible'   => array(
+							'country'    => true,
+							'state'      => true,
+							'city'       => true,
+							'address_1'  => true,
+							'address_2'  => true,
+							'postcode'   => true,
+						),
+						'postcode_max_length' => 16,
+						'labels'              => array(
+							'country'   => 'Страна',
+							'state'     => 'Регион',
+							'city'      => 'Населённый пункт',
+							'address_1' => 'Улица, дом',
+							'address_2' => 'Квартира, офис',
+							'postcode'  => 'Почтовый индекс',
+						),
+					),
+					'address_geo' => array(
+						'RU' => array(
+							'label'   => 'Россия',
+							'regions' => array(
+								'KRA' => array(
+									'label'        => 'Красноярский край',
+									'settlements'  => array( 'Красноярск', 'Норильск', 'Ачинск' ),
+								),
+								'MOW' => array(
+									'label'        => 'Москва',
+									'settlements'  => array( 'Москва' ),
+								),
+								'SPE' => array(
+									'label'        => 'Санкт-Петербург',
+									'settlements'  => array( 'Санкт-Петербург' ),
+								),
+							),
+						),
+						'KZ' => array(
+							'label'   => 'Казахстан',
+							'regions' => array(
+								'ALA' => array(
+									'label'        => 'Алматы',
+									'settlements'  => array( 'Алматы' ),
+								),
+								'AST' => array(
+									'label'        => 'Астана',
+									'settlements'  => array( 'Астана' ),
+								),
+							),
+						),
+						'BY' => array(
+							'label'   => 'Беларусь',
+							'regions' => array(
+								'MINSK' => array(
+									'label'        => 'Минская область',
+									'settlements'  => array( 'Минск', 'Борисов' ),
+								),
+							),
+						),
+					),
 				);
 				continue;
 			}
