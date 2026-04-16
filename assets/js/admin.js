@@ -156,6 +156,10 @@
 				order: Array.isArray(address.subfields_order) ? address.subfields_order : ['country', 'state', 'city', 'address_1', 'address_2', 'postcode'],
 				visible: address.subfields_visible && typeof address.subfields_visible === 'object' ? address.subfields_visible : {}
 			},
+			discountLayout: source.discount_layout && typeof source.discount_layout === 'object' ? source.discount_layout : { placement: 'step_4', separate_step_enabled: false, order: ['coupon', 'gift_card'] },
+			discountStyles: source.discount_block_styles && typeof source.discount_block_styles === 'object' ? source.discount_block_styles : { state_empty: 'default', state_success: 'success', state_error: 'error', focus_style: 'default' },
+			coupon: source.coupon_block && typeof source.coupon_block === 'object' ? source.coupon_block : {},
+			giftCard: source.gift_card_block && typeof source.gift_card_block === 'object' ? source.gift_card_block : {},
 			geoPreview: source.geo_preview && source.geo_preview.enabled !== false,
 			geo: source.address_geo && typeof source.address_geo === 'object' ? source.address_geo : {}
 		};
@@ -440,6 +444,26 @@
 		html += '<p class="mp-cc-admin-step4-error-sample">' + escapeHtml(String(cfg.contact.validationMessages.step_blocked || 'Заполните обязательные поля текущего шага.')) + '</p>';
 		html += '</article>';
 		html += '</div>';
+		html += '<div class="mp-cc-admin-preview__date-rules">';
+		html += '<p><strong>Coupon placement:</strong> ' + escapeHtml(String(cfg.discountLayout.placement || 'step_4')) + ', separate-step ready=' + escapeHtml(cfg.discountLayout.separate_step_enabled ? 'yes' : 'no') + '</p>';
+		html += '<p><strong>Discount styles:</strong> empty=' + escapeHtml(String(cfg.discountStyles.state_empty || 'default')) + ', success=' + escapeHtml(String(cfg.discountStyles.state_success || 'success')) + ', error=' + escapeHtml(String(cfg.discountStyles.state_error || 'error')) + '</p>';
+		html += '</div>';
+		html += '<div class="mp-cc-admin-preview__date-grid">';
+		html += '<article>';
+		html += '<strong>' + escapeHtml(String(cfg.coupon.title || 'Промокод')) + '</strong>';
+		html += '<p>' + escapeHtml(String(cfg.coupon.intro || '')) + '</p>';
+		html += '<p>Label: ' + escapeHtml(String(cfg.coupon.input_label || 'Код купона')) + '</p>';
+		html += '<p>Placeholder: ' + escapeHtml(String(cfg.coupon.placeholder || '')) + '</p>';
+		html += '<p><em>States:</em> empty="' + escapeHtml(String(cfg.coupon.empty_message || '')) + '", success="' + escapeHtml(String(cfg.coupon.success_message || '')) + '", error="' + escapeHtml(String(cfg.coupon.error_message || '')) + '"</p>';
+		html += '</article>';
+		html += '<article>';
+		html += '<strong>' + escapeHtml(String(cfg.giftCard.title || 'Подарочная карта')) + '</strong>';
+		html += '<p>' + escapeHtml(String(cfg.giftCard.intro || '')) + '</p>';
+		html += '<p>Label: ' + escapeHtml(String(cfg.giftCard.input_label || 'Код подарочной карты')) + '</p>';
+		html += '<p>Placeholder: ' + escapeHtml(String(cfg.giftCard.placeholder || '')) + '</p>';
+		html += '<p><em>States:</em> empty="' + escapeHtml(String(cfg.giftCard.empty_message || '')) + '", success="' + escapeHtml(String(cfg.giftCard.success_message || '')) + '", error="' + escapeHtml(String(cfg.giftCard.error_message || '')) + '"</p>';
+		html += '</article>';
+		html += '</div>';
 		html += '<p><strong>' + escapeHtml(cfg.address.title) + '</strong></p>';
 		html += '<p>Address order: ' + escapeHtml(cfg.address.order.join(', ')) + '</p>';
 		if (cfg.geoPreview) {
@@ -569,6 +593,32 @@
 		cfg.contact.states.hint_style = readFormValue(p + '[field_state_styles][hint_style]', cfg.contact.states.hint_style || 'default');
 		cfg.contact.states.focus_style = readFormValue(p + '[field_state_styles][focus_style]', cfg.contact.states.focus_style || 'default');
 		cfg.contact.states.disabled_style = readFormValue(p + '[field_state_styles][disabled_style]', cfg.contact.states.disabled_style || 'default');
+		var d = 'mp_custom_checkout_settings[step_4][discount_layout]';
+		cfg.discountLayout.placement = readFormValue(d + '[placement]', cfg.discountLayout.placement || 'step_4');
+		cfg.discountLayout.separate_step_enabled = Boolean(readFormValue(d + '[separate_step_enabled]', cfg.discountLayout.separate_step_enabled));
+		var ds = 'mp_custom_checkout_settings[step_4][discount_block_styles]';
+		cfg.discountStyles.state_empty = readFormValue(ds + '[state_empty]', cfg.discountStyles.state_empty || 'default');
+		cfg.discountStyles.state_success = readFormValue(ds + '[state_success]', cfg.discountStyles.state_success || 'success');
+		cfg.discountStyles.state_error = readFormValue(ds + '[state_error]', cfg.discountStyles.state_error || 'error');
+		cfg.discountStyles.focus_style = readFormValue(ds + '[focus_style]', cfg.discountStyles.focus_style || 'default');
+		var cp = 'mp_custom_checkout_settings[step_4][coupon_block]';
+		cfg.coupon.title = readFormValue(cp + '[title]', cfg.coupon.title || 'Промокод');
+		cfg.coupon.intro = readFormValue(cp + '[intro]', cfg.coupon.intro || '');
+		cfg.coupon.input_label = readFormValue(cp + '[input_label]', cfg.coupon.input_label || 'Код купона');
+		cfg.coupon.placeholder = readFormValue(cp + '[placeholder]', cfg.coupon.placeholder || '');
+		cfg.coupon.apply_label = readFormValue(cp + '[apply_label]', cfg.coupon.apply_label || 'Применить');
+		cfg.coupon.empty_message = readFormValue(cp + '[empty_message]', cfg.coupon.empty_message || '');
+		cfg.coupon.success_message = readFormValue(cp + '[success_message]', cfg.coupon.success_message || '');
+		cfg.coupon.error_message = readFormValue(cp + '[error_message]', cfg.coupon.error_message || '');
+		var gc = 'mp_custom_checkout_settings[step_4][gift_card_block]';
+		cfg.giftCard.title = readFormValue(gc + '[title]', cfg.giftCard.title || 'Подарочная карта');
+		cfg.giftCard.intro = readFormValue(gc + '[intro]', cfg.giftCard.intro || '');
+		cfg.giftCard.input_label = readFormValue(gc + '[input_label]', cfg.giftCard.input_label || 'Код подарочной карты');
+		cfg.giftCard.placeholder = readFormValue(gc + '[placeholder]', cfg.giftCard.placeholder || '');
+		cfg.giftCard.apply_label = readFormValue(gc + '[apply_label]', cfg.giftCard.apply_label || 'Применить');
+		cfg.giftCard.empty_message = readFormValue(gc + '[empty_message]', cfg.giftCard.empty_message || '');
+		cfg.giftCard.success_message = readFormValue(gc + '[success_message]', cfg.giftCard.success_message || '');
+		cfg.giftCard.error_message = readFormValue(gc + '[error_message]', cfg.giftCard.error_message || '');
 		return cfg;
 	}
 

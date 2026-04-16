@@ -32,10 +32,12 @@ final class EmailHooks {
 		add_action( 'mp_custom_checkout_email_order_meta', array( __CLASS__, 'render_pickup_point_meta' ), 12, 4 );
 		add_action( 'mp_custom_checkout_email_order_meta', array( __CLASS__, 'render_conditions_summary_meta' ), 13, 4 );
 		add_action( 'mp_custom_checkout_email_order_meta', array( __CLASS__, 'render_contact_meta' ), 14, 4 );
+		add_action( 'mp_custom_checkout_email_order_meta', array( __CLASS__, 'render_discounts_meta' ), 15, 4 );
 		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'render_scenario_admin' ), 12, 1 );
 		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'render_pickup_point_admin' ), 15, 1 );
 		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'render_conditions_summary_admin' ), 18, 1 );
 		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'render_contact_admin' ), 20, 1 );
+		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'render_discounts_admin' ), 22, 1 );
 		add_filter( 'manage_edit-shop_order_columns', array( __CLASS__, 'add_scenario_order_list_column' ), 25 );
 		add_action( 'manage_shop_order_posts_custom_column', array( __CLASS__, 'render_scenario_order_list_column' ), 25, 2 );
 		add_filter( 'manage_woocommerce_page_wc-orders_columns', array( __CLASS__, 'add_scenario_order_list_column' ), 25 );
@@ -326,6 +328,45 @@ final class EmailHooks {
 		}
 	}
 
+	public static function render_discounts_meta( $order, $sent_to_admin, $plain_text, $email = null ): void {
+		unset( $sent_to_admin, $email );
+		if ( ! $order instanceof \WC_Order ) {
+			return;
+		}
+		$lines = self::build_discounts_lines_for_output( $order );
+		if ( empty( $lines ) ) {
+			return;
+		}
+		$title = __( 'Скидки и сертификаты', 'mp-custom-checkout' );
+		if ( $plain_text ) {
+			echo "\n" . sanitize_text_field( $title ) . ":\n";
+			foreach ( $lines as $line ) {
+				echo '- ' . sanitize_text_field( $line ) . "\n";
+			}
+			return;
+		}
+		echo '<div class="mp-cc-email-contact-meta"><p><strong>' . esc_html( $title ) . '</strong></p><ul>';
+		foreach ( $lines as $line ) {
+			echo '<li>' . esc_html( $line ) . '</li>';
+		}
+		echo '</ul></div>';
+	}
+
+	public static function render_discounts_admin( $order ): void {
+		if ( ! $order instanceof \WC_Order ) {
+			return;
+		}
+		$lines = self::build_discounts_lines_for_output( $order );
+		if ( empty( $lines ) ) {
+			return;
+		}
+		echo '<div class="mp-cc-order-contact-meta"><p><strong>' . esc_html__( 'Скидки и сертификаты', 'mp-custom-checkout' ) . '</strong></p><ul>';
+		foreach ( $lines as $line ) {
+			echo '<li>' . esc_html( $line ) . '</li>';
+		}
+		echo '</ul></div>';
+	}
+
 	/**
 	 * Добавляет колонку сценария в список заказов (legacy + HPOS).
 	 *
@@ -552,6 +593,29 @@ final class EmailHooks {
 		}
 		if ( '' !== $address ) {
 			$lines[] = __( 'Адрес', 'mp-custom-checkout' ) . ': ' . $address;
+		}
+		return $lines;
+	}
+
+	/**
+	 * @return array<int, string>
+	 */
+	private static function build_discounts_lines_for_output( \WC_Order $order ): array {
+		$lines = array();
+		$coupons_raw = (string) $order->get_meta( '_mp_cc_applied_coupons', true );
+		$gift_raw    = (string) $order->get_meta( '_mp_cc_applied_gift_cards', true );
+		$coupon_total = (float) $order->get_meta( '_mp_cc_coupon_discount_total', true );
+		$gift_total   = (float) $order->get_meta( '_mp_cc_gift_card_total', true );
+		$coupons = json_decode( $coupons_raw, true );
+		$gift    = json_decode( $gift_raw, true );
+		$coupons = is_array( $coupons ) ? array_values( array_filter( array_map( 'strval', $coupons ) ) ) : array();
+		$gift    = is_array( $gift ) ? array_values( array_filter( array_map( 'strval', $gift ) ) ) : array();
+
+		if ( ! empty( $coupons ) ) {
+			$lines[] = __( 'Купоны', 'mp-custom-checkout' ) . ': ' . implode( ', ', $coupons ) . ' (' . wp_strip_all_tags( wc_price( $coupon_total ) ) . ')';
+		}
+		if ( ! empty( $gift ) ) {
+			$lines[] = __( 'Подарочная карта', 'mp-custom-checkout' ) . ': ' . implode( ', ', $gift ) . ' (' . wp_strip_all_tags( wc_price( $gift_total ) ) . ')';
 		}
 		return $lines;
 	}

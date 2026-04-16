@@ -1695,6 +1695,72 @@
 	color: var(--mp-cc-color-error);
 }
 
+.mp-cc-discount-tools {
+	display: grid;
+	gap: 0.85rem;
+	margin-top: 0.95rem;
+}
+
+.mp-cc-coupon {
+	border: 1px solid var(--mp-cc-color-border);
+	border-radius: var(--mp-cc-radius-md);
+	padding: 0.8rem;
+	background: var(--mp-cc-color-background);
+}
+
+.mp-cc-coupon--success {
+	border-color: #16a34a;
+}
+
+.mp-cc-coupon--error {
+	border-color: var(--mp-cc-color-error);
+}
+
+.mp-cc-coupon__title {
+	margin: 0 0 0.35rem;
+	font-size: 0.96rem;
+}
+
+.mp-cc-coupon__intro {
+	margin: 0 0 0.5rem;
+	color: var(--mp-cc-color-text-muted);
+	font-size: 0.82rem;
+}
+
+.mp-cc-coupon__row {
+	display: grid;
+	grid-template-columns: 1fr auto;
+	gap: 0.5rem;
+	align-items: end;
+}
+
+.mp-cc-coupon__row .mp-cc-field-label {
+	grid-column: 1 / -1;
+}
+
+.mp-cc-coupon__apply {
+	min-width: 7.5rem;
+}
+
+.mp-cc-coupon__applied {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.4rem;
+	margin-top: 0.55rem;
+}
+
+.mp-cc-coupon__chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	border: 1px solid var(--mp-cc-color-border);
+	background: #fff;
+	border-radius: 999px;
+	padding: 0.2rem 0.5rem;
+	font-size: 0.78rem;
+	cursor: pointer;
+}
+
 .mp-cc-contact__phone-row {
 	display: flex;
 	flex-wrap: wrap;
@@ -1733,6 +1799,14 @@
 
 	.mp-cc-contact__country {
 		flex: 1 1 100%;
+	}
+
+	.mp-cc-coupon__row {
+		grid-template-columns: 1fr;
+	}
+
+	.mp-cc-coupon__apply {
+		width: 100%;
 	}
 }
 

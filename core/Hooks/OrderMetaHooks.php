@@ -36,6 +36,7 @@ final class OrderMetaHooks {
 		add_action( 'mp_custom_checkout_save_order_meta', array( __CLASS__, 'save_selected_date_meta' ), 12, 2 );
 		add_action( 'mp_custom_checkout_save_order_meta', array( __CLASS__, 'save_conditions_confirmation_meta' ), 14, 2 );
 		add_action( 'mp_custom_checkout_save_order_meta', array( __CLASS__, 'save_conditions_summary_meta' ), 20, 2 );
+		add_action( 'mp_custom_checkout_save_order_meta', array( __CLASS__, 'save_discounts_meta' ), 22, 2 );
 		add_filter( 'woocommerce_checkout_update_customer_data', array( __CLASS__, 'maybe_skip_customer_data_sync' ), 10, 1 );
 	}
 
@@ -338,5 +339,55 @@ final class OrderMetaHooks {
 		} else {
 			$order->delete_meta_data( CheckoutConditionsSummaryBuilder::ORDER_META_KEY );
 		}
+	}
+
+	/**
+	 * Сохраняет данные по купонам и подарочной карте в мета заказа.
+	 *
+	 * @param \WC_Order $order Заказ.
+	 * @param array     $data  Данные checkout.
+	 */
+	public static function save_discounts_meta( $order, $data = array() ): void {
+		unset( $data );
+		if ( ! $order instanceof \WC_Order ) {
+			return;
+		}
+		$flow            = CheckoutSessionService::get_flow();
+		$answers         = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : array();
+		$discounts       = isset( $answers['discounts'] ) && is_array( $answers['discounts'] ) ? $answers['discounts'] : array();
+		$coupon_codes    = isset( $discounts['coupons'] ) && is_array( $discounts['coupons'] ) ? array_values( array_map( 'sanitize_text_field', $discounts['coupons'] ) ) : array();
+		$gift_card_codes = isset( $discounts['gift_card'] ) && is_array( $discounts['gift_card'] ) ? array_values( array_map( 'sanitize_text_field', $discounts['gift_card'] ) ) : array();
+
+		if ( ! empty( $coupon_codes ) ) {
+			$order->update_meta_data( '_mp_cc_applied_coupons', wp_json_encode( $coupon_codes ) );
+		} else {
+			$order->delete_meta_data( '_mp_cc_applied_coupons' );
+		}
+		if ( ! empty( $gift_card_codes ) ) {
+			$order->update_meta_data( '_mp_cc_applied_gift_cards', wp_json_encode( $gift_card_codes ) );
+		} else {
+			$order->delete_meta_data( '_mp_cc_applied_gift_cards' );
+		}
+
+		$coupon_total = (float) $order->get_discount_total();
+		$order->update_meta_data( '_mp_cc_coupon_discount_total', (string) $coupon_total );
+
+		$gift_total = 0.0;
+		foreach ( $order->get_items( 'fee' ) as $item ) {
+			if ( ! $item instanceof \WC_Order_Item_Fee ) {
+				continue;
+			}
+			$name = (string) $item->get_name();
+			$total = (float) $item->get_total();
+			if ( $total >= 0 ) {
+				continue;
+			}
+			$lc_name = function_exists( 'mb_strtolower' ) ? mb_strtolower( $name ) : strtolower( $name );
+			if ( false === strpos( $lc_name, 'gift' ) && false === strpos( $lc_name, 'подар' ) && false === strpos( $lc_name, 'pw' ) ) {
+				continue;
+			}
+			$gift_total += abs( $total );
+		}
+		$order->update_meta_data( '_mp_cc_gift_card_total', (string) $gift_total );
 	}
 }

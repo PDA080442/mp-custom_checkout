@@ -8,6 +8,7 @@
 namespace MP\CustomCheckout\Hooks;
 
 use MP\CustomCheckout\DependencyFailureGuard;
+use MP\CustomCheckout\Integrations\WooCommerce\GiftCardIntegration;
 use MP\CustomCheckout\Routing\CheckoutDateAvailabilityEngine;
 use MP\CustomCheckout\Routing\CheckoutRouteContext;
 use MP\CustomCheckout\Routing\CheckoutScenarioRules;
@@ -215,6 +216,18 @@ final class CheckoutAjaxHooks {
 			self::handle_remove_item();
 		}
 
+		if ( 'apply_coupon' === $sub_action ) {
+			self::handle_apply_coupon();
+		}
+
+		if ( 'remove_coupon' === $sub_action ) {
+			self::handle_remove_coupon();
+		}
+
+		if ( 'apply_gift_card' === $sub_action ) {
+			self::handle_apply_gift_card();
+		}
+
 		if ( 'session_abandon' === $sub_action ) {
 			CheckoutSessionService::clear_on_abandoned_flow();
 			wp_send_json_success(
@@ -231,7 +244,7 @@ final class CheckoutAjaxHooks {
 	private static function is_session_sub_action( string $sub_action ): bool {
 		return in_array(
 			$sub_action,
-			array( 'session_set_step', 'session_set_answers', 'session_set_scenario', 'session_get_state', 'session_abandon', 'update_quantity', 'remove_item', 'validation_log' ),
+			array( 'session_set_step', 'session_set_answers', 'session_set_scenario', 'session_get_state', 'session_abandon', 'update_quantity', 'remove_item', 'validation_log', 'apply_coupon', 'remove_coupon', 'apply_gift_card' ),
 			true
 		);
 	}
@@ -480,6 +493,302 @@ final class CheckoutAjaxHooks {
 				'is_empty'   => 0 === (int) $cart->get_cart_contents_count(),
 			)
 		);
+	}
+
+	private static function handle_apply_coupon(): void {
+		$raw_code = isset( $_POST['coupon_code'] ) ? wc_clean( wp_unslash( $_POST['coupon_code'] ) ) : '';
+		$code     = function_exists( 'wc_format_coupon_code' ) ? wc_format_coupon_code( $raw_code ) : strtolower( $raw_code );
+		if ( '' === $code ) {
+			wp_send_json_error(
+				array(
+					'code'    => 'coupon_empty',
+					'message' => __( 'Введите код купона.', 'mp-custom-checkout' ),
+				),
+				400
+			);
+		}
+
+		if ( ! function_exists( 'WC' ) || ! WC()->cart instanceof \WC_Cart ) {
+			wp_send_json_error(
+				array(
+					'code'    => 'cart_unavailable',
+					'message' => __( 'Корзина недоступна.', 'mp-custom-checkout' ),
+				),
+				503
+			);
+		}
+
+		if ( function_exists( 'wc_coupons_enabled' ) && ! wc_coupons_enabled() ) {
+			wp_send_json_error(
+				array(
+					'code'    => 'coupons_disabled',
+					'message' => __( 'Купоны отключены в настройках магазина.', 'mp-custom-checkout' ),
+				),
+				400
+			);
+		}
+
+		$cart = WC()->cart;
+		if ( function_exists( 'wc_clear_notices' ) ) {
+			wc_clear_notices();
+		}
+		$applied = $cart->apply_coupon( $code );
+		$cart->calculate_totals();
+
+		$message = self::extract_coupon_notice_message( true );
+		if ( false === $applied ) {
+			$error_message = '' !== $message ? $message : __( 'Не удалось применить промокод.', 'mp-custom-checkout' );
+			do_action(
+				'mp_custom_checkout_log',
+				'warning',
+				'[coupon] apply_failed',
+				array(
+					'coupon_code' => $code,
+					'message'     => $error_message,
+				)
+			);
+			wp_send_json_error(
+				array(
+					'code'            => 'coupon_apply_failed',
+					'message'         => $error_message,
+					'applied_coupons' => array_values( $cart->get_applied_coupons() ),
+					'cart'            => CheckoutRouteContext::get_cart_data(),
+					'flow'            => self::build_flow_payload(),
+				),
+				422
+			);
+		}
+
+		$current_flow    = CheckoutSessionService::get_public_state();
+		$current_answers = isset( $current_flow['answers'] ) && is_array( $current_flow['answers'] ) ? $current_flow['answers'] : array();
+		$current_discounts = isset( $current_answers['discounts'] ) && is_array( $current_answers['discounts'] ) ? $current_answers['discounts'] : array();
+		$current_discounts['coupons'] = array_values( $cart->get_applied_coupons() );
+		CheckoutSessionService::set_step_answers( 'discounts', $current_discounts );
+
+		$success_message = '' !== $message ? $message : __( 'Промокод применён.', 'mp-custom-checkout' );
+		wp_send_json_success(
+			array(
+				'sub_action'       => 'apply_coupon',
+				'coupon_code'      => $code,
+				'message'          => $success_message,
+				'applied_coupons'  => array_values( $cart->get_applied_coupons() ),
+				'cart'             => CheckoutRouteContext::get_cart_data(),
+				'flow'             => self::build_flow_payload(),
+			)
+		);
+	}
+
+	private static function handle_remove_coupon(): void {
+		$raw_code = isset( $_POST['coupon_code'] ) ? wc_clean( wp_unslash( $_POST['coupon_code'] ) ) : '';
+		$code     = function_exists( 'wc_format_coupon_code' ) ? wc_format_coupon_code( $raw_code ) : strtolower( $raw_code );
+		if ( '' === $code ) {
+			wp_send_json_error(
+				array(
+					'code'    => 'coupon_empty',
+					'message' => __( 'Не указан купон для удаления.', 'mp-custom-checkout' ),
+				),
+				400
+			);
+		}
+		if ( ! function_exists( 'WC' ) || ! WC()->cart instanceof \WC_Cart ) {
+			wp_send_json_error(
+				array(
+					'code'    => 'cart_unavailable',
+					'message' => __( 'Корзина недоступна.', 'mp-custom-checkout' ),
+				),
+				503
+			);
+		}
+
+		$cart = WC()->cart;
+		if ( ! in_array( $code, $cart->get_applied_coupons(), true ) ) {
+			wp_send_json_error(
+				array(
+					'code'            => 'coupon_not_found',
+					'message'         => __( 'Купон уже не применён.', 'mp-custom-checkout' ),
+					'applied_coupons' => array_values( $cart->get_applied_coupons() ),
+					'cart'            => CheckoutRouteContext::get_cart_data(),
+					'flow'            => self::build_flow_payload(),
+				),
+				404
+			);
+		}
+
+		if ( function_exists( 'wc_clear_notices' ) ) {
+			wc_clear_notices();
+		}
+		$removed = $cart->remove_coupon( $code );
+		$cart->calculate_totals();
+
+		if ( false === $removed ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'warning',
+				'[coupon] remove_failed',
+				array(
+					'coupon_code' => $code,
+				)
+			);
+			wp_send_json_error(
+				array(
+					'code'            => 'coupon_remove_failed',
+					'message'         => __( 'Не удалось удалить купон.', 'mp-custom-checkout' ),
+					'applied_coupons' => array_values( $cart->get_applied_coupons() ),
+					'cart'            => CheckoutRouteContext::get_cart_data(),
+					'flow'            => self::build_flow_payload(),
+				),
+				422
+			);
+		}
+
+		$current_flow      = CheckoutSessionService::get_public_state();
+		$current_answers   = isset( $current_flow['answers'] ) && is_array( $current_flow['answers'] ) ? $current_flow['answers'] : array();
+		$current_discounts = isset( $current_answers['discounts'] ) && is_array( $current_answers['discounts'] ) ? $current_answers['discounts'] : array();
+		$current_discounts['coupons'] = array_values( $cart->get_applied_coupons() );
+		CheckoutSessionService::set_step_answers( 'discounts', $current_discounts );
+
+		wp_send_json_success(
+			array(
+				'sub_action'       => 'remove_coupon',
+				'coupon_code'      => $code,
+				'message'          => __( 'Купон удалён.', 'mp-custom-checkout' ),
+				'applied_coupons'  => array_values( $cart->get_applied_coupons() ),
+				'cart'             => CheckoutRouteContext::get_cart_data(),
+				'flow'             => self::build_flow_payload(),
+			)
+		);
+	}
+
+	private static function handle_apply_gift_card(): void {
+		$raw_code = isset( $_POST['gift_card_code'] ) ? wc_clean( wp_unslash( $_POST['gift_card_code'] ) ) : '';
+		$code     = trim( (string) $raw_code );
+		if ( '' === $code ) {
+			wp_send_json_error(
+				array(
+					'code'    => 'gift_card_empty',
+					'message' => __( 'Введите код подарочной карты.', 'mp-custom-checkout' ),
+				),
+				400
+			);
+		}
+
+		if ( ! function_exists( 'WC' ) || ! WC()->cart instanceof \WC_Cart ) {
+			wp_send_json_error(
+				array(
+					'code'    => 'cart_unavailable',
+					'message' => __( 'Корзина недоступна.', 'mp-custom-checkout' ),
+				),
+				503
+			);
+		}
+
+		$integration = new GiftCardIntegration();
+		if ( ! $integration->is_pw_gift_cards_available() ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'error',
+				'[gift_card] pw_unavailable',
+				array( 'gift_card_code' => $code )
+			);
+			wp_send_json_error(
+				array(
+					'code'    => 'pw_unavailable',
+					'message' => __( 'Интеграция подарочных карт недоступна.', 'mp-custom-checkout' ),
+				),
+				503
+			);
+		}
+
+		$existing_cards = $integration->get_applied_gift_cards();
+		if ( ! empty( $existing_cards ) && ! in_array( $code, $existing_cards, true ) ) {
+			wp_send_json_error(
+				array(
+					'code'               => 'gift_card_single_only',
+					'message'            => __( 'Можно применить только одну подарочную карту на заказ.', 'mp-custom-checkout' ),
+					'applied_gift_cards' => array_values( $existing_cards ),
+					'cart'               => CheckoutRouteContext::get_cart_data(),
+					'flow'               => self::build_flow_payload(),
+				),
+				409
+			);
+		}
+
+		if ( function_exists( 'wc_clear_notices' ) ) {
+			wc_clear_notices();
+		}
+		$result = $integration->apply_gift_card( $code );
+		WC()->cart->calculate_totals();
+		$message = self::extract_coupon_notice_message( true );
+		$cards   = $integration->get_applied_gift_cards();
+
+		if ( is_wp_error( $result ) ) {
+			$error_message = $message ? $message : (string) $result->get_error_message();
+			do_action(
+				'mp_custom_checkout_log',
+				'error',
+				'[gift_card] apply_failed',
+				array(
+					'gift_card_code' => $code,
+					'error_code'     => (string) $result->get_error_code(),
+					'message'        => $error_message,
+				)
+			);
+			wp_send_json_error(
+				array(
+					'code'               => 'gift_card_apply_failed',
+					'message'            => $error_message ? $error_message : __( 'Не удалось применить подарочную карту.', 'mp-custom-checkout' ),
+					'applied_gift_cards' => array_values( $cards ),
+					'cart'               => CheckoutRouteContext::get_cart_data(),
+					'flow'               => self::build_flow_payload(),
+				),
+				422
+			);
+		}
+
+		$current_flow      = CheckoutSessionService::get_public_state();
+		$current_answers   = isset( $current_flow['answers'] ) && is_array( $current_flow['answers'] ) ? $current_flow['answers'] : array();
+		$current_discounts = isset( $current_answers['discounts'] ) && is_array( $current_answers['discounts'] ) ? $current_answers['discounts'] : array();
+		$current_discounts['gift_card'] = array_values( $cards );
+		CheckoutSessionService::set_step_answers( 'discounts', $current_discounts );
+
+		wp_send_json_success(
+			array(
+				'sub_action'          => 'apply_gift_card',
+				'gift_card_code'      => $code,
+				'message'             => $message ? $message : __( 'Подарочная карта применена.', 'mp-custom-checkout' ),
+				'applied_gift_cards'  => array_values( $cards ),
+				'cart'                => CheckoutRouteContext::get_cart_data(),
+				'flow'                => self::build_flow_payload(),
+			)
+		);
+	}
+
+	private static function extract_coupon_notice_message( bool $clear_after = false ): string {
+		if ( ! function_exists( 'wc_get_notices' ) ) {
+			return '';
+		}
+		$errors = wc_get_notices( 'error' );
+		if ( is_array( $errors ) && ! empty( $errors ) ) {
+			$first = reset( $errors );
+			$text  = is_array( $first ) && isset( $first['notice'] ) ? wp_strip_all_tags( (string) $first['notice'] ) : '';
+			if ( $clear_after && function_exists( 'wc_clear_notices' ) ) {
+				wc_clear_notices();
+			}
+			return trim( $text );
+		}
+		$success = wc_get_notices( 'success' );
+		if ( is_array( $success ) && ! empty( $success ) ) {
+			$first = reset( $success );
+			$text  = is_array( $first ) && isset( $first['notice'] ) ? wp_strip_all_tags( (string) $first['notice'] ) : '';
+			if ( $clear_after && function_exists( 'wc_clear_notices' ) ) {
+				wc_clear_notices();
+			}
+			return trim( $text );
+		}
+		if ( $clear_after && function_exists( 'wc_clear_notices' ) ) {
+			wc_clear_notices();
+		}
+		return '';
 	}
 
 	/**
