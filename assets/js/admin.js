@@ -130,6 +130,34 @@
 		};
 	}
 
+	function getStepFourConfigFromRuntime() {
+		var source = window.mpCcAdmin && window.mpCcAdmin.stepFourConfig ? window.mpCcAdmin.stepFourConfig : {};
+		var contact = source.contact_block || {};
+		var address = source.address_block || {};
+		return {
+			previewEnabled: true,
+			contact: {
+				title: String(contact.title || 'Контактные данные'),
+				intro: String(contact.intro || ''),
+				fieldOrder: Array.isArray(contact.field_order) ? contact.field_order : ['last_name', 'first_name', 'patronymic', 'email', 'phone'],
+				fieldVisibility: contact.field_visibility && typeof contact.field_visibility === 'object' ? contact.field_visibility : {},
+				fieldRequired: contact.field_required && typeof contact.field_required === 'object' ? contact.field_required : {},
+				labels: contact.labels && typeof contact.labels === 'object' ? contact.labels : {},
+				placeholders: contact.placeholders && typeof contact.placeholders === 'object' ? contact.placeholders : {},
+				hints: contact.hints && typeof contact.hints === 'object' ? contact.hints : {},
+				layout: contact.layout && typeof contact.layout === 'object' ? contact.layout : {},
+				states: contact.field_state_styles && typeof contact.field_state_styles === 'object' ? contact.field_state_styles : {}
+			},
+			address: {
+				title: String(address.title || 'Адрес доставки'),
+				order: Array.isArray(address.subfields_order) ? address.subfields_order : ['country', 'state', 'city', 'address_1', 'address_2', 'postcode'],
+				visible: address.subfields_visible && typeof address.subfields_visible === 'object' ? address.subfields_visible : {}
+			},
+			geoPreview: source.geo_preview && source.geo_preview.enabled !== false,
+			geo: source.address_geo && typeof source.address_geo === 'object' ? source.address_geo : {}
+		};
+	}
+
 	function trimNonEmptyAdmin(value) {
 		var s = String(value || '').trim();
 		return s ? s : '';
@@ -349,6 +377,61 @@
 		return html;
 	}
 
+	function renderStepFourPreview(cfg) {
+		var order = Array.isArray(cfg.contact.fieldOrder) ? cfg.contact.fieldOrder : [];
+		var html = '';
+		html += '<section class="mp-cc-admin-preview mp-cc-admin-preview--step4" id="mp-cc-admin-step4-preview">';
+		html += '<h2>Step 4 Contact Preview</h2>';
+		html += '<p><strong>' + escapeHtml(cfg.contact.title) + '</strong></p>';
+		if (cfg.contact.intro) {
+			html += '<p>' + escapeHtml(cfg.contact.intro) + '</p>';
+		}
+		html += '<div class="mp-cc-admin-preview__date-rules">';
+		html += '<p><strong>Layout:</strong> desktop ' + escapeHtml(String(cfg.contact.layout.desktop_columns || 3)) + ', tablet ' + escapeHtml(String(cfg.contact.layout.tablet_columns || 2)) + ', mobile ' + escapeHtml(String(cfg.contact.layout.mobile_columns || 1)) + '</p>';
+		html += '<p><strong>Field states:</strong> invalid=' + escapeHtml(String(cfg.contact.states.invalid_style || 'default')) + ', hint=' + escapeHtml(String(cfg.contact.states.hint_style || 'default')) + ', focus=' + escapeHtml(String(cfg.contact.states.focus_style || 'default')) + '</p>';
+		html += '</div>';
+		html += '<div class="mp-cc-admin-preview__date-grid">';
+		for (var i = 0; i < order.length; i += 1) {
+			var key = String(order[i] || '');
+			if (!key) {
+				continue;
+			}
+			var visible = cfg.contact.fieldVisibility[key] !== false;
+			var required = Boolean(cfg.contact.fieldRequired[key]);
+			var label = cfg.contact.labels[key] || key;
+			var ph = cfg.contact.placeholders[key] || '';
+			var hint = cfg.contact.hints[key] || '';
+			html += '<article>';
+			html += '<strong>' + escapeHtml(label) + '</strong>';
+			html += '<p>key: ' + escapeHtml(key) + '</p>';
+			html += '<p>visible: <strong>' + escapeHtml(visible ? 'yes' : 'no') + '</strong>, required: <strong>' + escapeHtml(required ? 'yes' : 'no') + '</strong></p>';
+			if (ph) {
+				html += '<p>placeholder: ' + escapeHtml(ph) + '</p>';
+			}
+			if (hint) {
+				html += '<p>hint: ' + escapeHtml(hint) + '</p>';
+			}
+			html += '</article>';
+		}
+		html += '</div>';
+		html += '<p><strong>' + escapeHtml(cfg.address.title) + '</strong></p>';
+		html += '<p>Address order: ' + escapeHtml(cfg.address.order.join(', ')) + '</p>';
+		if (cfg.geoPreview) {
+			var cCodes = Object.keys(cfg.geo || {});
+			html += '<div class="mp-cc-admin-preview__date-rules">';
+			html += '<p><strong>Geo dependency mode:</strong> enabled</p>';
+			html += '<p><strong>Countries:</strong> ' + escapeHtml(String(cCodes.length)) + ' (' + escapeHtml(cCodes.join(', ')) + ')</p>';
+			if (cCodes.length) {
+				var firstCountry = cfg.geo[cCodes[0]] || {};
+				var regions = firstCountry.regions && typeof firstCountry.regions === 'object' ? Object.keys(firstCountry.regions) : [];
+				html += '<p><strong>Sample country regions:</strong> ' + escapeHtml(String(regions.length)) + '</p>';
+			}
+			html += '</div>';
+		}
+		html += '</section>';
+		return html;
+	}
+
 	function readFormValue(name, fallback) {
 		var $field = $('[name="' + name + '"]').first();
 		if (!$field.length) {
@@ -415,6 +498,20 @@
 		cfg.calendarStyle.dayShape = readFormValue('mp_custom_checkout_settings[step_3][calendar_style][day_shape]', cfg.calendarStyle.dayShape);
 		cfg.calendarStyle.highlightStyle = readFormValue('mp_custom_checkout_settings[step_3][calendar_style][highlight_style]', cfg.calendarStyle.highlightStyle);
 		cfg.calendarStyle.showWeekendTint = Boolean(readFormValue('mp_custom_checkout_settings[step_3][calendar_style][show_weekend_tint]', cfg.calendarStyle.showWeekendTint));
+		return cfg;
+	}
+
+	function readLiveStepFourConfig(base) {
+		var cfg = $.extend(true, {}, base);
+		var p = 'mp_custom_checkout_settings[step_4][contact_block]';
+		cfg.contact.title = readFormValue(p + '[title]', cfg.contact.title);
+		cfg.contact.intro = readFormValue(p + '[intro]', cfg.contact.intro);
+		cfg.contact.layout.desktop_columns = Number(readFormValue(p + '[layout][desktop_columns]', cfg.contact.layout.desktop_columns || 3));
+		cfg.contact.layout.tablet_columns = Number(readFormValue(p + '[layout][tablet_columns]', cfg.contact.layout.tablet_columns || 2));
+		cfg.contact.layout.mobile_columns = Number(readFormValue(p + '[layout][mobile_columns]', cfg.contact.layout.mobile_columns || 1));
+		cfg.contact.states.invalid_style = readFormValue(p + '[field_state_styles][invalid_style]', cfg.contact.states.invalid_style || 'default');
+		cfg.contact.states.hint_style = readFormValue(p + '[field_state_styles][hint_style]', cfg.contact.states.hint_style || 'default');
+		cfg.contact.states.focus_style = readFormValue(p + '[field_state_styles][focus_style]', cfg.contact.states.focus_style || 'default');
 		return cfg;
 	}
 
@@ -541,6 +638,14 @@
 		});
 	}
 
+	function enhanceStepFourFields() {
+		var $rows = $('input[name^="mp_custom_checkout_settings[step_4]"], select[name^="mp_custom_checkout_settings[step_4]"], textarea[name^="mp_custom_checkout_settings[step_4]"]').closest('tr');
+		if (!$rows.length) {
+			return;
+		}
+		$rows.addClass('mp-cc-admin-step4-row');
+	}
+
 	function refreshStepThreeEmptyIndicators() {
 		var selectors = [
 			'input[name="mp_custom_checkout_settings[step_3][copy][title]"]',
@@ -583,6 +688,7 @@
 		var scenarioConfig = getScenarioConfigFromRuntime();
 		var dateStepConfig = getDateStepConfigFromRuntime();
 		var officeHoursPreviewConfig = getOfficeHoursPreviewConfigFromRuntime();
+		var stepFourConfig = getStepFourConfigFromRuntime();
 		var defaults = getDefaults();
 		var flags = window.mpCcAdmin && window.mpCcAdmin.featureFlags ? window.mpCcAdmin.featureFlags : {};
 		if (!config.previewEnabled || flags.admin_live_preview === false) {
@@ -605,8 +711,12 @@
 		if (officeHoursPreviewConfig.previewEnabled) {
 			$wrap.append(renderOfficeHoursPreview(officeHoursPreviewConfig));
 		}
+		if (stepFourConfig.previewEnabled) {
+			$wrap.append(renderStepFourPreview(stepFourConfig));
+		}
 		enhanceStepOneFields();
 		enhanceStepThreeFields();
+		enhanceStepFourFields();
 		refreshStepThreeEmptyIndicators();
 
 		var rerender = function () {
@@ -624,6 +734,10 @@
 				var nextOfficeCfg = readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig);
 				$('#mp-cc-admin-office-preview').replaceWith(renderOfficeHoursPreview(nextOfficeCfg));
 			}
+			if (stepFourConfig.previewEnabled) {
+				var nextStepFourCfg = readLiveStepFourConfig(stepFourConfig);
+				$('#mp-cc-admin-step4-preview').replaceWith(renderStepFourPreview(nextStepFourCfg));
+			}
 		};
 		$(document).on('input change', '[name^="mp_custom_checkout_settings[step_1]"]', function () {
 			rerender();
@@ -633,6 +747,9 @@
 		});
 		$(document).on('input change', '[name^="mp_custom_checkout_settings[step_3]"]', function () {
 			refreshStepThreeEmptyIndicators();
+			rerender();
+		});
+		$(document).on('input change', '[name^="mp_custom_checkout_settings[step_4]"]', function () {
 			rerender();
 		});
 		$(document).on('click', '[data-mp-cc-step1-reset]', function () {

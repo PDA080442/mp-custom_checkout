@@ -1604,8 +1604,8 @@
 
 .mp-cc-contact__grid {
 	display: grid;
-	grid-template-columns: repeat(3, minmax(0, 1fr));
-	gap: 0.75rem 1rem;
+	grid-template-columns: repeat(var(--mp-cc-contact-cols, 3), minmax(0, 1fr));
+	gap: var(--mp-cc-contact-gap, 0.75rem 1rem);
 	align-items: start;
 }
 
@@ -1651,6 +1651,20 @@
 	border-color: var(--mp-cc-color-error);
 }
 
+.mp-cc-contact--invalid-soft .mp-cc-input.is-invalid,
+.mp-cc-contact--invalid-soft .mp-cc-select.is-invalid {
+	background: #fff7f7;
+}
+
+.mp-cc-contact--hint-muted .mp-cc-field-hint {
+	opacity: 0.75;
+}
+
+.mp-cc-contact--focus-strong .mp-cc-input:focus,
+.mp-cc-contact--focus-strong .mp-cc-select:focus {
+	outline-width: 3px;
+}
+
 .mp-cc-field-hint {
 	margin: 0;
 	font-size: 0.76rem;
@@ -1684,7 +1698,7 @@
 
 @media (max-width: 52rem) {
 	.mp-cc-contact__grid {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+		grid-template-columns: repeat(var(--mp-cc-contact-cols-tablet, 2), minmax(0, 1fr));
 	}
 
 	.mp-cc-contact__field--span-2 {
@@ -1694,7 +1708,7 @@
 
 @media (max-width: 36rem) {
 	.mp-cc-contact__grid {
-		grid-template-columns: 1fr;
+		grid-template-columns: repeat(var(--mp-cc-contact-cols-mobile, 1), minmax(0, 1fr));
 	}
 
 	.mp-cc-contact__field--span-2 {

@@ -218,6 +218,28 @@ final class SafeSettingsResolver {
 						'title'               => 'Контактные данные',
 						'intro'               => 'Укажите данные для связи и оформления заказа.',
 						'patronymic_required' => false,
+						'field_order'         => array( 'last_name', 'first_name', 'patronymic', 'email', 'phone' ),
+						'field_visibility'    => array(
+							'last_name'  => true,
+							'first_name' => true,
+							'patronymic' => true,
+							'email'      => true,
+							'phone'      => true,
+						),
+						'field_required'      => array(
+							'last_name'  => true,
+							'first_name' => true,
+							'patronymic' => false,
+							'email'      => true,
+							'phone'      => true,
+						),
+						'placeholders'        => array(
+							'last_name'  => '',
+							'first_name' => '',
+							'patronymic' => '',
+							'email'      => '',
+							'phone'      => '',
+						),
 						'labels'              => array(
 							'last_name'    => 'Фамилия',
 							'first_name'   => 'Имя',
@@ -249,6 +271,17 @@ final class SafeSettingsResolver {
 							),
 						),
 						'default_phone_country_iso' => 'RU',
+						'layout'              => array(
+							'desktop_columns' => 3,
+							'tablet_columns'  => 2,
+							'mobile_columns'  => 1,
+							'grid_gap'        => '0.75rem 1rem',
+						),
+						'field_state_styles'  => array(
+							'invalid_style' => 'default',
+							'hint_style'    => 'default',
+							'focus_style'   => 'default',
+						),
 					),
 					'address_block' => array(
 						'title'               => 'Адрес доставки',
@@ -313,6 +346,9 @@ final class SafeSettingsResolver {
 								),
 							),
 						),
+					),
+					'geo_preview' => array(
+						'enabled' => true,
 					),
 				);
 				continue;
