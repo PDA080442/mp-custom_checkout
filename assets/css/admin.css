@@ -10,6 +10,37 @@
 	background: #fff;
 }
 
+.mp-cc-admin-preview-area {
+	margin-top: 20px;
+	padding: 14px;
+	border: 1px solid var(--mp-cc-admin-border, #d0d7de);
+	border-radius: 10px;
+	background: var(--mp-cc-admin-surface, #fff);
+}
+
+.mp-cc-admin-preview-area__header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	flex-wrap: wrap;
+}
+
+.mp-cc-admin-preview-area__actions {
+	display: inline-flex;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.mp-cc-admin-preview-area__warning {
+	margin: 10px 0 0;
+	padding: 8px 10px;
+	border-radius: 6px;
+	border: 1px solid var(--mp-cc-admin-risk-border, #f3d8d8);
+	background: var(--mp-cc-admin-risk-bg, #fff5f5);
+	color: var(--mp-cc-admin-risk-text, #9b1c1c);
+}
+
 .mp-cc-admin-preview__toolbar {
 	display: flex;
 	justify-content: flex-end;
