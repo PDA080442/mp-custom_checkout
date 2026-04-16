@@ -174,6 +174,34 @@ final class SafeSettingsResolver {
 					),
 					'holiday_dates' => array(),
 					'closed_dates'  => array(),
+					'conditions_copy' => array(
+						'intro_by_scenario' => array(
+							'pickup'               => '',
+							'krasnoyarsk_delivery' => '',
+							'other_city_delivery'  => '',
+						),
+						'secondary_notes' => array(
+							'',
+							'',
+							'',
+						),
+						'krasnoyarsk_delivery' => array(
+							'title'               => '',
+							'body'                => '',
+							'delivery_within_day' => 'Доставка в течение дня в выбранную дату. Интервал уточняется у курьера.',
+						),
+						'other_city_delivery' => array(
+							'title'          => '',
+							'body'           => '',
+							'logistics_note' => 'Отправка выполняется через логистическую компанию после комплектации и согласования реквизитов.',
+						),
+						'pickup' => array(
+							'title'              => '',
+							'body'               => '',
+							'office_description' => 'Выдача заказа в офисе самовывоза после уведомления о готовности.',
+							'office_hours'       => array( '10:00–13:00', '13:00–17:00', '17:00–20:00' ),
+						),
+					),
 				);
 				continue;
 			}

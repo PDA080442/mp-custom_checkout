@@ -465,6 +465,11 @@
 	gap: 0.65rem;
 }
 
+.mp-cc-conditions-step__grid--single {
+	grid-template-columns: minmax(0, 1fr);
+	max-width: 40rem;
+}
+
 .mp-cc-conditions-card {
 	border: 1px solid var(--mp-cc-color-border);
 	border-radius: var(--mp-cc-radius-md);
@@ -492,6 +497,14 @@
 .mp-cc-conditions-card__text {
 	font-size: 0.84rem;
 	color: var(--mp-cc-color-text-muted);
+}
+
+.mp-cc-conditions-card__accent {
+	font-weight: 600;
+	color: var(--mp-cc-color-text);
+	border-left: 3px solid var(--mp-cc-color-accent);
+	padding-left: 0.65rem;
+	margin-top: 0.35rem;
 }
 
 .mp-cc-conditions-card__pickup-graph {
@@ -1208,6 +1221,11 @@
 
 	.mp-cc-conditions-step__grid {
 		grid-template-columns: 1fr 1fr;
+	}
+
+	.mp-cc-conditions-step__grid--single {
+		grid-template-columns: minmax(0, 1fr);
+		max-width: none;
 	}
 }
 
