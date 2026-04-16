@@ -204,6 +204,352 @@
 		}, source);
 	}
 
+	function getStepFourConfig() {
+		var source = (window.mpCcCheckout && window.mpCcCheckout.stepFourConfig && typeof window.mpCcCheckout.stepFourConfig === 'object')
+			? window.mpCcCheckout.stepFourConfig
+			: {};
+		return $.extend(true, {
+			contact_block: {
+				title: '',
+				intro: '',
+				patronymic_required: false,
+				labels: {
+					last_name: '',
+					first_name: '',
+					patronymic: '',
+					email: '',
+					phone: '',
+					country_code: ''
+				},
+				hints: {
+					email: '',
+					phone: '',
+					patronymic: ''
+				},
+				phone_country_codes: [
+					{ dial: '+7', iso: 'RU', national_digits: 10 },
+					{ dial: '+7', iso: 'KZ', national_digits: 10 },
+					{ dial: '+375', iso: 'BY', national_digits: 9 }
+				],
+				default_phone_country_iso: 'RU'
+			}
+		}, source);
+	}
+
+	function getContactLabel(key) {
+		var cfg = getStepFourConfig();
+		var labels = cfg.contact_block && cfg.contact_block.labels ? cfg.contact_block.labels : {};
+		var fromCfg = labels[key] ? String(labels[key]) : '';
+		if (trimNonEmpty(fromCfg)) {
+			return fromCfg;
+		}
+		var fb = {
+			last_name: 'Фамилия',
+			first_name: 'Имя',
+			patronymic: 'Отчество',
+			email: 'Email',
+			phone: 'Телефон',
+			country_code: 'Код страны'
+		};
+		var path = {
+			last_name: 'step_4.contact_last_name',
+			first_name: 'step_4.contact_first_name',
+			patronymic: 'step_4.contact_patronymic',
+			email: 'step_4.contact_email',
+			phone: 'step_4.contact_phone',
+			country_code: 'step_4.contact_country_code'
+		};
+		return getUiText(path[key] || 'step_4.title', fb[key] || key);
+	}
+
+	function getContactHint(key) {
+		var cfg = getStepFourConfig();
+		var hints = cfg.contact_block && cfg.contact_block.hints ? cfg.contact_block.hints : {};
+		var fromCfg = hints[key] ? String(hints[key]) : '';
+		if (trimNonEmpty(fromCfg)) {
+			return fromCfg;
+		}
+		var fb = {
+			email: 'На этот адрес отправим подтверждение заказа.',
+			phone: 'Введите номер без кода страны — он выбран слева.',
+			patronymic: 'Укажите при наличии.'
+		};
+		var path = {
+			email: 'step_4.contact_hint_email',
+			phone: 'step_4.contact_hint_phone',
+			patronymic: 'step_4.contact_hint_patronymic'
+		};
+		return getUiText(path[key] || 'step_4.title', fb[key] || '');
+	}
+
+	function findPhoneCountryMeta(codes, iso) {
+		var list = Array.isArray(codes) ? codes : [];
+		var i;
+		for (i = 0; i < list.length; i++) {
+			var row = list[i];
+			if (row && String(row.iso || '') === String(iso || '')) {
+				return {
+					dial: String(row.dial || '+7'),
+					national_digits: Number(row.national_digits || 10),
+					iso: String(row.iso || '')
+				};
+			}
+		}
+		if (list.length && list[0]) {
+			return {
+				dial: String(list[0].dial || '+7'),
+				national_digits: Number(list[0].national_digits || 10),
+				iso: String(list[0].iso || 'RU')
+			};
+		}
+		return { dial: '+7', national_digits: 10, iso: 'RU' };
+	}
+
+	function formatNationalPhoneDisplay(dial, digits) {
+		var d = String(digits || '').replace(/\D/g, '');
+		if (dial === '+375') {
+			d = d.slice(0, 9);
+			var p1 = d.slice(0, 2);
+			var p2 = d.slice(2, 5);
+			var p3 = d.slice(5, 7);
+			var p4 = d.slice(7, 9);
+			var out = '';
+			if (p1) {
+				out += '(' + p1 + ')';
+			}
+			if (p2) {
+				out += (out ? ' ' : '') + p2;
+			}
+			if (p3) {
+				out += '-' + p3;
+			}
+			if (p4) {
+				out += '-' + p4;
+			}
+			return out;
+		}
+		d = d.slice(0, 10);
+		var a = d.slice(0, 3);
+		var b = d.slice(3, 6);
+		var c = d.slice(6, 8);
+		var e = d.slice(8, 10);
+		if (!a) {
+			return '';
+		}
+		var s = '(' + a + ')';
+		if (b) {
+			s += ' ' + b;
+		}
+		if (c) {
+			s += '-' + c;
+		}
+		if (e) {
+			s += '-' + e;
+		}
+		return s;
+	}
+
+	function buildFullPhoneE164(contact) {
+		var dial = String(contact.phone_dial_code || '+7');
+		var nat = String(contact.billing_phone_national || '').replace(/\D/g, '');
+		return dial + nat;
+	}
+
+	function isValidEmailValue(value) {
+		var s = String(value || '').trim();
+		if (!s) {
+			return false;
+		}
+		return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+	}
+
+	function ensureContactDefaults(state) {
+		if (!state || !state.frontendStore || !state.frontendStore.form) {
+			return;
+		}
+		var c = state.frontendStore.form.contact || {};
+		var cfg = getStepFourConfig();
+		var block = cfg.contact_block || {};
+		var codes = Array.isArray(block.phone_country_codes) ? block.phone_country_codes : [];
+		var defIso = trimNonEmpty(block.default_phone_country_iso) ? String(block.default_phone_country_iso) : 'RU';
+		if (!trimNonEmpty(c.phone_country_iso)) {
+			c.phone_country_iso = defIso;
+		}
+		var meta = findPhoneCountryMeta(codes, c.phone_country_iso);
+		c.phone_dial_code = meta.dial;
+		if (!trimNonEmpty(c.billing_phone_national) && trimNonEmpty(c.billing_phone)) {
+			var raw = String(c.billing_phone).replace(/\D/g, '');
+			var dialDigits = String(meta.dial || '').replace(/\D/g, '');
+			if (dialDigits && raw.indexOf(dialDigits) === 0) {
+				c.billing_phone_national = raw.slice(dialDigits.length);
+			} else {
+				c.billing_phone_national = raw;
+			}
+		}
+		c.billing_phone = buildFullPhoneE164(c);
+		state.frontendStore.form.contact = c;
+	}
+
+	function validateContactPaymentStep(state) {
+		var contact = state.frontendStore.form.contact || {};
+		var cfg = getStepFourConfig();
+		var block = cfg.contact_block || {};
+		var codes = Array.isArray(block.phone_country_codes) ? block.phone_country_codes : [];
+		var errors = {};
+		var ok = true;
+		if (!trimNonEmpty(contact.billing_last_name)) {
+			errors.billing_last_name = 'required';
+			ok = false;
+		}
+		if (!trimNonEmpty(contact.billing_first_name)) {
+			errors.billing_first_name = 'required';
+			ok = false;
+		}
+		if (block.patronymic_required && !trimNonEmpty(contact.billing_patronymic)) {
+			errors.billing_patronymic = 'required';
+			ok = false;
+		}
+		if (!trimNonEmpty(contact.billing_email)) {
+			errors.billing_email = 'required';
+			ok = false;
+		} else if (!isValidEmailValue(contact.billing_email)) {
+			errors.billing_email = 'format';
+			ok = false;
+		}
+		var meta = findPhoneCountryMeta(codes, contact.phone_country_iso);
+		var digits = String(contact.billing_phone_national || '').replace(/\D/g, '');
+		var need = meta.national_digits || 10;
+		if (digits.length !== need) {
+			errors.billing_phone_national = 'incomplete';
+			ok = false;
+		}
+		state.frontendStore.form.errors = state.frontendStore.form.errors || {};
+		state.frontendStore.form.errors.contact = ok ? {} : errors;
+		return ok;
+	}
+
+	function getContactFieldError(state, fieldKey) {
+		var e = state.frontendStore && state.frontendStore.form && state.frontendStore.form.errors && state.frontendStore.form.errors.contact
+			? state.frontendStore.form.errors.contact
+			: {};
+		return e[fieldKey] ? String(e[fieldKey]) : '';
+	}
+
+	function buildContactPaymentHtml(state) {
+		ensureContactDefaults(state);
+		var contact = state.frontendStore.form.contact || {};
+		var cfg = getStepFourConfig();
+		var block = cfg.contact_block || {};
+		var codes = Array.isArray(block.phone_country_codes) ? block.phone_country_codes : [];
+		var meta = findPhoneCountryMeta(codes, contact.phone_country_iso);
+		var nationalDigits = String(contact.billing_phone_national || '').replace(/\D/g, '');
+		var displayPhone = formatNationalPhoneDisplay(meta.dial, nationalDigits);
+		var title = trimNonEmpty(block.title) || getUiText('step_4.title', 'Контакты и оплата');
+		var intro = trimNonEmpty(block.intro) || getUiText('step_4.contact_block_intro', 'Укажите данные для связи и оформления заказа.');
+		var errLast = getContactFieldError(state, 'billing_last_name');
+		var errFirst = getContactFieldError(state, 'billing_first_name');
+		var errPat = getContactFieldError(state, 'billing_patronymic');
+		var errEmail = getContactFieldError(state, 'billing_email');
+		var errPhone = getContactFieldError(state, 'billing_phone_national');
+		var html = '';
+		html += '<section class="mp-cc-contact" aria-labelledby="mp-cc-contact-title">';
+		html += '<header class="mp-cc-contact__header">';
+		html += '<h3 class="mp-cc-contact__title" id="mp-cc-contact-title">' + escapeHtml(title) + '</h3>';
+		if (intro) {
+			html += '<p class="mp-cc-contact__intro" id="mp-cc-contact-intro">' + escapeHtml(intro) + '</p>';
+		}
+		html += '</header>';
+		html += '<div class="mp-cc-contact__grid">';
+		html += '<div class="mp-cc-contact__field mp-cc-contact__field--span-1">';
+		html += '<label class="mp-cc-field-label" for="mp-cc-contact-last-name">' + escapeHtml(getContactLabel('last_name')) + '</label>';
+		html += '<input type="text" class="mp-cc-input' + (errLast ? ' is-invalid' : '') + '" id="mp-cc-contact-last-name" name="billing_last_name" autocomplete="family-name" ';
+		html += 'value="' + escapeHtml(String(contact.billing_last_name || '')) + '" ';
+		html += 'data-contact-field="billing_last_name" aria-required="true"';
+		html += errLast ? ' aria-invalid="true"' : '';
+		html += '/>';
+		if (errLast) {
+			html += '<p class="mp-cc-field-error" id="mp-cc-contact-last-name-err" role="alert">' + escapeHtml(getUiText('step_4.contact_error_required', 'Заполните это поле.')) + '</p>';
+		}
+		html += '</div>';
+		html += '<div class="mp-cc-contact__field mp-cc-contact__field--span-1">';
+		html += '<label class="mp-cc-field-label" for="mp-cc-contact-first-name">' + escapeHtml(getContactLabel('first_name')) + '</label>';
+		html += '<input type="text" class="mp-cc-input' + (errFirst ? ' is-invalid' : '') + '" id="mp-cc-contact-first-name" name="billing_first_name" autocomplete="given-name" ';
+		html += 'value="' + escapeHtml(String(contact.billing_first_name || '')) + '" ';
+		html += 'data-contact-field="billing_first_name" aria-required="true"';
+		html += errFirst ? ' aria-invalid="true"' : '';
+		html += '/>';
+		if (errFirst) {
+			html += '<p class="mp-cc-field-error" id="mp-cc-contact-first-name-err" role="alert">' + escapeHtml(getUiText('step_4.contact_error_required', 'Заполните это поле.')) + '</p>';
+		}
+		html += '</div>';
+		html += '<div class="mp-cc-contact__field mp-cc-contact__field--span-1">';
+		html += '<label class="mp-cc-field-label" for="mp-cc-contact-patronymic">' + escapeHtml(getContactLabel('patronymic')) + '</label>';
+		html += '<input type="text" class="mp-cc-input' + (errPat ? ' is-invalid' : '') + '" id="mp-cc-contact-patronymic" name="billing_patronymic" autocomplete="additional-name" ';
+		html += 'value="' + escapeHtml(String(contact.billing_patronymic || '')) + '" ';
+		html += 'data-contact-field="billing_patronymic"';
+		html += block.patronymic_required ? ' aria-required="true"' : '';
+		html += ' aria-describedby="mp-cc-contact-patronymic-hint"';
+		html += errPat ? ' aria-invalid="true"' : '';
+		html += '/>';
+		html += '<p class="mp-cc-field-hint" id="mp-cc-contact-patronymic-hint">' + escapeHtml(getContactHint('patronymic')) + '</p>';
+		if (errPat) {
+			html += '<p class="mp-cc-field-error" id="mp-cc-contact-patronymic-err" role="alert">' + escapeHtml(getUiText('step_4.contact_error_required', 'Заполните это поле.')) + '</p>';
+		}
+		html += '</div>';
+		html += '<div class="mp-cc-contact__field mp-cc-contact__field--span-2">';
+		html += '<label class="mp-cc-field-label" for="mp-cc-contact-email">' + escapeHtml(getContactLabel('email')) + '</label>';
+		html += '<input type="email" class="mp-cc-input' + (errEmail ? ' is-invalid' : '') + '" id="mp-cc-contact-email" name="billing_email" autocomplete="email" inputmode="email" ';
+		html += 'value="' + escapeHtml(String(contact.billing_email || '')) + '" ';
+		html += 'data-contact-field="billing_email" aria-required="true"';
+		html += ' aria-describedby="mp-cc-contact-email-hint"';
+		html += errEmail ? ' aria-invalid="true"' : '';
+		html += '/>';
+		html += '<p class="mp-cc-field-hint" id="mp-cc-contact-email-hint">' + escapeHtml(getContactHint('email')) + '</p>';
+		if (errEmail) {
+			html += '<p class="mp-cc-field-error" id="mp-cc-contact-email-err" role="alert">' + escapeHtml(errEmail === 'format' ? getUiText('step_4.contact_error_email', 'Введите корректный email.') : getUiText('step_4.contact_error_required', 'Заполните это поле.')) + '</p>';
+		}
+		html += '</div>';
+		html += '<div class="mp-cc-contact__field mp-cc-contact__field--span-2 mp-cc-contact__field--phone">';
+		html += '<span class="mp-cc-field-label" id="mp-cc-contact-phone-label">' + escapeHtml(getContactLabel('phone')) + '</span>';
+		html += '<div class="mp-cc-contact__phone-row" role="group" aria-labelledby="mp-cc-contact-phone-label">';
+		html += '<div class="mp-cc-contact__country">';
+		html += '<label class="mp-cc-visually-hidden" for="mp-cc-contact-phone-country">' + escapeHtml(getContactLabel('country_code')) + '</label>';
+		html += '<select id="mp-cc-contact-phone-country" class="mp-cc-select" data-contact-phone-country="1" aria-describedby="mp-cc-contact-phone-hint"';
+		html += errPhone ? ' aria-invalid="true"' : '';
+		html += '>';
+		var ci;
+		for (ci = 0; ci < codes.length; ci++) {
+			var opt = codes[ci];
+			if (!opt) {
+				continue;
+			}
+			var iso = String(opt.iso || '');
+			var dial = String(opt.dial || '');
+			var sel = iso === String(contact.phone_country_iso || '');
+			html += '<option value="' + escapeHtml(iso) + '"' + (sel ? ' selected' : '') + '>' + escapeHtml(dial + ' · ' + iso) + '</option>';
+		}
+		html += '</select>';
+		html += '</div>';
+		html += '<div class="mp-cc-contact__national">';
+		html += '<label class="mp-cc-visually-hidden" for="mp-cc-contact-phone-national">' + escapeHtml(getContactLabel('phone')) + '</label>';
+		html += '<input type="tel" class="mp-cc-input' + (errPhone ? ' is-invalid' : '') + '" id="mp-cc-contact-phone-national" name="billing_phone_national" autocomplete="tel-national" inputmode="numeric" ';
+		html += 'value="' + escapeHtml(displayPhone) + '" ';
+		html += 'data-contact-phone-national="1" aria-required="true"';
+		html += ' aria-describedby="mp-cc-contact-phone-hint"';
+		html += errPhone ? ' aria-invalid="true"' : '';
+		html += '/>';
+		html += '</div>';
+		html += '</div>';
+		html += '<p class="mp-cc-field-hint" id="mp-cc-contact-phone-hint">' + escapeHtml(getContactHint('phone')) + '</p>';
+		if (errPhone) {
+			html += '<p class="mp-cc-field-error" id="mp-cc-contact-phone-err" role="alert">' + escapeHtml(getUiText('step_4.contact_error_phone', 'Введите номер полностью.')) + '</p>';
+		}
+		html += '</div>';
+		html += '</div>';
+		html += '</section>';
+		return html;
+	}
+
 	function getStepThreeTitle() {
 		var config = getStepThreeConfig();
 		var title = config && config.copy && config.copy.title ? String(config.copy.title) : '';
@@ -1351,7 +1697,21 @@
 
 	function moveForward(state, $app) {
 		var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
-		if (currentIndex < 0 || currentIndex >= state.visibleSteps.length - 1) {
+		if (currentIndex < 0) {
+			return;
+		}
+		if (currentIndex >= state.visibleSteps.length - 1) {
+			if (state.currentStepId === 'contact_payment') {
+				ensureContactDefaults(state);
+				if (!validateContactPaymentStep(state)) {
+					notify(getUiText('step_4.contact_error_required', 'Проверьте контактные данные.'), 'error');
+					render(state, $app);
+					return;
+				}
+				saveCurrentStepDraft(state).fail(function () {
+					notify(getUiText('common.error_generic', 'Не удалось сохранить данные.'), 'error');
+				});
+			}
 			return;
 		}
 		var target = state.visibleSteps[currentIndex + 1];
@@ -1477,6 +1837,11 @@
 		if (step && step.id === 'conditions') {
 			label = getConditionsStepPanelTitle(state);
 		}
+		if (step && step.id === 'contact_payment') {
+			var s4 = getStepFourConfig();
+			var s4t = s4.contact_block && trimNonEmpty(s4.contact_block.title) ? String(s4.contact_block.title) : '';
+			label = s4t || getUiText('step_4.title', label || 'Контакты и оплата');
+		}
 		var html = '';
 
 		html += '<section class="mp-cc-step-panel" data-step-panel="' + escapeHtml(step ? step.id : '') + '">';
@@ -1493,6 +1858,9 @@
 		}
 		if (step && step.id === 'conditions') {
 			html += buildConditionsStepHtml(state);
+		}
+		if (step && step.id === 'contact_payment') {
+			html += buildContactPaymentHtml(state);
 		}
 		html += '</div>';
 		if (!isFlagEnabled(state, flagNames.discountPlacement, true)) {
@@ -1949,6 +2317,7 @@
 			return;
 		}
 		ensureDateSelection(state);
+		ensureContactDefaults(state);
 
 		$app.html(buildStepPanelHtml(state));
 		$summary.html(buildSummaryHtml(state));
@@ -2230,6 +2599,72 @@
 				answers: dateBox
 			}).fail(function () {
 				notify(getUiText('common.error_generic', 'Произошла ошибка. Попробуйте ещё раз.'), 'error');
+			});
+		});
+
+		$app.find('[data-contact-field]').off('input blur').on('input', function () {
+			var key = String($(this).data('contact-field') || '');
+			if (!key) {
+				return;
+			}
+			var contact = state.frontendStore.form.contact || {};
+			contact[key] = $(this).val();
+			state.frontendStore.form.contact = contact;
+			if (state.frontendStore.form.errors && state.frontendStore.form.errors.contact) {
+				delete state.frontendStore.form.errors.contact[key];
+			}
+			contact.billing_phone = buildFullPhoneE164(contact);
+		}).on('blur', function () {
+			ensureContactDefaults(state);
+			saveCurrentStepDraft(state).fail(function () {
+				notify(getUiText('common.error_generic', 'Не удалось сохранить данные.'), 'error');
+			});
+		});
+
+		$app.find('[data-contact-phone-national]').off('input blur').on('input', function () {
+			var $inp = $(this);
+			var cfg = getStepFourConfig();
+			var codes = cfg.contact_block && cfg.contact_block.phone_country_codes ? cfg.contact_block.phone_country_codes : [];
+			var contact = state.frontendStore.form.contact || {};
+			var meta = findPhoneCountryMeta(codes, contact.phone_country_iso);
+			var maxLen = meta.national_digits || 10;
+			var raw = String($inp.val() || '').replace(/\D/g, '').slice(0, maxLen);
+			contact.billing_phone_national = raw;
+			contact.billing_phone = buildFullPhoneE164(contact);
+			state.frontendStore.form.contact = contact;
+			var display = formatNationalPhoneDisplay(meta.dial, raw);
+			if ($inp.val() !== display) {
+				$inp.val(display);
+			}
+			if (state.frontendStore.form.errors && state.frontendStore.form.errors.contact) {
+				delete state.frontendStore.form.errors.contact.billing_phone_national;
+			}
+		}).on('blur', function () {
+			ensureContactDefaults(state);
+			saveCurrentStepDraft(state).fail(function () {
+				notify(getUiText('common.error_generic', 'Не удалось сохранить данные.'), 'error');
+			});
+		});
+
+		$app.find('[data-contact-phone-country]').off('change').on('change', function () {
+			var iso = String($(this).val() || '');
+			var contact = state.frontendStore.form.contact || {};
+			contact.phone_country_iso = iso;
+			var cfg = getStepFourConfig();
+			var codes = cfg.contact_block && cfg.contact_block.phone_country_codes ? cfg.contact_block.phone_country_codes : [];
+			var meta = findPhoneCountryMeta(codes, iso);
+			contact.phone_dial_code = meta.dial;
+			var raw = String(contact.billing_phone_national || '').replace(/\D/g, '');
+			raw = raw.slice(0, meta.national_digits || 10);
+			contact.billing_phone_national = raw;
+			contact.billing_phone = buildFullPhoneE164(contact);
+			state.frontendStore.form.contact = contact;
+			if (state.frontendStore.form.errors && state.frontendStore.form.errors.contact) {
+				delete state.frontendStore.form.errors.contact.billing_phone_national;
+			}
+			render(state, $app);
+			saveCurrentStepDraft(state).fail(function () {
+				notify(getUiText('common.error_generic', 'Не удалось сохранить данные.'), 'error');
 			});
 		});
 	}

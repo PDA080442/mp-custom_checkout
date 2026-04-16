@@ -212,6 +212,47 @@ final class SafeSettingsResolver {
 				);
 				continue;
 			}
+			if ( OptionKeys::SECTION_STEP_4 === $section_key ) {
+				$tree[ $section_key ] = array(
+					'contact_block' => array(
+						'title'               => 'Контактные данные',
+						'intro'               => 'Укажите данные для связи и оформления заказа.',
+						'patronymic_required' => false,
+						'labels'              => array(
+							'last_name'    => 'Фамилия',
+							'first_name'   => 'Имя',
+							'patronymic'   => 'Отчество',
+							'email'        => 'Email',
+							'phone'        => 'Телефон',
+							'country_code' => 'Код страны',
+						),
+						'hints'               => array(
+							'email'      => 'На этот адрес отправим подтверждение заказа.',
+							'phone'      => 'Введите номер без кода страны — он выбран слева.',
+							'patronymic' => 'Укажите при наличии.',
+						),
+						'phone_country_codes' => array(
+							array(
+								'dial'             => '+7',
+								'iso'              => 'RU',
+								'national_digits'  => 10,
+							),
+							array(
+								'dial'             => '+7',
+								'iso'              => 'KZ',
+								'national_digits'  => 10,
+							),
+							array(
+								'dial'             => '+375',
+								'iso'              => 'BY',
+								'national_digits'  => 9,
+							),
+						),
+						'default_phone_country_iso' => 'RU',
+					),
+				);
+				continue;
+			}
 			if ( OptionKeys::SECTION_PICKUP === $section_key ) {
 				$tree[ $section_key ] = array(
 					'enable_point_selection' => false,
