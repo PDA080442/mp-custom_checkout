@@ -1,87 +1,23 @@
 <?php
 /**
- * AJAX: выдача права входа на checkout (sticky-корзина / «Перейти к оформлению»).
+ * Legacy compatibility wrapper for checkout entry AJAX hooks.
  *
  * @package MP_Custom_Checkout
  */
 
 namespace MP\CustomCheckout\Hooks;
 
-use MP\CustomCheckout\DependencyFailureGuard;
-use MP\CustomCheckout\Routing\CheckoutEntryService;
-
 defined( 'ABSPATH' ) || exit;
 
-/**
- * Class CheckoutEntryAjaxHooks
- */
 final class CheckoutEntryAjaxHooks {
 
-	public const ACTION = 'mp_cc_set_checkout_entry';
+	public const ACTION = \MP\CustomCheckout\Checkout\Hooks\CheckoutEntryAjaxHooks::ACTION;
 
-	/**
-	 * Регистрация endpoint'ов.
-	 */
 	public static function register(): void {
-		add_action( 'wp_ajax_' . self::ACTION, array( __CLASS__, 'handle' ) );
-		add_action( 'wp_ajax_nopriv_' . self::ACTION, array( __CLASS__, 'handle' ) );
+		\MP\CustomCheckout\Checkout\Hooks\CheckoutEntryAjaxHooks::register();
 	}
 
-	/**
-	 * Устанавливает сессионный флаг и возвращает URL checkout.
-	 */
-	public static function handle(): void {
-		if ( ! DependencyFailureGuard::is_woocommerce_integration_ready() ) {
-			wp_send_json_error(
-				array( 'message' => __( 'WooCommerce недоступен.', 'mp-custom-checkout' ) ),
-				503
-			);
-		}
-
-		if ( ! CheckoutEntryService::validate_ajax_nonce() ) {
-			wp_send_json_error(
-				array( 'code' => 'invalid_nonce', 'message' => __( 'Неверный запрос.', 'mp-custom-checkout' ) ),
-				403
-			);
-		}
-
-		if ( ! function_exists( 'WC' ) || ! WC()->cart || WC()->cart->is_empty() ) {
-			wp_send_json_error(
-				array( 'code' => 'empty_cart', 'message' => __( 'Корзина пуста.', 'mp-custom-checkout' ) ),
-				400
-			);
-		}
-
-		/**
-		 * Дополнительная проверка источника входа (referer, капча и т.д.).
-		 *
-		 * @param true|\WP_Error $allow Разрешить выдачу флага.
-		 */
-		$allowed = apply_filters( 'mp_custom_checkout_validate_entry_source', true );
-		if ( is_wp_error( $allowed ) ) {
-			wp_send_json_error(
-				array(
-					'code'    => $allowed->get_error_code(),
-					'message' => $allowed->get_error_message(),
-				),
-				400
-			);
-		}
-
-		$result = CheckoutEntryService::grant_entry_eligibility();
-		if ( is_wp_error( $result ) ) {
-			wp_send_json_error(
-				array( 'code' => $result->get_error_code(), 'message' => $result->get_error_message() ),
-				500
-			);
-		}
-
-		$checkout_url = \MP\CustomCheckout\Routing\CheckoutRouteConfig::get_checkout_url();
-
-		wp_send_json_success(
-			array(
-				'checkout_url' => $checkout_url,
-			)
-		);
+	public static function __callStatic( string $name, array $arguments ) {
+		return \MP\CustomCheckout\Checkout\Hooks\CheckoutEntryAjaxHooks::{$name}( ...$arguments );
 	}
 }
