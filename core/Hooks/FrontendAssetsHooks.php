@@ -231,7 +231,35 @@ final class FrontendAssetsHooks {
 	 */
 	private static function step_four_config(): array {
 		$config = SafeSettingsResolver::get_section( 'step_4' );
-		return is_array( $config ) ? $config : array();
+		$config = is_array( $config ) ? $config : array();
+		$config['available_gateways'] = self::available_payment_gateways_for_runtime();
+		return $config;
+	}
+
+	/**
+	 * @return array<int, array<string, string>>
+	 */
+	private static function available_payment_gateways_for_runtime(): array {
+		if ( ! function_exists( 'WC' ) || ! WC() ) {
+			return array();
+		}
+		$gateways = WC()->payment_gateways();
+		if ( ! $gateways instanceof \WC_Payment_Gateways ) {
+			return array();
+		}
+		$available = $gateways->get_available_payment_gateways();
+		$result    = array();
+		foreach ( $available as $gateway ) {
+			if ( ! $gateway instanceof \WC_Payment_Gateway ) {
+				continue;
+			}
+			$result[] = array(
+				'id'          => sanitize_key( (string) $gateway->id ),
+				'title'       => wp_strip_all_tags( (string) $gateway->get_title() ),
+				'description' => wp_strip_all_tags( (string) $gateway->get_description() ),
+			);
+		}
+		return $result;
 	}
 
 	private static function build_design_tokens_css(): string {

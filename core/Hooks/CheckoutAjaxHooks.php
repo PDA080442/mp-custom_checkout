@@ -177,6 +177,10 @@ final class CheckoutAjaxHooks {
 			);
 		}
 
+		if ( 'set_payment_gateway' === $sub_action ) {
+			self::handle_set_payment_gateway();
+		}
+
 		if ( 'validation_log' === $sub_action ) {
 			$step_id = isset( $_POST['step_id'] ) ? sanitize_key( wp_unslash( $_POST['step_id'] ) ) : '';
 			$errors  = isset( $_POST['errors'] ) && is_array( $_POST['errors'] )
@@ -244,8 +248,55 @@ final class CheckoutAjaxHooks {
 	private static function is_session_sub_action( string $sub_action ): bool {
 		return in_array(
 			$sub_action,
-			array( 'session_set_step', 'session_set_answers', 'session_set_scenario', 'session_get_state', 'session_abandon', 'update_quantity', 'remove_item', 'validation_log', 'apply_coupon', 'remove_coupon', 'apply_gift_card' ),
+			array( 'session_set_step', 'session_set_answers', 'session_set_scenario', 'session_get_state', 'session_abandon', 'update_quantity', 'remove_item', 'validation_log', 'apply_coupon', 'remove_coupon', 'apply_gift_card', 'set_payment_gateway' ),
 			true
+		);
+	}
+
+	private static function handle_set_payment_gateway(): void {
+		$gateway = isset( $_POST['gateway'] ) ? sanitize_key( wp_unslash( $_POST['gateway'] ) ) : '';
+		if ( '' === $gateway ) {
+			wp_send_json_error(
+				array( 'code' => 'invalid_gateway', 'message' => __( 'Не выбран способ оплаты.', 'mp-custom-checkout' ) ),
+				400
+			);
+		}
+		if ( ! function_exists( 'WC' ) || ! WC() ) {
+			wp_send_json_error(
+				array( 'code' => 'wc_unavailable', 'message' => __( 'WooCommerce недоступен.', 'mp-custom-checkout' ) ),
+				503
+			);
+		}
+		$pm = WC()->payment_gateways();
+		if ( ! $pm instanceof \WC_Payment_Gateways ) {
+			wp_send_json_error(
+				array( 'code' => 'wc_gateway_unavailable', 'message' => __( 'Платёжные шлюзы WooCommerce недоступны.', 'mp-custom-checkout' ) ),
+				503
+			);
+		}
+		$available = $pm->get_available_payment_gateways();
+		if ( ! isset( $available[ $gateway ] ) ) {
+			wp_send_json_error(
+				array( 'code' => 'gateway_not_available', 'message' => __( 'Выбранный способ оплаты сейчас недоступен.', 'mp-custom-checkout' ) ),
+				422
+			);
+		}
+		if ( WC()->session ) {
+			WC()->session->set( 'chosen_payment_method', $gateway );
+		}
+		$flow     = CheckoutSessionService::get_flow();
+		$answers  = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : array();
+		$contact  = isset( $answers['contact_billing'] ) && is_array( $answers['contact_billing'] ) ? $answers['contact_billing'] : array();
+		$contact['payment_gateway'] = $gateway;
+		$contact['gateway']         = $gateway;
+		CheckoutSessionService::set_step_answers( 'contact_payment', $contact );
+		wp_send_json_success(
+			array(
+				'sub_action'       => 'set_payment_gateway',
+				'payment_gateway'  => $gateway,
+				'flow'             => self::build_flow_payload(),
+				'cart'             => CheckoutRouteContext::get_cart_data(),
+			)
 		);
 	}
 

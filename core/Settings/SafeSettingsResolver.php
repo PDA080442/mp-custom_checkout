@@ -429,6 +429,20 @@ final class SafeSettingsResolver {
 						'success_message' => 'Подарочная карта применена.',
 						'error_message'   => 'Не удалось применить подарочную карту.',
 					),
+					'payment_block' => array(
+						'title' => 'Способ оплаты',
+						'intro' => 'Выберите удобный способ оплаты.',
+						'layout' => array(
+							'desktop_columns' => 2,
+							'tablet_columns'  => 2,
+							'mobile_columns'  => 1,
+							'grid_gap'        => '0.6rem 0.75rem',
+						),
+						'card_style' => 'default',
+						'show_description' => true,
+						'required' => true,
+						'error_message' => 'Выберите способ оплаты.',
+					),
 					'geo_preview' => array(
 						'enabled' => true,
 					),
