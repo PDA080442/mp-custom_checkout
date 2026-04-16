@@ -202,7 +202,45 @@ final class AdminMenuHooks {
 		}
 		echo '<div class="mp-cc-admin-shell__fields">';
 		self::render_field_group( OptionKeys::MAIN . '[' . $tab_id . ']', $section_value, $tab_id );
+		self::render_supplemental_groups_for_tab( $tab_id, $settings );
 		echo '</div>';
+	}
+
+	/**
+	 * Рендерит дополнительные конфигурационные блоки, которые хранятся в virtual-ключах.
+	 *
+	 * @param array<string, mixed> $settings
+	 */
+	private static function render_supplemental_groups_for_tab( string $tab_id, array $settings ): void {
+		if ( OptionKeys::SECTION_SERVICE === $tab_id ) {
+			self::render_supplemental_group(
+				__( 'Service Flags', 'mp-custom-checkout' ),
+				OptionKeys::MAIN . '[' . OptionKeys::KEY_FEATURE_FLAGS . ']',
+				isset( $settings[ OptionKeys::KEY_FEATURE_FLAGS ] ) ? $settings[ OptionKeys::KEY_FEATURE_FLAGS ] : array(),
+				OptionKeys::KEY_FEATURE_FLAGS,
+				'logic'
+			);
+			self::render_supplemental_group(
+				__( 'Step Registry Map', 'mp-custom-checkout' ),
+				OptionKeys::MAIN . '[' . OptionKeys::KEY_REGISTRY . ']',
+				isset( $settings[ OptionKeys::KEY_REGISTRY ] ) ? $settings[ OptionKeys::KEY_REGISTRY ] : array(),
+				OptionKeys::KEY_REGISTRY,
+				'logic'
+			);
+		}
+	}
+
+	/**
+	 * @param mixed $value
+	 */
+	private static function render_supplemental_group( string $title, string $name_prefix, $value, string $path, string $type ): void {
+		if ( ! is_array( $value ) || empty( $value ) ) {
+			return;
+		}
+		echo '<details class="mp-cc-admin-shell__fieldset" open>';
+		echo '<summary><span>' . esc_html( $title ) . '</span><em class="mp-cc-admin-shell__type-badge mp-cc-admin-shell__type-badge--' . esc_attr( $type ) . '">' . esc_html( self::group_type_label( $type ) ) . '</em></summary>';
+		self::render_field_group( $name_prefix, $value, $path );
+		echo '</details>';
 	}
 
 	/**
