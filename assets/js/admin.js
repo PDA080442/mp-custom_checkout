@@ -139,7 +139,7 @@
 			contact: {
 				title: String(contact.title || 'Контактные данные'),
 				intro: String(contact.intro || ''),
-				fieldOrder: Array.isArray(contact.field_order) ? contact.field_order : ['last_name', 'first_name', 'patronymic', 'birthdate', 'email', 'phone'],
+				fieldOrder: Array.isArray(contact.field_order) ? contact.field_order : ['last_name', 'first_name', 'patronymic', 'gender', 'birthdate', 'email', 'phone'],
 				fieldVisibility: contact.field_visibility && typeof contact.field_visibility === 'object' ? contact.field_visibility : {},
 				fieldRequired: contact.field_required && typeof contact.field_required === 'object' ? contact.field_required : {},
 				labels: contact.labels && typeof contact.labels === 'object' ? contact.labels : {},
@@ -506,6 +506,10 @@
 		var p = 'mp_custom_checkout_settings[step_4][contact_block]';
 		cfg.contact.title = readFormValue(p + '[title]', cfg.contact.title);
 		cfg.contact.intro = readFormValue(p + '[intro]', cfg.contact.intro);
+		cfg.contact.labels.gender = readFormValue(p + '[labels][gender]', cfg.contact.labels.gender || 'Пол');
+		cfg.contact.hints.gender = readFormValue(p + '[hints][gender]', cfg.contact.hints.gender || '');
+		cfg.contact.fieldVisibility.gender = Boolean(readFormValue(p + '[field_visibility][gender]', cfg.contact.fieldVisibility.gender !== false));
+		cfg.contact.fieldRequired.gender = Boolean(readFormValue(p + '[field_required][gender]', cfg.contact.fieldRequired.gender !== false));
 		cfg.contact.layout.desktop_columns = Number(readFormValue(p + '[layout][desktop_columns]', cfg.contact.layout.desktop_columns || 3));
 		cfg.contact.layout.tablet_columns = Number(readFormValue(p + '[layout][tablet_columns]', cfg.contact.layout.tablet_columns || 2));
 		cfg.contact.layout.mobile_columns = Number(readFormValue(p + '[layout][mobile_columns]', cfg.contact.layout.mobile_columns || 1));
