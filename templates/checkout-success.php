@@ -73,6 +73,114 @@ get_header();
 					<?php endif; ?>
 				</dl>
 			</section>
+
+			<?php
+			$fulfillment = isset( $mp_cc_success_presenter['fulfillment'] ) && is_array( $mp_cc_success_presenter['fulfillment'] )
+				? $mp_cc_success_presenter['fulfillment']
+				: array();
+			$contact_summary = isset( $mp_cc_success_presenter['contact_summary'] ) && is_array( $mp_cc_success_presenter['contact_summary'] )
+				? $mp_cc_success_presenter['contact_summary']
+				: array();
+			$financial_summary = isset( $mp_cc_success_presenter['financial_summary'] ) && is_array( $mp_cc_success_presenter['financial_summary'] )
+				? $mp_cc_success_presenter['financial_summary']
+				: array();
+			?>
+
+			<?php if ( ! empty( array_filter( $fulfillment ) ) ) : ?>
+				<section class="mp-cc-success__summary" aria-labelledby="mp-cc-success-fulfillment-heading">
+					<h2 id="mp-cc-success-fulfillment-heading" class="mp-cc-success__summary-title">
+						<?php echo esc_html( isset( $labels['fulfillment_title'] ) ? $labels['fulfillment_title'] : __( 'Получение', 'mp-custom-checkout' ) ); ?>
+					</h2>
+					<dl class="mp-cc-success__dl">
+						<?php if ( ! empty( $fulfillment['scenario_label'] ) ) : ?>
+							<div class="mp-cc-success__row">
+								<dt><?php echo esc_html( isset( $labels['fulfillment_type'] ) ? $labels['fulfillment_type'] : __( 'Способ получения', 'mp-custom-checkout' ) ); ?></dt>
+								<dd><?php echo esc_html( (string) $fulfillment['scenario_label'] ); ?></dd>
+							</div>
+						<?php endif; ?>
+						<?php if ( ! empty( $fulfillment['date_label'] ) ) : ?>
+							<div class="mp-cc-success__row">
+								<dt><?php echo esc_html( isset( $labels['fulfillment_date'] ) ? $labels['fulfillment_date'] : __( 'Дата получения/доставки', 'mp-custom-checkout' ) ); ?></dt>
+								<dd><?php echo esc_html( (string) $fulfillment['date_label'] ); ?></dd>
+							</div>
+						<?php endif; ?>
+						<?php if ( ! empty( $fulfillment['pickup_point'] ) ) : ?>
+							<div class="mp-cc-success__row">
+								<dt><?php echo esc_html( isset( $labels['pickup_point'] ) ? $labels['pickup_point'] : __( 'Точка самовывоза', 'mp-custom-checkout' ) ); ?></dt>
+								<dd><?php echo esc_html( (string) $fulfillment['pickup_point'] ); ?></dd>
+							</div>
+						<?php endif; ?>
+					</dl>
+				</section>
+			<?php endif; ?>
+
+			<?php if ( ! empty( array_filter( $contact_summary ) ) ) : ?>
+				<section class="mp-cc-success__summary" aria-labelledby="mp-cc-success-contact-heading">
+					<h2 id="mp-cc-success-contact-heading" class="mp-cc-success__summary-title">
+						<?php echo esc_html( isset( $labels['contact_title'] ) ? $labels['contact_title'] : __( 'Контактные данные', 'mp-custom-checkout' ) ); ?>
+					</h2>
+					<dl class="mp-cc-success__dl">
+						<?php if ( ! empty( $contact_summary['recipient'] ) ) : ?>
+							<div class="mp-cc-success__row">
+								<dt><?php echo esc_html( isset( $labels['recipient'] ) ? $labels['recipient'] : __( 'Получатель', 'mp-custom-checkout' ) ); ?></dt>
+								<dd><?php echo esc_html( (string) $contact_summary['recipient'] ); ?></dd>
+							</div>
+						<?php endif; ?>
+						<?php if ( ! empty( $contact_summary['email'] ) ) : ?>
+							<div class="mp-cc-success__row">
+								<dt><?php echo esc_html( isset( $labels['email_masked'] ) ? $labels['email_masked'] : __( 'Email', 'mp-custom-checkout' ) ); ?></dt>
+								<dd><?php echo esc_html( (string) $contact_summary['email'] ); ?></dd>
+							</div>
+						<?php endif; ?>
+						<?php if ( ! empty( $contact_summary['phone'] ) ) : ?>
+							<div class="mp-cc-success__row">
+								<dt><?php echo esc_html( isset( $labels['phone_masked'] ) ? $labels['phone_masked'] : __( 'Телефон', 'mp-custom-checkout' ) ); ?></dt>
+								<dd><?php echo esc_html( (string) $contact_summary['phone'] ); ?></dd>
+							</div>
+						<?php endif; ?>
+					</dl>
+				</section>
+			<?php endif; ?>
+
+			<?php if ( ! empty( array_filter( $financial_summary ) ) ) : ?>
+				<section class="mp-cc-success__summary" aria-labelledby="mp-cc-success-financial-heading">
+					<h2 id="mp-cc-success-financial-heading" class="mp-cc-success__summary-title">
+						<?php echo esc_html( isset( $labels['financial_title'] ) ? $labels['financial_title'] : __( 'Финансовый итог', 'mp-custom-checkout' ) ); ?>
+					</h2>
+					<dl class="mp-cc-success__dl">
+						<?php if ( ! empty( $financial_summary['subtotal'] ) ) : ?>
+							<div class="mp-cc-success__row">
+								<dt><?php echo esc_html( isset( $labels['subtotal'] ) ? $labels['subtotal'] : __( 'Подытог', 'mp-custom-checkout' ) ); ?></dt>
+								<dd><?php echo esc_html( (string) $financial_summary['subtotal'] ); ?></dd>
+							</div>
+						<?php endif; ?>
+						<?php if ( ! empty( $financial_summary['shipping'] ) ) : ?>
+							<div class="mp-cc-success__row">
+								<dt><?php echo esc_html( isset( $labels['shipping'] ) ? $labels['shipping'] : __( 'Доставка', 'mp-custom-checkout' ) ); ?></dt>
+								<dd><?php echo esc_html( (string) $financial_summary['shipping'] ); ?></dd>
+							</div>
+						<?php endif; ?>
+						<?php if ( ! empty( $financial_summary['discount'] ) ) : ?>
+							<div class="mp-cc-success__row">
+								<dt><?php echo esc_html( isset( $labels['discount'] ) ? $labels['discount'] : __( 'Скидка', 'mp-custom-checkout' ) ); ?></dt>
+								<dd><?php echo esc_html( (string) $financial_summary['discount'] ); ?></dd>
+							</div>
+						<?php endif; ?>
+						<?php if ( ! empty( $financial_summary['tax'] ) ) : ?>
+							<div class="mp-cc-success__row">
+								<dt><?php echo esc_html( isset( $labels['tax'] ) ? $labels['tax'] : __( 'Налог', 'mp-custom-checkout' ) ); ?></dt>
+								<dd><?php echo esc_html( (string) $financial_summary['tax'] ); ?></dd>
+							</div>
+						<?php endif; ?>
+						<?php if ( ! empty( $financial_summary['total'] ) ) : ?>
+							<div class="mp-cc-success__row">
+								<dt><?php echo esc_html( isset( $labels['total'] ) ? $labels['total'] : __( 'Итого', 'mp-custom-checkout' ) ); ?></dt>
+								<dd><strong><?php echo esc_html( (string) $financial_summary['total'] ); ?></strong></dd>
+							</div>
+						<?php endif; ?>
+					</dl>
+				</section>
+			<?php endif; ?>
 		<?php endif; ?>
 
 		<nav class="mp-cc-success__actions" aria-label="<?php echo esc_attr__( 'Дальнейшие действия', 'mp-custom-checkout' ); ?>">
