@@ -5,15 +5,12 @@
  * @package MP_Custom_Checkout
  */
 
-namespace MP\CustomCheckout\Routing;
+namespace MP\CustomCheckout\Checkout\Routing;
 
 use MP\CustomCheckout\Hooks\CheckoutRouteHooks;
 
 defined( 'ABSPATH' ) || exit;
 
-/**
- * Class CheckoutPermalinkCompatibility
- */
 final class CheckoutPermalinkCompatibility {
 
 	/**

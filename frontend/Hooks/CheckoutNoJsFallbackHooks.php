@@ -5,42 +5,24 @@
  * @package MP_Custom_Checkout
  */
 
-namespace MP\CustomCheckout\Hooks;
+namespace MP\CustomCheckout\Frontend\Hooks;
 
 use MP\CustomCheckout\DependencyFailureGuard;
 use MP\CustomCheckout\Routing\CheckoutReturnPaths;
 
 defined( 'ABSPATH' ) || exit;
 
-/**
- * Class CheckoutNoJsFallbackHooks
- */
 final class CheckoutNoJsFallbackHooks {
-
-	/**
-	 * Регистрация рендера контента checkout.
-	 */
 	public static function register(): void {
 		add_action( 'mp_custom_checkout_render_content', array( __CLASS__, 'render' ), 10, 1 );
 	}
 
-	/**
-	 * Рендер SPA-контейнера и noscript fallback.
-	 *
-	 * @param array<string, mixed> $context Контекст маршрута.
-	 */
 	public static function render( array $context ): void {
 		unset( $context );
-
 		echo '<div id="mp-cc-checkout-app" class="mp-cc-checkout__app" aria-live="polite"></div>';
-
 		self::render_nojs_fallback();
 	}
 
-	/**
-	 * Минимально приемлемый checkout-путь без JS:
-	 * нативная форма WooCommerce + серверная валидация/оплата.
-	 */
 	private static function render_nojs_fallback(): void {
 		?>
 		<noscript>
@@ -59,20 +41,15 @@ final class CheckoutNoJsFallbackHooks {
 		<?php
 	}
 
-	/**
-	 * Рендер checkout-формы WooCommerce с серверной обработкой.
-	 */
 	private static function render_nojs_checkout_form(): void {
 		if ( ! DependencyFailureGuard::is_woocommerce_integration_ready() ) {
 			echo '<p>' . esc_html__( 'WooCommerce недоступен.', 'mp-custom-checkout' ) . '</p>';
 			return;
 		}
-
 		if ( ! function_exists( 'WC' ) || ! function_exists( 'wc_get_template' ) ) {
 			echo '<p>' . esc_html__( 'Checkout временно недоступен.', 'mp-custom-checkout' ) . '</p>';
 			return;
 		}
-
 		$cart = WC()->cart;
 		if ( ! $cart || $cart->is_empty() ) {
 			$shop_url = CheckoutReturnPaths::get_shop_url();
@@ -80,18 +57,11 @@ final class CheckoutNoJsFallbackHooks {
 			echo '<p><a href="' . esc_url( $shop_url ) . '">' . esc_html__( 'Перейти в магазин', 'mp-custom-checkout' ) . '</a></p>';
 			return;
 		}
-
 		$checkout = WC()->checkout();
 		if ( ! $checkout instanceof \WC_Checkout ) {
 			echo '<p>' . esc_html__( 'Не удалось подготовить форму checkout.', 'mp-custom-checkout' ) . '</p>';
 			return;
 		}
-
-		wc_get_template(
-			'checkout/form-checkout.php',
-			array(
-				'checkout' => $checkout,
-			)
-		);
+		wc_get_template( 'checkout/form-checkout.php', array( 'checkout' => $checkout ) );
 	}
 }

@@ -8,7 +8,7 @@
 namespace MP\CustomCheckout;
 
 use MP\CustomCheckout\Hooks\CheckoutRouteHooks;
-use MP\CustomCheckout\Routing\CheckoutSuccessRouteHooks;
+use MP\CustomCheckout\Checkout\Routing\CheckoutSuccessRouteHooks;
 use MP\CustomCheckout\Settings\OptionKeys;
 
 defined( 'ABSPATH' ) || exit;

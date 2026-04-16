@@ -1064,6 +1064,15 @@
 	background: #2a2a2a;
 }
 
+.mp-cc-nav__btn--review {
+	background: #1d4ed8;
+	border-color: #1d4ed8;
+}
+
+.mp-cc-nav__btn--review:hover:not([disabled]) {
+	background: #1e40af;
+}
+
 .mp-cc-nav__btn[disabled] {
 	opacity: 0.55;
 	cursor: not-allowed;
@@ -1074,6 +1083,13 @@
 	margin: 0.5rem 0 0;
 	font-size: 0.875rem;
 	color: #8b5e00;
+}
+
+.mp-cc-nav__review-mode {
+	margin: 0.5rem 0 0;
+	font-size: 0.84rem;
+	font-weight: 600;
+	color: #1e40af;
 }
 
 .mp-cc-checkout__app.is-nav-lock {
@@ -1106,8 +1122,9 @@
 	border-radius: var(--mp-cc-radius-md);
 	box-shadow: var(--mp-cc-shadow-card);
 	background: var(--mp-cc-color-background);
-	position: sticky;
-	top: 1rem;
+	position: relative;
+	top: auto;
+	bottom: auto;
 	backdrop-filter: blur(0px);
 }
 
@@ -1175,6 +1192,18 @@
 	color: var(--mp-cc-color-text-muted);
 }
 
+.mp-cc-summary-card__scenario--final-review {
+	background: color-mix(in srgb, var(--mp-cc-color-accent) 8%, #fff);
+	border: 1px solid color-mix(in srgb, var(--mp-cc-color-accent) 20%, var(--mp-cc-color-border));
+	border-radius: var(--mp-cc-radius-sm);
+	padding: 0.6rem 0.7rem;
+}
+
+.mp-cc-summary-card__scenario-meta--ok {
+	color: #15803d;
+	font-weight: 600;
+}
+
 .mp-cc-summary-card__conditions {
 	margin-top: 0.65rem;
 	padding-top: 0.65rem;
@@ -1224,6 +1253,11 @@
 	#mp-cc-checkout.mp-cc-step1-hide-media-mobile .mp-cc-cart-item__media {
 		display: none;
 	}
+
+	.mp-cc-summary-card__scenario-title,
+	.mp-cc-summary-card__scenario-meta {
+		font-size: 0.82rem;
+	}
 }
 
 @media (min-width: 960px) {
@@ -1241,6 +1275,35 @@
 @media (max-width: 767px) {
 	#mp-cc-checkout.mp-cc-step1-mobile-compact .mp-cc-cart-item {
 		padding: 0.5rem;
+	}
+}
+
+@media (min-width: 960px) {
+	.mp-cc-summary-card {
+		position: sticky;
+		top: 1rem;
+	}
+}
+
+@media (max-width: 959px) {
+	.mp-cc-summary-card {
+		position: sticky;
+		bottom: 0;
+		top: auto;
+		z-index: 30;
+		padding: 0.85rem;
+		max-height: 70vh;
+		overflow: auto;
+	}
+
+	/* На мобилке оставляем в липком блоке только финансовые строки. */
+	.mp-cc-summary-card__scenario:not(.mp-cc-summary-card__scenario--final-review):not([data-summary-financials='1']):not([data-final-review-financials='1']) {
+		display: none;
+	}
+
+	/* Компенсируем место под липким блоком в конце колонки. */
+	.mp-cc-layout__main {
+		padding-bottom: 12rem;
 	}
 }
 
@@ -1397,7 +1460,7 @@
 	}
 
 	.mp-cc-summary-card {
-		position: static;
+		position: sticky;
 	}
 
 	.mp-cc-nav {
@@ -1450,7 +1513,7 @@
 	}
 
 	.mp-cc-summary-card {
-		position: static;
+		position: sticky;
 	}
 
 	.mp-cc-fulfillment__cards,
@@ -1778,6 +1841,103 @@
 	min-width: 0;
 }
 
+.mp-cc-payment {
+	display: grid;
+	gap: 0.6rem;
+	padding-top: 0.35rem;
+}
+
+.mp-cc-payment.is-loading {
+	opacity: 0.72;
+	pointer-events: none;
+}
+
+.mp-cc-payment__header {
+	display: grid;
+	gap: 0.25rem;
+}
+
+.mp-cc-payment__title {
+	margin: 0;
+	font-size: 0.95rem;
+}
+
+.mp-cc-payment__intro {
+	margin: 0;
+	font-size: 0.8rem;
+	color: var(--mp-cc-color-text-muted);
+}
+
+.mp-cc-payment__grid {
+	display: grid;
+	grid-template-columns: repeat(var(--mp-cc-payment-cols, 2), minmax(0, 1fr));
+	gap: var(--mp-cc-payment-gap, 0.6rem 0.75rem);
+}
+
+.mp-cc-payment-card {
+	display: grid;
+	gap: 0.3rem;
+	padding: 0.65rem 0.75rem;
+	border: 1px solid var(--mp-cc-color-border);
+	border-radius: var(--mp-cc-radius-sm);
+	background: #fff;
+	cursor: pointer;
+}
+
+.mp-cc-payment-card.is-active {
+	border-color: var(--mp-cc-color-accent);
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--mp-cc-color-accent) 55%, transparent);
+}
+
+.mp-cc-payment-card--active-strong.is-active {
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--mp-cc-color-accent) 72%, transparent);
+}
+
+.mp-cc-payment--radio-muted .mp-cc-payment-card__radio {
+	opacity: 0.75;
+}
+
+.mp-cc-payment--desc-default .mp-cc-payment-card__desc {
+	color: var(--mp-cc-color-text);
+}
+
+.mp-cc-payment--desc-subtle .mp-cc-payment-card__desc {
+	opacity: 0.8;
+}
+
+.mp-cc-payment-card__radio {
+	margin: 0;
+}
+
+.mp-cc-payment-card__title {
+	font-size: 0.9rem;
+	font-weight: 600;
+}
+
+.mp-cc-payment-card__desc {
+	font-size: 0.78rem;
+	color: var(--mp-cc-color-text-muted);
+	line-height: 1.4;
+}
+
+.mp-cc-payment__state {
+	margin: 0;
+	font-size: 0.78rem;
+	font-weight: 600;
+}
+
+.mp-cc-payment__state--loading {
+	color: var(--mp-cc-color-text-muted);
+}
+
+.mp-cc-payment__state--success {
+	color: #15803d;
+}
+
+.mp-cc-payment__state--error {
+	color: var(--mp-cc-color-error);
+}
+
 @media (max-width: 52rem) {
 	.mp-cc-contact__grid {
 		grid-template-columns: repeat(var(--mp-cc-contact-cols-tablet, 2), minmax(0, 1fr));
@@ -1785,6 +1945,10 @@
 
 	.mp-cc-contact__field--span-2 {
 		grid-column: span 2;
+	}
+
+	.mp-cc-payment__grid {
+		grid-template-columns: repeat(var(--mp-cc-payment-cols-tablet, 2), minmax(0, 1fr));
 	}
 }
 
@@ -1799,6 +1963,10 @@
 
 	.mp-cc-contact__country {
 		flex: 1 1 100%;
+	}
+
+	.mp-cc-payment__grid {
+		grid-template-columns: repeat(var(--mp-cc-payment-cols-mobile, 1), minmax(0, 1fr));
 	}
 
 	.mp-cc-coupon__row {

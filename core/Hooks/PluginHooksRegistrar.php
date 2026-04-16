@@ -8,13 +8,22 @@
 namespace MP\CustomCheckout\Hooks;
 
 use MP\CustomCheckout\DependencyFailureGuard;
-use MP\CustomCheckout\Routing\CheckoutEntryService;
-use MP\CustomCheckout\Routing\CheckoutPermalinkCompatibility;
-use MP\CustomCheckout\Routing\CheckoutRouteController;
-use MP\CustomCheckout\Routing\CheckoutSessionService;
-use MP\CustomCheckout\Routing\CheckoutSuccessController;
-use MP\CustomCheckout\Routing\CheckoutSuccessOrderReceivedRedirect;
-use MP\CustomCheckout\Routing\CheckoutSuccessRouteHooks;
+use MP\CustomCheckout\Checkout\Routing\CheckoutEntryService;
+use MP\CustomCheckout\Checkout\Routing\CheckoutPermalinkCompatibility;
+use MP\CustomCheckout\Checkout\Routing\CheckoutRouteController;
+use MP\CustomCheckout\Checkout\Routing\CheckoutSessionService;
+use MP\CustomCheckout\Checkout\Routing\CheckoutSuccessController;
+use MP\CustomCheckout\Checkout\Routing\CheckoutSuccessOrderReceivedRedirect;
+use MP\CustomCheckout\Checkout\Routing\CheckoutSuccessRouteHooks;
+use MP\CustomCheckout\Admin\Hooks\AdminAssetsHooks;
+use MP\CustomCheckout\Frontend\Hooks\CheckoutEntryFrontendHooks;
+use MP\CustomCheckout\Frontend\Hooks\CheckoutNoJsFallbackHooks;
+use MP\CustomCheckout\Frontend\Hooks\CheckoutSuccessFrontendHooks;
+use MP\CustomCheckout\Frontend\Hooks\FrontendAssetsHooks;
+use MP\CustomCheckout\Checkout\Hooks\CheckoutAjaxHooks;
+use MP\CustomCheckout\Checkout\Hooks\CheckoutEntryAjaxHooks;
+use MP\CustomCheckout\Checkout\Hooks\EmailHooks;
+use MP\CustomCheckout\Checkout\Hooks\OrderMetaHooks;
 
 defined( 'ABSPATH' ) || exit;
 

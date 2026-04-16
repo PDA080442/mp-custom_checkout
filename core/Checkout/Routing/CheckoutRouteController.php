@@ -5,15 +5,18 @@
  * @package MP_Custom_Checkout
  */
 
-namespace MP\CustomCheckout\Routing;
+namespace MP\CustomCheckout\Checkout\Routing;
 
 use MP\CustomCheckout\Hooks\CheckoutRouteHooks;
+use MP\CustomCheckout\Routing\CheckoutEntryGuard;
+use MP\CustomCheckout\Routing\CheckoutRouteConfig;
+use MP\CustomCheckout\Routing\CheckoutRouteContext;
+use MP\CustomCheckout\Routing\CheckoutRouteFallback;
+use MP\CustomCheckout\Routing\CheckoutRouteLogger;
+use MP\CustomCheckout\Routing\CheckoutStepManager;
 
 defined( 'ABSPATH' ) || exit;
 
-/**
- * Class CheckoutRouteController
- */
 final class CheckoutRouteController {
 
 	/**
@@ -31,7 +34,7 @@ final class CheckoutRouteController {
 			return;
 		}
 
-		$step_manager = new CheckoutStepManager();
+		$step_manager   = new CheckoutStepManager();
 		$requested_step = isset( $_GET['step'] ) ? sanitize_key( wp_unslash( $_GET['step'] ) ) : '';
 		if ( '' !== $requested_step ) {
 			$resolved_step = $step_manager->resolve_requested_step( $requested_step );
@@ -55,11 +58,6 @@ final class CheckoutRouteController {
 
 		$context = CheckoutRouteContext::collect();
 
-		/**
-		 * Перед проверками и рендером checkout.
-		 *
-		 * @param array<string, mixed> $context Контекст маршрута.
-		 */
 		do_action( 'mp_custom_checkout_route_before_guard', $context );
 
 		if ( ! CheckoutEntryGuard::can_enter() ) {
@@ -80,11 +78,6 @@ final class CheckoutRouteController {
 			CheckoutRouteFallback::redirect_with_notice( 'template_missing', $context );
 		}
 
-		/**
-		 * Перед выводом шаблона checkout.
-		 *
-		 * @param array<string, mixed> $context Контекст маршрута.
-		 */
 		do_action( 'mp_custom_checkout_route_before_render', $context );
 
 		status_header( 200 );
