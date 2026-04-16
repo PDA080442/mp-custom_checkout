@@ -403,6 +403,12 @@ final class SafeSettingsResolver {
 						'separate_step_enabled' => false,
 						'order'                 => array( 'coupon', 'gift_card' ),
 					),
+					'discount_block_styles' => array(
+						'state_empty'   => 'default',
+						'state_success' => 'success',
+						'state_error'   => 'error',
+						'focus_style'   => 'default',
+					),
 					'coupon_block' => array(
 						'title'           => 'Промокод',
 						'intro'           => 'Введите код купона, если он у вас есть.',

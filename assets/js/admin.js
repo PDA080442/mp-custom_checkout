@@ -157,6 +157,7 @@
 				visible: address.subfields_visible && typeof address.subfields_visible === 'object' ? address.subfields_visible : {}
 			},
 			discountLayout: source.discount_layout && typeof source.discount_layout === 'object' ? source.discount_layout : { placement: 'step_4', separate_step_enabled: false, order: ['coupon', 'gift_card'] },
+			discountStyles: source.discount_block_styles && typeof source.discount_block_styles === 'object' ? source.discount_block_styles : { state_empty: 'default', state_success: 'success', state_error: 'error', focus_style: 'default' },
 			coupon: source.coupon_block && typeof source.coupon_block === 'object' ? source.coupon_block : {},
 			giftCard: source.gift_card_block && typeof source.gift_card_block === 'object' ? source.gift_card_block : {},
 			geoPreview: source.geo_preview && source.geo_preview.enabled !== false,
@@ -445,6 +446,7 @@
 		html += '</div>';
 		html += '<div class="mp-cc-admin-preview__date-rules">';
 		html += '<p><strong>Coupon placement:</strong> ' + escapeHtml(String(cfg.discountLayout.placement || 'step_4')) + ', separate-step ready=' + escapeHtml(cfg.discountLayout.separate_step_enabled ? 'yes' : 'no') + '</p>';
+		html += '<p><strong>Discount styles:</strong> empty=' + escapeHtml(String(cfg.discountStyles.state_empty || 'default')) + ', success=' + escapeHtml(String(cfg.discountStyles.state_success || 'success')) + ', error=' + escapeHtml(String(cfg.discountStyles.state_error || 'error')) + '</p>';
 		html += '</div>';
 		html += '<div class="mp-cc-admin-preview__date-grid">';
 		html += '<article>';
@@ -594,6 +596,11 @@
 		var d = 'mp_custom_checkout_settings[step_4][discount_layout]';
 		cfg.discountLayout.placement = readFormValue(d + '[placement]', cfg.discountLayout.placement || 'step_4');
 		cfg.discountLayout.separate_step_enabled = Boolean(readFormValue(d + '[separate_step_enabled]', cfg.discountLayout.separate_step_enabled));
+		var ds = 'mp_custom_checkout_settings[step_4][discount_block_styles]';
+		cfg.discountStyles.state_empty = readFormValue(ds + '[state_empty]', cfg.discountStyles.state_empty || 'default');
+		cfg.discountStyles.state_success = readFormValue(ds + '[state_success]', cfg.discountStyles.state_success || 'success');
+		cfg.discountStyles.state_error = readFormValue(ds + '[state_error]', cfg.discountStyles.state_error || 'error');
+		cfg.discountStyles.focus_style = readFormValue(ds + '[focus_style]', cfg.discountStyles.focus_style || 'default');
 		var cp = 'mp_custom_checkout_settings[step_4][coupon_block]';
 		cfg.coupon.title = readFormValue(cp + '[title]', cfg.coupon.title || 'Промокод');
 		cfg.coupon.intro = readFormValue(cp + '[intro]', cfg.coupon.intro || '');

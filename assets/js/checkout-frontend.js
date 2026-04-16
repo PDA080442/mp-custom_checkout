@@ -345,6 +345,12 @@
 				separate_step_enabled: false,
 				order: ['coupon', 'gift_card']
 			},
+			discount_block_styles: {
+				state_empty: 'default',
+				state_success: 'success',
+				state_error: 'error',
+				focus_style: 'default'
+			},
 			coupon_block: {
 				title: '',
 				intro: '',
@@ -1550,6 +1556,8 @@
 
 	function buildCouponBlockHtml(state) {
 		var copy = getCouponCopy();
+		var cfg = getStepFourConfig();
+		var styles = cfg.discount_block_styles || {};
 		var rt = state.frontendStore && state.frontendStore.discounts && state.frontendStore.discounts.coupon_runtime
 			? state.frontendStore.discounts.coupon_runtime
 			: { code: '', state: 'empty', message: '' };
@@ -1560,7 +1568,8 @@
 		var runtimeState = String(rt.state || 'empty');
 		var msg = trimNonEmpty(rt.message);
 		var html = '';
-		html += '<article class="mp-cc-coupon mp-cc-coupon--' + escapeHtml(runtimeState) + '" data-coupon-block="1">';
+		var stateClass = runtimeState === 'success' ? String(styles.state_success || 'success') : (runtimeState === 'error' ? String(styles.state_error || 'error') : String(styles.state_empty || 'default'));
+		html += '<article class="mp-cc-coupon mp-cc-coupon--' + escapeHtml(stateClass) + '" data-coupon-block="1">';
 		html += '<h4 class="mp-cc-coupon__title">' + escapeHtml(copy.title) + '</h4>';
 		if (copy.intro) {
 			html += '<p class="mp-cc-coupon__intro">' + escapeHtml(copy.intro) + '</p>';
@@ -1580,10 +1589,9 @@
 				if (!cp) {
 					continue;
 				}
-				html += '<button type="button" class="mp-cc-coupon__chip" data-coupon-remove="' + escapeHtml(cp) + '">';
+				html += '<span class="mp-cc-coupon__chip">';
 				html += '<span>' + escapeHtml(cp) + '</span>';
-				html += '<strong aria-hidden="true">×</strong>';
-				html += '</button>';
+				html += '</span>';
 			}
 			html += '</div>';
 		}
@@ -1593,6 +1601,8 @@
 
 function buildGiftCardBlockHtml(state) {
 		var copy = getGiftCardCopy();
+		var cfg = getStepFourConfig();
+		var styles = cfg.discount_block_styles || {};
 		var rt = state.frontendStore && state.frontendStore.discounts && state.frontendStore.discounts.gift_card_runtime
 			? state.frontendStore.discounts.gift_card_runtime
 			: { code: '', state: 'empty', message: '' };
@@ -1600,7 +1610,8 @@ function buildGiftCardBlockHtml(state) {
 			? state.frontendStore.discounts.gift_card
 			: [];
 		var html = '';
-		html += '<article class="mp-cc-coupon mp-cc-coupon--gift mp-cc-coupon--' + escapeHtml(String(rt.state || 'empty')) + '" data-gift-card-block="1">';
+		var giftStateClass = rt.state === 'success' ? String(styles.state_success || 'success') : (rt.state === 'error' ? String(styles.state_error || 'error') : String(styles.state_empty || 'default'));
+		html += '<article class="mp-cc-coupon mp-cc-coupon--gift mp-cc-coupon--' + escapeHtml(giftStateClass) + '" data-gift-card-block="1">';
 		html += '<h4 class="mp-cc-coupon__title">' + escapeHtml(copy.title) + '</h4>';
 		if (copy.intro) {
 			html += '<p class="mp-cc-coupon__intro">' + escapeHtml(copy.intro) + '</p>';
@@ -3401,6 +3412,9 @@ function buildGiftCardBlockHtml(state) {
 		var scenario = String(state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenario || '') : '');
 		var scenarioRules = getScenarioRulesById(scenario);
 		var scenarioLabel = scenarioRules && scenarioRules.label ? String(scenarioRules.label) : '';
+		var couponLines = Array.isArray(cartSummary.coupon_lines) ? cartSummary.coupon_lines : [];
+		var giftCardCodes = Array.isArray(cartSummary.applied_gift_cards) ? cartSummary.applied_gift_cards : [];
+		var giftCardTotal = String(cartSummary.gift_card_total || '');
 		var pickupPoint = state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.scenarioData
 			? (state.frontendStore.fulfillment.scenarioData.pickup_point || null)
 			: null;
@@ -3455,6 +3469,18 @@ function buildGiftCardBlockHtml(state) {
 				}
 				if (trimNonEmpty(contactAddress)) {
 					html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(getUiText('step_4.address_block_title', 'Адрес')) + ':</strong> ' + escapeHtml(contactAddress) + '</p>';
+				}
+				html += '</div>';
+			}
+			if (couponLines.length || giftCardCodes.length) {
+				html += '<div class="mp-cc-summary-card__scenario" data-final-review-discounts="1">';
+				html += '<p class="mp-cc-summary-card__scenario-title"><strong>' + escapeHtml(getUiText('order_review.discount', 'Скидка')) + '</strong></p>';
+				for (var di = 0; di < couponLines.length; di += 1) {
+					var line = couponLines[di] || {};
+					html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml('Купон ' + String(line.code || '')) + ': ' + escapeHtml(String(line.amount || '')) + '</p>';
+				}
+				if (giftCardCodes.length) {
+					html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml('Подарочная карта ' + giftCardCodes.join(', ')) + ': ' + escapeHtml(giftCardTotal || '—') + '</p>';
 				}
 				html += '</div>';
 			}
@@ -3973,38 +3999,6 @@ function buildGiftCardBlockHtml(state) {
 				}
 				render(state, $app);
 				notify(rt.message, 'error');
-			});
-		});
-
-		$app.find('[data-coupon-remove]').off('click').on('click', function () {
-			ensureDiscountDefaults(state);
-			var code = trimNonEmpty(String($(this).data('coupon-remove') || ''));
-			if (!code) {
-				return;
-			}
-			postCheckout('remove_coupon', {
-				coupon_code: code,
-				context_id: state.flowContextId
-			}).then(function (response) {
-				var data = response && response.data ? response.data : {};
-				var discounts = state.frontendStore.discounts || {};
-				var rt = discounts.coupon_runtime || { code: '', state: 'empty', message: '' };
-				rt.state = 'success';
-				rt.message = trimNonEmpty(data.message) || getUiText('coupon.success', 'Промокод применён');
-				discounts.coupons = Array.isArray(data.applied_coupons) ? data.applied_coupons : [];
-				discounts.coupon_runtime = rt;
-				state.frontendStore.discounts = discounts;
-				if (data.flow || data.cart) {
-					syncFromFlow(state, data.flow || {}, data.cart || {});
-				}
-				render(state, $app);
-			}).fail(function (xhr) {
-				var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
-				notify(trimNonEmpty(payload.message) || getUiText('coupon.error', 'Не удалось применить промокод'), 'error');
-				if (payload.flow || payload.cart) {
-					syncFromFlow(state, payload.flow || {}, payload.cart || {});
-					render(state, $app);
-				}
 			});
 		});
 
