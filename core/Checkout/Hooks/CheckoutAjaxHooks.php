@@ -281,7 +281,18 @@ final class CheckoutAjaxHooks {
 		$order->set_billing_address_1( isset( $contact['address_1'] ) ? (string) $contact['address_1'] : '' );
 		$order->set_billing_address_2( isset( $contact['address_2'] ) ? (string) $contact['address_2'] : '' );
 		$order->set_billing_postcode( isset( $contact['postcode'] ) ? (string) $contact['postcode'] : '' );
+		// Ensure our contact fields/meta are applied before totals calculation.
+		if ( class_exists( '\\MP\\CustomCheckout\\Checkout\\Hooks\\OrderMetaHooks' ) ) {
+			OrderMetaHooks::apply_contact_fields_to_order( $order, array() );
+		}
 		$order->calculate_totals( true );
+		// Persist the remaining meta (scenario/date/conditions/discounts...) after totals are calculated.
+		// Uses in-memory meta updates, persisted together with the final $order->save().
+		if ( class_exists( '\\MP\\CustomCheckout\\Checkout\\Hooks\\OrderMetaHooks' ) ) {
+			OrderMetaHooks::on_checkout_order_created( $order, array() );
+		} else {
+			do_action( 'mp_custom_checkout_save_order_meta', $order, array() );
+		}
 		$order->save();
 		return $order;
 	}
