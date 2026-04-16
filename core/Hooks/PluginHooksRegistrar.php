@@ -16,6 +16,7 @@ use MP\CustomCheckout\Checkout\Routing\CheckoutSuccessController;
 use MP\CustomCheckout\Checkout\Routing\CheckoutSuccessOrderReceivedRedirect;
 use MP\CustomCheckout\Checkout\Routing\CheckoutSuccessRouteHooks;
 use MP\CustomCheckout\Admin\Hooks\AdminAssetsHooks;
+use MP\CustomCheckout\Admin\Hooks\AdminMenuHooks;
 use MP\CustomCheckout\Frontend\Hooks\CheckoutEntryFrontendHooks;
 use MP\CustomCheckout\Frontend\Hooks\CheckoutNoJsFallbackHooks;
 use MP\CustomCheckout\Frontend\Hooks\CheckoutSuccessFrontendHooks;
@@ -38,6 +39,7 @@ final class PluginHooksRegistrar {
 	public static function register(): void {
 		FrontendAssetsHooks::register();
 		AdminAssetsHooks::register();
+		AdminMenuHooks::register();
 		CheckoutNoJsFallbackHooks::register();
 		CheckoutPermalinkCompatibility::register();
 		CheckoutRouteHooks::register();
