@@ -49,6 +49,27 @@ final class CheckoutHealthChecks {
 	}
 
 	/**
+	 * @return array<string, int>
+	 */
+	public static function summary(): array {
+		$checks = self::collect();
+		$summary = array(
+			'ok' => 0,
+			'warn' => 0,
+			'fail' => 0,
+			'total' => count( $checks ),
+		);
+		foreach ( $checks as $row ) {
+			$status = isset( $row['status'] ) ? (string) $row['status'] : 'ok';
+			if ( ! isset( $summary[ $status ] ) ) {
+				continue;
+			}
+			$summary[ $status ]++;
+		}
+		return $summary;
+	}
+
+	/**
 	 * @return array<string, string>
 	 */
 	private static function row( string $name, string $status, string $message ): array {
