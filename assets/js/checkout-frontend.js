@@ -164,7 +164,8 @@
 				},
 				errors: {
 					invalid_date: 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.',
-					empty_date: 'Выберите дату, чтобы продолжить.'
+					empty_date: 'Выберите дату, чтобы продолжить.',
+					conditions_unconfirmed: 'Подтвердите ознакомление с условиями, чтобы продолжить.'
 				},
 				admin_preview: {
 					enabled: true
@@ -365,7 +366,7 @@
 		html += '</div>';
 		html += '<div class="mp-cc-conditions-step__confirm' + (hasError ? ' is-error' : '') + '">';
 		html += '<label class="mp-cc-conditions-step__confirm-label">';
-		html += '<input type="checkbox" data-conditions-confirm="1" ' + (isConfirmed ? 'checked' : '') + ' aria-invalid="' + (hasError ? 'true' : 'false') + '" />';
+		html += '<input type="checkbox" data-conditions-confirm="1" ' + (isConfirmed ? 'checked' : '') + ' aria-invalid="' + (hasError ? 'true' : 'false') + '" aria-required="true" />';
 		html += '<span>' + escapeHtml(getUiText('step_3.confirm_checkbox', 'Я ознакомился с условиями')) + '</span>';
 		html += '</label>';
 		if (hasError) {
@@ -1104,7 +1105,10 @@
 
 		return withTransitionLock(state, $app, function () {
 			runStepTransitionAnimation($app);
-			return postCheckout('session_set_step', { step_id: targetStepId, context_id: state.flowContextId }).then(function () {
+			return postCheckout('session_set_step', { step_id: targetStepId, context_id: state.flowContextId }).then(function (response) {
+				if (!response || !response.success) {
+					return $.Deferred().reject(response).promise();
+				}
 				state.currentStepId = targetStepId;
 				state.frontendStore.steps.current = targetStepId;
 				state.maxReachedIndex = Math.max(state.maxReachedIndex, targetIndex);
@@ -1123,6 +1127,25 @@
 					})
 				);
 				return syncStoreWithBackend(state, $app);
+			}).fail(function (xhr) {
+				var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
+				var code = payload.code ? String(payload.code) : '';
+				if (code === 'conditions_unconfirmed') {
+					state.frontendStore.form.errors = state.frontendStore.form.errors || {};
+					state.frontendStore.form.errors.conditions_unconfirmed = true;
+					var msg = payload.message || getStepThreeErrorCopy('conditions_unconfirmed', 'Подтвердите ознакомление с условиями, чтобы продолжить.');
+					notify(msg, 'error');
+					render(state, $app);
+					document.dispatchEvent(
+						new CustomEvent('mp_cc_conditions_step_blocked', {
+							detail: { code: code, payload: payload }
+						})
+					);
+					return;
+				}
+				if (xhr && xhr.status === 422) {
+					notify(payload.message || getUiText('common.error_generic', 'Произошла ошибка. Попробуйте ещё раз.'), 'error');
+				}
 			});
 		});
 	}

@@ -162,7 +162,17 @@ final class CheckoutSessionService {
 	 * @return array<string, mixed>
 	 */
 	private static function reset_dependent_answers_for_scenario_switch( array $answers, string $scenario ): array {
+		$date_prev  = isset( $answers['date_conditions'] ) && is_array( $answers['date_conditions'] ) ? $answers['date_conditions'] : array();
+		$had_confirm = ! empty( $date_prev['conditions_confirmed'] );
 		$answers['date_conditions'] = array();
+		if ( $had_confirm ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'info',
+				'[conditions_step] reset_on_scenario_switch',
+				array( 'scenario' => $scenario )
+			);
+		}
 
 		$contact = isset( $answers['contact_billing'] ) && is_array( $answers['contact_billing'] ) ? $answers['contact_billing'] : array();
 		$field_rules = CheckoutScenarioRules::build( $scenario );
