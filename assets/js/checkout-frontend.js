@@ -22,6 +22,7 @@
 	};
 	var animationDurationMs = 180;
 	var draftSaveTimer = null;
+	var pendingCheckoutRequests = 0;
 
 	function getUiText(path, fallback) {
 		var source = (window.mpCcCheckout && window.mpCcCheckout.uiText) ? window.mpCcCheckout.uiText : {};
@@ -907,6 +908,55 @@
 		state.frontendStore.runtime.prePaymentConfirm = false;
 	}
 
+	function isPaymentSubmissionLocked(state) {
+		return !!(state && state.frontendStore && state.frontendStore.runtime && state.frontendStore.runtime.paymentSubmitting);
+	}
+
+	function submitFinalPayment(state, $app) {
+		if (!state || !state.frontendStore) {
+			return;
+		}
+		state.frontendStore.runtime = state.frontendStore.runtime || {};
+		if (isPaymentSubmissionLocked(state)) {
+			notify(getUiText('order_review.payment_in_progress', 'Оплата уже отправляется. Подождите.'), 'info');
+			return;
+		}
+		if (pendingCheckoutRequests > 0) {
+			notify(getUiText('order_review.payment_wait_requests', 'Дождитесь завершения фоновых операций и повторите оплату.'), 'error');
+			return;
+		}
+		state.frontendStore.runtime.paymentSubmitting = true;
+		state.frontendStore.payment = state.frontendStore.payment || { gateway: '', state: 'idle' };
+		state.frontendStore.payment.state = 'syncing';
+		render(state, $app);
+		postCheckout('submit_payment', {
+			context_id: state.flowContextId
+		}).then(function (response) {
+			var data = response && response.data ? response.data : {};
+			state.frontendStore.runtime.paymentSubmitting = false;
+			state.frontendStore.payment.state = 'success';
+			if (data.flow || data.cart) {
+				syncFromFlow(state, data.flow || {}, data.cart || {});
+			}
+			render(state, $app);
+			if (data && data.confirmed && trimNonEmpty(data.success_url)) {
+				window.location.href = String(data.success_url);
+				return;
+			}
+			notify(getUiText('order_review.payment_unconfirmed', 'Платёж не подтверждён. Проверьте состояние заказа.'), 'error');
+		}).fail(function (xhr) {
+			var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
+			state.frontendStore.runtime.paymentSubmitting = false;
+			state.frontendStore.payment.state = 'error';
+			if (payload.flow || payload.cart) {
+				syncFromFlow(state, payload.flow || {}, payload.cart || {});
+			}
+			render(state, $app);
+			saveCurrentStepDraft(state);
+			notify(trimNonEmpty(payload.message) || getUiText('order_review.payment_submit_failed', 'Не удалось отправить оплату. Попробуйте ещё раз.'), 'error');
+		});
+	}
+
 	function maybeSendGatewayRenderDiagnostics(state, issues) {
 		var cfg = getStepFourConfig();
 		var pb = cfg.payment_block && typeof cfg.payment_block === 'object' ? cfg.payment_block : {};
@@ -1472,7 +1522,7 @@
 		}
 		maybeSendGatewayRenderDiagnostics(state, diagnosticsIssues);
 		var html = '';
-		html += '<section class="mp-cc-payment mp-cc-payment--' + escapeHtml(trimNonEmpty(pb.card_style) || 'default') + ' mp-cc-payment--radio-' + escapeHtml(trimNonEmpty(pb.radio_style) || 'default') + ' mp-cc-payment--desc-' + escapeHtml(trimNonEmpty(pb.description_style) || 'muted') + '" aria-labelledby="mp-cc-payment-title">';
+		html += '<section class="mp-cc-payment mp-cc-payment--' + escapeHtml(trimNonEmpty(pb.card_style) || 'default') + ' mp-cc-payment--radio-' + escapeHtml(trimNonEmpty(pb.radio_style) || 'default') + ' mp-cc-payment--desc-' + escapeHtml(trimNonEmpty(pb.description_style) || 'muted') + (paymentState === 'syncing' ? ' is-loading' : '') + '" aria-labelledby="mp-cc-payment-title">';
 		html += '<header class="mp-cc-payment__header">';
 		html += '<h4 class="mp-cc-payment__title" id="mp-cc-payment-title">' + escapeHtml(title) + '</h4>';
 		if (intro) {
@@ -2608,7 +2658,8 @@ function buildGiftCardBlockHtml(state) {
 				dirty: false,
 				lastSyncAt: Date.now(),
 				summaryHydrated: false,
-				prePaymentConfirm: false
+				prePaymentConfirm: false,
+				paymentSubmitting: false
 			},
 			meta: {
 				contextId: flow.context_id || '',
@@ -2704,7 +2755,7 @@ function buildGiftCardBlockHtml(state) {
 			return $.Deferred().resolve({ success: true }).promise();
 		}
 
-		return $.ajax({
+		var request = $.ajax({
 			url: localized.ajaxUrl,
 			method: 'POST',
 			dataType: 'json',
@@ -2718,6 +2769,11 @@ function buildGiftCardBlockHtml(state) {
 				payload || {}
 			)
 		});
+		pendingCheckoutRequests += 1;
+		request.always(function () {
+			pendingCheckoutRequests = Math.max(0, pendingCheckoutRequests - 1);
+		});
+		return request;
 	}
 
 	function stepKeyById(stepId) {
@@ -3059,7 +3115,7 @@ function buildGiftCardBlockHtml(state) {
 						}
 					})
 				);
-				notify(getUiText('order_review.payment_redirect', 'Финальная проверка пройдена. Можно запускать оплату.'), 'info');
+				submitFinalPayment(state, $app);
 			}
 			return;
 		}
@@ -3567,6 +3623,7 @@ function buildGiftCardBlockHtml(state) {
 		var isFirst = currentIndex <= 0;
 		var isLast = currentIndex >= state.visibleSteps.length - 1;
 		var isLoading = !!(state.frontendStore && state.frontendStore.runtime && state.frontendStore.runtime.loading);
+		var isPaymentSubmitting = isPaymentSubmissionLocked(state);
 		var isDirty = !!(state.frontendStore && state.frontendStore.runtime && state.frontendStore.runtime.dirty);
 		var cartSummary = state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart.summary || {} : {};
 		var isCartEmpty = (state.currentStepId === 'cart') && Number(cartSummary.items_count || 0) <= 0;
@@ -3590,9 +3647,12 @@ function buildGiftCardBlockHtml(state) {
 		var html = '';
 
 		html += '<nav class="mp-cc-nav" aria-label="Step navigation">';
-		html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--back" data-nav="back"' + (isFirst || isLoading ? ' disabled' : '') + '>' + escapeHtml(backLabel) + '</button>';
-		html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--next' + (isPreReviewPending ? ' mp-cc-nav__btn--review' : '') + '" data-nav="next"' + (isLoading || isCartEmpty ? ' disabled' : '') + '>' + escapeHtml(nextText) + '</button>';
+		html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--back" data-nav="back"' + (isFirst || isLoading || isPaymentSubmitting ? ' disabled' : '') + '>' + escapeHtml(backLabel) + '</button>';
+		html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--next' + (isPreReviewPending ? ' mp-cc-nav__btn--review' : '') + '" data-nav="next"' + (isLoading || isCartEmpty || isPaymentSubmitting ? ' disabled' : '') + '>' + escapeHtml(nextText) + '</button>';
 		html += '</nav>';
+		if (isPaymentSubmitting) {
+			html += '<p class="mp-cc-nav__review-mode" role="status" aria-live="polite">' + escapeHtml(getUiText('order_review.payment_loading', 'Отправляем оплату, пожалуйста подождите...')) + '</p>';
+		}
 		if (isPreReviewPending) {
 			html += '<p class="mp-cc-nav__review-mode" role="status" aria-live="polite">' + escapeHtml(getUiText('order_review.pre_payment_mode', 'Режим проверки: перед оплатой подтвердите данные на экране справа.')) + '</p>';
 		}
