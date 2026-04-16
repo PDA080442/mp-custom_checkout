@@ -1541,6 +1541,9 @@
 		var rt = state.frontendStore && state.frontendStore.discounts && state.frontendStore.discounts.coupon_runtime
 			? state.frontendStore.discounts.coupon_runtime
 			: { code: '', state: 'empty', message: '' };
+		var appliedCoupons = state.frontendStore && state.frontendStore.discounts && Array.isArray(state.frontendStore.discounts.coupons)
+			? state.frontendStore.discounts.coupons
+			: [];
 		var code = String(rt.code || '');
 		var runtimeState = String(rt.state || 'empty');
 		var msg = trimNonEmpty(rt.message);
@@ -1557,6 +1560,20 @@
 		html += '</div>';
 		if (msg) {
 			html += '<p class="mp-cc-field-hint' + (runtimeState === 'error' ? ' mp-cc-field-error' : '') + '" data-coupon-message="1">' + escapeHtml(msg) + '</p>';
+		}
+		if (appliedCoupons.length) {
+			html += '<div class="mp-cc-coupon__applied" data-coupon-list="1">';
+			for (var i = 0; i < appliedCoupons.length; i += 1) {
+				var cp = String(appliedCoupons[i] || '');
+				if (!cp) {
+					continue;
+				}
+				html += '<button type="button" class="mp-cc-coupon__chip" data-coupon-remove="' + escapeHtml(cp) + '">';
+				html += '<span>' + escapeHtml(cp) + '</span>';
+				html += '<strong aria-hidden="true">×</strong>';
+				html += '</button>';
+			}
+			html += '</div>';
 		}
 		html += '</article>';
 		return html;
@@ -2442,6 +2459,9 @@
 				{
 					items_count: 0,
 					subtotal: '',
+					total: '',
+					discount: '',
+					applied_coupons: [],
 					catalog_url: fallbackCatalogUrl
 				},
 				safeSummary
@@ -2496,6 +2516,7 @@
 
 	function syncFromFlow(state, flow, cartPayload) {
 		var nextFlow = flow || {};
+		var prevRuntime = state.frontendStore && state.frontendStore.discounts ? state.frontendStore.discounts.coupon_runtime : null;
 		state.context.checkout_flow = nextFlow;
 		if (cartPayload && typeof cartPayload === 'object') {
 			state.context.cart = normalizeCartPayload(cartPayload);
@@ -2515,6 +2536,10 @@
 		var contextCart = normalizeCartPayload(state.context && state.context.cart ? state.context.cart : {});
 		state.frontendStore.cart.items = contextCart.items;
 		state.frontendStore.cart.summary = contextCart.summary;
+		ensureDiscountDefaults(state);
+		if (prevRuntime && typeof prevRuntime === 'object') {
+			state.frontendStore.discounts.coupon_runtime = $.extend({}, prevRuntime);
+		}
 		applyScenarioFieldAvailability(state);
 	}
 
@@ -3335,7 +3360,7 @@
 		var showPlaceholders = !runtime.summaryHydrated;
 		var itemsCount = cartSummary.items_count || snapshot.items_count || 0;
 		var subtotalText = cartSummary.subtotal || '';
-		var totalText = snapshot.total || subtotalText || '';
+		var totalText = cartSummary.total || snapshot.total || subtotalText || '';
 		var displayAmount = state.currentStepId === 'cart' ? subtotalText : totalText;
 		var amountLabel = state.currentStepId === 'cart'
 			? getStepOneLabel(state, 'subtotal_label', 'step_1.subtotal', 'Subtotal')
@@ -3883,19 +3908,71 @@
 			if (!code) {
 				rt.state = 'error';
 				rt.message = copy.emptyMessage;
-			} else if (code.length >= 4 && code.toLowerCase().indexOf('err') !== 0) {
-				rt.state = 'success';
-				rt.message = copy.successMessage;
-				discounts.coupons = [code];
-			} else {
-				rt.state = 'error';
-				rt.message = copy.errorMessage;
+				discounts.coupon_runtime = rt;
+				state.frontendStore.discounts = discounts;
+				render(state, $app);
+				return;
 			}
-			discounts.coupon_runtime = rt;
-			state.frontendStore.discounts = discounts;
-			render(state, $app);
-			saveDiscountDraft(state).fail(function () {
-				notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
+			postCheckout('apply_coupon', {
+				coupon_code: code,
+				context_id: state.flowContextId
+			}).then(function (response) {
+				var data = response && response.data ? response.data : {};
+				rt.state = 'success';
+				rt.message = trimNonEmpty(data.message) || copy.successMessage;
+				discounts.coupons = Array.isArray(data.applied_coupons) ? data.applied_coupons : discounts.coupons;
+				discounts.coupon_runtime = rt;
+				state.frontendStore.discounts = discounts;
+				if (data.flow || data.cart) {
+					syncFromFlow(state, data.flow || {}, data.cart || {});
+				}
+				render(state, $app);
+			}).fail(function (xhr) {
+				var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
+				rt.state = 'error';
+				rt.message = trimNonEmpty(payload.message) || copy.errorMessage;
+				if (Array.isArray(payload.applied_coupons)) {
+					discounts.coupons = payload.applied_coupons;
+				}
+				discounts.coupon_runtime = rt;
+				state.frontendStore.discounts = discounts;
+				if (payload.flow || payload.cart) {
+					syncFromFlow(state, payload.flow || {}, payload.cart || {});
+				}
+				render(state, $app);
+				notify(rt.message, 'error');
+			});
+		});
+
+		$app.find('[data-coupon-remove]').off('click').on('click', function () {
+			ensureDiscountDefaults(state);
+			var code = trimNonEmpty(String($(this).data('coupon-remove') || ''));
+			if (!code) {
+				return;
+			}
+			postCheckout('remove_coupon', {
+				coupon_code: code,
+				context_id: state.flowContextId
+			}).then(function (response) {
+				var data = response && response.data ? response.data : {};
+				var discounts = state.frontendStore.discounts || {};
+				var rt = discounts.coupon_runtime || { code: '', state: 'empty', message: '' };
+				rt.state = 'success';
+				rt.message = trimNonEmpty(data.message) || getUiText('coupon.success', 'Промокод применён');
+				discounts.coupons = Array.isArray(data.applied_coupons) ? data.applied_coupons : [];
+				discounts.coupon_runtime = rt;
+				state.frontendStore.discounts = discounts;
+				if (data.flow || data.cart) {
+					syncFromFlow(state, data.flow || {}, data.cart || {});
+				}
+				render(state, $app);
+			}).fail(function (xhr) {
+				var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
+				notify(trimNonEmpty(payload.message) || getUiText('coupon.error', 'Не удалось применить промокод'), 'error');
+				if (payload.flow || payload.cart) {
+					syncFromFlow(state, payload.flow || {}, payload.cart || {});
+					render(state, $app);
+				}
 			});
 		});
 
