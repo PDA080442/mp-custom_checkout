@@ -91,6 +91,9 @@ final class CheckoutRouteContext {
 			'summary'  => array(
 				'items_count' => 0,
 				'subtotal'    => '',
+				'total'       => '',
+				'discount'    => '',
+				'applied_coupons' => array(),
 				'catalog_url' => '',
 			),
 		);
@@ -155,6 +158,9 @@ final class CheckoutRouteContext {
 
 		$result['summary']['items_count'] = (int) $cart->get_cart_contents_count();
 		$result['summary']['subtotal']    = (string) $cart->get_cart_subtotal();
+		$result['summary']['total']       = (string) wc_price( (float) $cart->get_total( 'edit' ) );
+		$result['summary']['discount']    = (string) wc_price( (float) $cart->get_discount_total() );
+		$result['summary']['applied_coupons'] = array_values( $cart->get_applied_coupons() );
 		$catalog_url                      = function_exists( 'wc_get_page_permalink' ) ? wc_get_page_permalink( 'shop' ) : '';
 		$result['summary']['catalog_url'] = is_string( $catalog_url ) && '' !== $catalog_url ? $catalog_url : home_url( '/' );
 
