@@ -50,6 +50,24 @@ final class SafeSettingsResolver {
 					'route_slug'          => 'mp-checkout',
 					'require_entry_gate'  => true,
 					'success_route_slug'  => 'mp-checkout-success',
+					'admin_branding'      => array(
+						'title'         => 'MP Custom Checkout — Настройки',
+						'description'   => 'Единый экран управления сценариями checkout, текстами, валидацией и визуальным поведением шагов.',
+						'onboarding'    => 'Сначала проверьте вкладку Общие, затем настройте шаги и только после этого стили.',
+						'icon'          => 'dashicons-cart',
+						'accent_color'  => '#2271b1',
+						'help_style'    => 'soft',
+						'ui_tokens'     => array(
+							'bg'            => '#ffffff',
+							'surface'       => '#fcfcfc',
+							'border'        => '#dcdcde',
+							'text'          => '#1f2328',
+							'muted'         => '#4b5563',
+							'risk_bg'       => '#fff7f7',
+							'risk_border'   => '#fca5a5',
+						),
+						'preview_enabled' => true,
+					),
 				);
 				continue;
 			}
