@@ -12,8 +12,11 @@ use MP\CustomCheckout\Integrations\WooCommerce\GiftCardIntegration;
 use MP\CustomCheckout\Routing\CheckoutDateAvailabilityEngine;
 use MP\CustomCheckout\Routing\CheckoutRouteContext;
 use MP\CustomCheckout\Routing\CheckoutScenarioRules;
+use MP\CustomCheckout\Routing\CheckoutSuccessRouteConfig;
 use MP\CustomCheckout\Checkout\Routing\CheckoutSessionService;
 use MP\CustomCheckout\Routing\CheckoutStepManager;
+use MP\CustomCheckout\Settings\DefaultFeatureFlagsRegistry;
+use MP\CustomCheckout\Settings\FeatureFlagResolver;
 use MP\CustomCheckout\Settings\SafeSettingsResolver;
 use MP\CustomCheckout\Settings\ScenarioStepRegistry;
 
@@ -94,6 +97,9 @@ final class CheckoutAjaxHooks {
 		if ( 'set_payment_gateway' === $sub_action ) {
 			self::handle_set_payment_gateway();
 		}
+		if ( 'submit_payment' === $sub_action ) {
+			self::handle_submit_payment();
+		}
 		if ( 'validation_log' === $sub_action ) {
 			$step_id = isset( $_POST['step_id'] ) ? sanitize_key( wp_unslash( $_POST['step_id'] ) ) : '';
 			$errors  = isset( $_POST['errors'] ) && is_array( $_POST['errors'] ) ? wp_unslash( $_POST['errors'] ) : array();
@@ -149,7 +155,7 @@ final class CheckoutAjaxHooks {
 	}
 
 	private static function is_session_sub_action( string $sub_action ): bool {
-		return in_array( $sub_action, array( 'session_set_step', 'session_set_answers', 'session_set_scenario', 'session_get_state', 'session_abandon', 'update_quantity', 'remove_item', 'validation_log', 'apply_coupon', 'remove_coupon', 'apply_gift_card', 'set_payment_gateway', 'gateway_render_diagnostics' ), true );
+		return in_array( $sub_action, array( 'session_set_step', 'session_set_answers', 'session_set_scenario', 'session_get_state', 'session_abandon', 'update_quantity', 'remove_item', 'validation_log', 'apply_coupon', 'remove_coupon', 'apply_gift_card', 'set_payment_gateway', 'gateway_render_diagnostics', 'submit_payment' ), true );
 	}
 
 	private static function handle_set_payment_gateway(): void {
@@ -178,6 +184,106 @@ final class CheckoutAjaxHooks {
 		$contact['gateway']     = $gateway;
 		CheckoutSessionService::set_step_answers( 'contact_payment', $contact );
 		wp_send_json_success( array( 'sub_action' => 'set_payment_gateway', 'payment_gateway' => $gateway, 'flow' => self::build_flow_payload(), 'cart' => CheckoutRouteContext::get_cart_data() ) );
+	}
+
+	private static function handle_submit_payment(): void {
+		if ( ! function_exists( 'WC' ) || ! WC() || ! WC()->cart instanceof \WC_Cart ) {
+			wp_send_json_error( array( 'code' => 'cart_unavailable', 'message' => __( 'Корзина недоступна.', 'mp-custom-checkout' ) ), 503 );
+		}
+		$cart = WC()->cart;
+		if ( $cart->is_empty() ) {
+			wp_send_json_error( array( 'code' => 'empty_cart', 'message' => __( 'Корзина пуста. Невозможно отправить оплату.', 'mp-custom-checkout' ) ), 422 );
+		}
+		$flow    = CheckoutSessionService::get_flow();
+		$answers = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : array();
+		$contact = isset( $answers['contact_billing'] ) && is_array( $answers['contact_billing'] ) ? $answers['contact_billing'] : array();
+		$gateway = isset( $contact['payment_gateway'] ) ? sanitize_key( (string) $contact['payment_gateway'] ) : '';
+		if ( '' === $gateway ) {
+			wp_send_json_error( array( 'code' => 'gateway_missing', 'message' => __( 'Не выбран способ оплаты.', 'mp-custom-checkout' ) ), 422 );
+		}
+		$pm = WC()->payment_gateways();
+		if ( ! $pm instanceof \WC_Payment_Gateways ) {
+			wp_send_json_error( array( 'code' => 'gateway_unavailable', 'message' => __( 'Платёжные шлюзы недоступны.', 'mp-custom-checkout' ) ), 503 );
+		}
+		$available = $pm->get_available_payment_gateways();
+		if ( ! isset( $available[ $gateway ] ) ) {
+			wp_send_json_error( array( 'code' => 'gateway_not_available', 'message' => __( 'Выбранный способ оплаты недоступен.', 'mp-custom-checkout' ) ), 422 );
+		}
+		$wc_session = WC()->session;
+		$lock_key   = 'mp_cc_payment_submit_lock';
+		if ( $wc_session instanceof \WC_Session ) {
+			$last_lock = (int) $wc_session->get( $lock_key, 0 );
+			if ( $last_lock > 0 && ( time() - $last_lock ) < 8 ) {
+				wp_send_json_error( array( 'code' => 'payment_locked', 'message' => __( 'Оплата уже отправляется. Подождите завершения операции.', 'mp-custom-checkout' ) ), 429 );
+			}
+			$wc_session->set( $lock_key, time() );
+		}
+		try {
+			$order = self::create_order_from_cart_and_answers( $contact, $gateway );
+			if ( ! $order instanceof \WC_Order ) {
+				throw new \RuntimeException( __( 'Не удалось создать заказ для оплаты.', 'mp-custom-checkout' ) );
+			}
+			$gateway_obj = $available[ $gateway ];
+			if ( ! $gateway_obj instanceof \WC_Payment_Gateway ) {
+				throw new \RuntimeException( __( 'Ошибка инициализации способа оплаты.', 'mp-custom-checkout' ) );
+			}
+			$is_testing = FeatureFlagResolver::is_enabled( DefaultFeatureFlagsRegistry::FLAG_CHECKOUT_TESTING_MODE, false );
+			if ( $is_testing ) {
+				$order->payment_complete();
+				$order->add_order_note( 'MP CC testing mode: payment auto-confirmed.' );
+				$cart->empty_cart( false );
+				$success_url = CheckoutSuccessRouteConfig::get_success_url( (int) $order->get_id(), (string) $order->get_order_key() );
+				wp_send_json_success( array( 'sub_action' => 'submit_payment', 'status' => 'success', 'confirmed' => true, 'success_url' => $success_url, 'order_id' => (int) $order->get_id(), 'flow' => self::build_flow_payload(), 'cart' => CheckoutRouteContext::get_cart_data() ) );
+			}
+			$result = $gateway_obj->process_payment( (int) $order->get_id() );
+			$result = is_array( $result ) ? $result : array();
+			$status = isset( $result['result'] ) ? (string) $result['result'] : '';
+			if ( 'success' !== $status ) {
+				throw new \RuntimeException( __( 'Платежный шлюз вернул ошибку отправки.', 'mp-custom-checkout' ) );
+			}
+			$success_url = CheckoutSuccessRouteConfig::get_success_url( (int) $order->get_id(), (string) $order->get_order_key() );
+			$cart->empty_cart( false );
+			wp_send_json_success( array( 'sub_action' => 'submit_payment', 'status' => 'success', 'confirmed' => true, 'success_url' => $success_url, 'order_id' => (int) $order->get_id(), 'gateway_redirect' => isset( $result['redirect'] ) ? (string) $result['redirect'] : '', 'flow' => self::build_flow_payload(), 'cart' => CheckoutRouteContext::get_cart_data() ) );
+		} catch ( \Throwable $e ) {
+			do_action( 'mp_custom_checkout_log', 'error', '[payment_submit] failed', array( 'message' => $e->getMessage(), 'gateway' => $gateway ) );
+			wp_send_json_error( array( 'code' => 'payment_submit_failed', 'message' => __( 'Не удалось отправить оплату. Проверьте данные и попробуйте снова.', 'mp-custom-checkout' ), 'flow' => self::build_flow_payload(), 'cart' => CheckoutRouteContext::get_cart_data() ), 422 );
+		} finally {
+			if ( $wc_session instanceof \WC_Session ) {
+				$wc_session->set( $lock_key, 0 );
+			}
+		}
+	}
+
+	private static function create_order_from_cart_and_answers( array $contact, string $gateway ): ?\WC_Order {
+		if ( ! function_exists( 'wc_create_order' ) || ! function_exists( 'WC' ) || ! WC()->cart instanceof \WC_Cart ) {
+			return null;
+		}
+		$order = wc_create_order();
+		if ( ! $order instanceof \WC_Order ) {
+			return null;
+		}
+		foreach ( WC()->cart->get_cart() as $item ) {
+			$product = isset( $item['data'] ) && $item['data'] instanceof \WC_Product ? $item['data'] : null;
+			$qty     = isset( $item['quantity'] ) ? (int) $item['quantity'] : 0;
+			if ( ! $product || $qty <= 0 ) {
+				continue;
+			}
+			$order->add_product( $product, $qty );
+		}
+		$order->set_payment_method( $gateway );
+		$order->set_billing_first_name( isset( $contact['billing_first_name'] ) ? (string) $contact['billing_first_name'] : '' );
+		$order->set_billing_last_name( isset( $contact['billing_last_name'] ) ? (string) $contact['billing_last_name'] : '' );
+		$order->set_billing_email( isset( $contact['billing_email'] ) ? (string) $contact['billing_email'] : '' );
+		$order->set_billing_phone( isset( $contact['billing_phone'] ) ? (string) $contact['billing_phone'] : '' );
+		$order->set_billing_country( isset( $contact['country'] ) ? (string) $contact['country'] : '' );
+		$order->set_billing_state( isset( $contact['state'] ) ? (string) $contact['state'] : '' );
+		$order->set_billing_city( isset( $contact['city'] ) ? (string) $contact['city'] : '' );
+		$order->set_billing_address_1( isset( $contact['address_1'] ) ? (string) $contact['address_1'] : '' );
+		$order->set_billing_address_2( isset( $contact['address_2'] ) ? (string) $contact['address_2'] : '' );
+		$order->set_billing_postcode( isset( $contact['postcode'] ) ? (string) $contact['postcode'] : '' );
+		$order->calculate_totals( true );
+		$order->save();
+		return $order;
 	}
 
 	private static function validate_context_id(): bool {

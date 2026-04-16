@@ -1817,6 +1817,11 @@
 	padding-top: 0.35rem;
 }
 
+.mp-cc-payment.is-loading {
+	opacity: 0.72;
+	pointer-events: none;
+}
+
 .mp-cc-payment__header {
 	display: grid;
 	gap: 0.25rem;
