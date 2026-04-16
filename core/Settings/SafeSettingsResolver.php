@@ -398,6 +398,28 @@ final class SafeSettingsResolver {
 							),
 						),
 					),
+					'discount_layout' => array(
+						'placement'             => 'step_4',
+						'separate_step_enabled' => false,
+						'order'                 => array( 'coupon', 'gift_card' ),
+					),
+					'coupon_block' => array(
+						'title'           => 'Промокод',
+						'intro'           => 'Введите код купона, если он у вас есть.',
+						'input_label'     => 'Код купона',
+						'placeholder'     => 'Например, SPRING10',
+						'apply_label'     => 'Применить',
+						'empty_message'   => 'Введите код купона.',
+						'success_message' => 'Промокод применён.',
+						'error_message'   => 'Не удалось применить промокод.',
+					),
+					'gift_card_block' => array(
+						'title'       => 'Подарочная карта',
+						'intro'       => 'Введите код подарочной карты.',
+						'input_label' => 'Код подарочной карты',
+						'placeholder' => 'Например, GIFT-123',
+						'apply_label' => 'Применить',
+					),
 					'geo_preview' => array(
 						'enabled' => true,
 					),
