@@ -7,6 +7,7 @@
 
 namespace MP\CustomCheckout\Admin\Hooks;
 
+use MP\CustomCheckout\Admin\Config\AdminTabRegistry;
 use MP\CustomCheckout\Settings\AdminSectionsRegistry;
 use MP\CustomCheckout\Settings\OptionKeys;
 use MP\CustomCheckout\Settings\SafeSettingsResolver;
@@ -106,11 +107,10 @@ final class AdminMenuHooks {
 		$stored   = is_array( $stored ) ? $stored : array();
 		$settings = array_replace_recursive( $defaults, $stored );
 		$sections   = AdminSectionsRegistry::sections();
+		$tabs       = AdminTabRegistry::tabs();
 		$tab_ids    = array();
-		foreach ( $sections as $section_id => $meta ) {
-			if ( isset( $meta['type'] ) && 'tab' === $meta['type'] ) {
-				$tab_ids[] = (string) $section_id;
-			}
+		foreach ( $tabs as $tab_meta ) {
+			$tab_ids[] = isset( $tab_meta['id'] ) ? (string) $tab_meta['id'] : '';
 		}
 		$active_tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( (string) $_GET['tab'] ) ) : '';
 		if ( '' === $active_tab || ! in_array( $active_tab, $tab_ids, true ) ) {
@@ -120,7 +120,6 @@ final class AdminMenuHooks {
 		if ( ! in_array( $layout, array( 'top', 'side' ), true ) ) {
 			$layout = 'top';
 		}
-		$page_url = admin_url( 'admin.php?page=' . self::PAGE_SLUG );
 		?>
 		<div class="wrap mp-cc-admin-shell mp-cc-admin-shell--<?php echo esc_attr( $layout ); ?>">
 			<h1><?php esc_html_e( 'MP Custom Checkout — Настройки', 'mp-custom-checkout' ); ?></h1>
@@ -138,10 +137,10 @@ final class AdminMenuHooks {
 
 			<div class="mp-cc-admin-shell__grid">
 				<nav class="mp-cc-admin-shell__tabs" aria-label="<?php esc_attr_e( 'Навигация разделов', 'mp-custom-checkout' ); ?>">
-					<?php foreach ( $sections as $section_id => $meta ) : ?>
-						<?php if ( ! isset( $meta['type'] ) || 'tab' !== $meta['type'] ) { continue; } ?>
+					<?php foreach ( $tabs as $tab_meta ) : ?>
 						<?php
-						$label = isset( $meta['label'] ) ? (string) $meta['label'] : (string) $section_id;
+						$section_id = isset( $tab_meta['id'] ) ? (string) $tab_meta['id'] : '';
+						$label = isset( $tab_meta['label'] ) ? (string) $tab_meta['label'] : (string) $section_id;
 						$url   = add_query_arg(
 							array(
 								'page'       => self::PAGE_SLUG,
@@ -158,7 +157,7 @@ final class AdminMenuHooks {
 				<div class="mp-cc-admin-shell__content">
 					<form method="post" action="<?php echo esc_url( admin_url( 'options.php' ) ); ?>" data-mp-cc-admin-settings-form="1">
 						<?php settings_fields( self::OPTION_GROUP ); ?>
-						<?php self::render_tab_fields( (string) $active_tab, $settings ); ?>
+						<?php self::render_tab_fields( (string) $active_tab, $settings, $tabs ); ?>
 						<p class="submit">
 							<button type="submit" class="button button-primary"><?php esc_html_e( 'Сохранить настройки', 'mp-custom-checkout' ); ?></button>
 						</p>
@@ -187,11 +186,20 @@ final class AdminMenuHooks {
 
 	/**
 	 * @param array<string, mixed> $settings
+	 * @param array<string, array<string, mixed>> $tabs
 	 */
-	private static function render_tab_fields( string $tab_id, array $settings ): void {
+	private static function render_tab_fields( string $tab_id, array $settings, array $tabs ): void {
 		$section_value = isset( $settings[ $tab_id ] ) ? $settings[ $tab_id ] : array();
 		$title = isset( AdminSectionsRegistry::sections()[ $tab_id ]['label'] ) ? (string) AdminSectionsRegistry::sections()[ $tab_id ]['label'] : $tab_id;
+		$description = isset( $tabs[ $tab_id ]['description'] ) ? (string) $tabs[ $tab_id ]['description'] : '';
+		$onboarding = isset( $tabs[ $tab_id ]['onboarding'] ) ? (string) $tabs[ $tab_id ]['onboarding'] : '';
 		echo '<h2>' . esc_html( $title ) . '</h2>';
+		if ( '' !== $description ) {
+			echo '<p class="mp-cc-admin-shell__tab-description">' . esc_html( $description ) . '</p>';
+		}
+		if ( '' !== $onboarding ) {
+			echo '<p class="mp-cc-admin-shell__tab-onboarding"><strong>' . esc_html__( 'Onboarding:', 'mp-custom-checkout' ) . '</strong> ' . esc_html( $onboarding ) . '</p>';
+		}
 		echo '<div class="mp-cc-admin-shell__fields">';
 		self::render_field_group( OptionKeys::MAIN . '[' . $tab_id . ']', $section_value, $tab_id );
 		echo '</div>';
@@ -211,10 +219,11 @@ final class AdminMenuHooks {
 			$child_name = $name_prefix . '[' . $key_str . ']';
 			$child_path = $path . '.' . $key_str;
 			if ( is_array( $child ) && ! self::is_list_array( $child ) ) {
-				echo '<section class="mp-cc-admin-shell__fieldset">';
-				echo '<h3>' . esc_html( str_replace( '_', ' ', $key_str ) ) . '</h3>';
+				$group_type = self::detect_group_type( $key_str, $child_path );
+				echo '<details class="mp-cc-admin-shell__fieldset" open>';
+				echo '<summary><span>' . esc_html( str_replace( '_', ' ', $key_str ) ) . '</span><em class="mp-cc-admin-shell__type-badge mp-cc-admin-shell__type-badge--' . esc_attr( $group_type ) . '">' . esc_html( self::group_type_label( $group_type ) ) . '</em></summary>';
 				self::render_field_group( $child_name, $child, $child_path );
-				echo '</section>';
+				echo '</details>';
 				continue;
 			}
 			self::render_leaf_input( $child_name, $child, $child_path );
@@ -245,6 +254,38 @@ final class AdminMenuHooks {
 		}
 		echo '<code class="mp-cc-admin-shell__field-path">' . esc_html( $path ) . '</code>';
 		echo '</label>';
+	}
+
+	private static function detect_group_type( string $key, string $path ): string {
+		$haystack = strtolower( $key . ' ' . $path );
+		if ( false !== strpos( $haystack, 'valid' ) || false !== strpos( $haystack, 'error' ) || false !== strpos( $haystack, 'required' ) ) {
+			return 'validation';
+		}
+		if ( false !== strpos( $haystack, 'style' ) || false !== strpos( $haystack, 'color' ) || false !== strpos( $haystack, 'theme' ) || false !== strpos( $haystack, 'token' ) ) {
+			return 'styles';
+		}
+		if ( false !== strpos( $haystack, 'responsive' ) || false !== strpos( $haystack, 'mobile' ) || false !== strpos( $haystack, 'tablet' ) || false !== strpos( $haystack, 'desktop' ) ) {
+			return 'adaptive';
+		}
+		if ( false !== strpos( $haystack, 'label' ) || false !== strpos( $haystack, 'title' ) || false !== strpos( $haystack, 'intro' ) || false !== strpos( $haystack, 'copy' ) || false !== strpos( $haystack, 'hint' ) ) {
+			return 'content';
+		}
+		return 'logic';
+	}
+
+	private static function group_type_label( string $type ): string {
+		switch ( $type ) {
+			case 'content':
+				return __( 'контент', 'mp-custom-checkout' );
+			case 'validation':
+				return __( 'валидация', 'mp-custom-checkout' );
+			case 'styles':
+				return __( 'стили', 'mp-custom-checkout' );
+			case 'adaptive':
+				return __( 'адаптив', 'mp-custom-checkout' );
+			default:
+				return __( 'логика', 'mp-custom-checkout' );
+		}
 	}
 
 	/**
