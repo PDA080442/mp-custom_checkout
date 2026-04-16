@@ -164,10 +164,41 @@
 				},
 				errors: {
 					invalid_date: 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.',
-					empty_date: 'Выберите дату, чтобы продолжить.'
+					empty_date: 'Выберите дату, чтобы продолжить.',
+					conditions_unconfirmed: 'Подтвердите ознакомление с условиями, чтобы продолжить.'
 				},
 				admin_preview: {
 					enabled: true
+				}
+			},
+			conditions_copy: {
+				intro_by_scenario: {
+					pickup: '',
+					krasnoyarsk_delivery: '',
+					other_city_delivery: ''
+				},
+				secondary_notes: ['', '', ''],
+				krasnoyarsk_delivery: {
+					title: '',
+					body: '',
+					delivery_within_day: ''
+				},
+				other_city_delivery: {
+					title: '',
+					body: '',
+					logistics_note: ''
+				},
+				pickup: {
+					title: '',
+					body: '',
+					office_block_title: '',
+					office_address: '',
+					office_description: '',
+					office_hours_plain: '',
+					office_hours: [],
+					convenience_helper: '',
+					critical_notice: '',
+					show_multi_office_slot: true
 				}
 			}
 		}, source);
@@ -206,6 +237,346 @@
 			highlightStyle: String(style.highlight_style || 'accent'),
 			showWeekendTint: style.show_weekend_tint !== false
 		};
+	}
+
+	function trimNonEmpty(value) {
+		var s = String(value || '').trim();
+		return s ? s : '';
+	}
+
+	function getConditionsCopyRoot() {
+		var cfg = getStepThreeConfig();
+		return cfg && cfg.conditions_copy && typeof cfg.conditions_copy === 'object' ? cfg.conditions_copy : {};
+	}
+
+	function getConditionsBlockForScenario(scenario) {
+		var root = getConditionsCopyRoot();
+		var key = String(scenario || '');
+		if (!key || !root[key] || typeof root[key] !== 'object') {
+			return {};
+		}
+		return root[key];
+	}
+
+	function getPickupPointForConditions(state) {
+		var scenarioData = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenarioData || {}) : {};
+		var point = scenarioData.pickup_point && typeof scenarioData.pickup_point === 'object' ? scenarioData.pickup_point : null;
+		if (!point) {
+			point = getPickupPointById('');
+		}
+		return point;
+	}
+
+	function buildConditionsReceiptPlainText(state) {
+		var scenario = normalizeScenarioId(state.frontendStore.fulfillment.scenario || '');
+		var root = getConditionsCopyRoot();
+		var introMap = root.intro_by_scenario && typeof root.intro_by_scenario === 'object' ? root.intro_by_scenario : {};
+		var lines = [];
+		var intro = trimNonEmpty(introMap[scenario]) || getUiText('step_3.conditions_intro', 'Перед продолжением проверьте правила для выбранного способа получения.');
+		if (intro) {
+			lines.push(intro);
+		}
+		var block = getConditionsBlockForScenario(scenario);
+		var i;
+		if (scenario === 'krasnoyarsk_delivery') {
+			var krBody = trimNonEmpty(block.body) || getUiText('step_3.krasnoyarsk_conditions', 'Доставка выполняется в пределах города в выбранную дату. Курьер связывается заранее для подтверждения интервала.');
+			var krDay = trimNonEmpty(block.delivery_within_day) || getUiText('step_3.krasnoyarsk_delivery_day', 'Доставка в течение дня в выбранную дату. Интервал уточняется у курьера.');
+			lines.push(krBody, krDay);
+		} else if (scenario === 'other_city_delivery') {
+			var ocBody = trimNonEmpty(block.body) || getUiText('step_3.other_city_conditions', 'Срок и стоимость уточняются после подтверждения заказа. Отправка выполняется через транспортного партнера по согласованным данным.');
+			var ocLog = trimNonEmpty(block.logistics_note) || getUiText('step_3.other_city_logistics', 'Отправка выполняется через логистическую компанию после комплектации и согласования реквизитов.');
+			lines.push(ocBody, ocLog);
+		} else {
+			var puBody = trimNonEmpty(block.body) || getUiText('step_3.pickup_conditions', 'Заказ выдается в точке самовывоза после подтверждения готовности. Пожалуйста, дождитесь уведомления перед визитом.');
+			lines.push(puBody);
+			var officeTitle = trimNonEmpty(block.office_block_title) || getUiText('step_3.pickup_office_block_title', 'Офис и график работы');
+			lines.push(officeTitle);
+			var point = getPickupPointForConditions(state);
+			if (point && point.title) {
+				lines.push(String(point.title));
+			}
+			var address = trimNonEmpty(block.office_address);
+			if (!address && point && point.address) {
+				address = String(point.address);
+			}
+			if (address) {
+				lines.push(address);
+			}
+			var desc = trimNonEmpty(block.office_description);
+			if (!desc && point && point.description) {
+				desc = String(point.description);
+			}
+			if (!desc) {
+				desc = getUiText('step_3.pickup_office_default', 'Выдача заказа в офисе самовывоза после уведомления о готовности.');
+			}
+			lines.push(desc);
+			var plain = trimNonEmpty(block.office_hours_plain);
+			var hoursLabel = getUiText('step_3.pickup_hours_label', 'Часы выдачи');
+			if (plain) {
+				var scheduleLines = plain.split(/\r?\n/).map(function (ln) {
+					return trimNonEmpty(ln);
+				}).filter(Boolean);
+				lines.push(hoursLabel + ':\n' + scheduleLines.join('\n'));
+			} else {
+				var hours = Array.isArray(block.office_hours) ? block.office_hours : [];
+				var hoursClean = [];
+				for (i = 0; i < hours.length; i += 1) {
+					var slot = trimNonEmpty(hours[i]);
+					if (slot) {
+						hoursClean.push(slot);
+					}
+				}
+				if (!hoursClean.length) {
+					hoursClean = ['10:00–13:00', '13:00–17:00', '17:00–20:00'];
+				}
+				lines.push(hoursLabel + ': ' + hoursClean.join(', '));
+			}
+			var critical = trimNonEmpty(block.critical_notice);
+			if (critical) {
+				lines.push(getUiText('step_3.critical_notice_prefix', 'Важно:') + ' ' + critical);
+			}
+			var helper = trimNonEmpty(block.convenience_helper) || getUiText('step_3.pickup_convenience_helper', 'Можно приехать в удобное время в рамках указанного расписания — уточните готовность заказа по уведомлению.');
+			lines.push(helper);
+		}
+		var filtered = [];
+		for (i = 0; i < lines.length; i += 1) {
+			var line = trimNonEmpty(lines[i]);
+			if (line) {
+				filtered.push(lines[i]);
+			}
+		}
+		return filtered.join('\n\n');
+	}
+
+	function formatConditionsReceiptHtmlFromPlain(text) {
+		if (!trimNonEmpty(text)) {
+			return '';
+		}
+		var paras = String(text).split(/\n\n+/);
+		var out = '';
+		var pi;
+		for (pi = 0; pi < paras.length; pi += 1) {
+			var p = trimNonEmpty(paras[pi]);
+			if (!p) {
+				continue;
+			}
+			var inner = escapeHtml(p).replace(/\n/g, '<br />');
+			out += '<p class="mp-cc-summary-card__conditions-para">' + inner + '</p>';
+		}
+		return out;
+	}
+
+	function getConditionsIntroForScenario(scenario) {
+		var root = getConditionsCopyRoot();
+		var map = root.intro_by_scenario && typeof root.intro_by_scenario === 'object' ? root.intro_by_scenario : {};
+		var custom = trimNonEmpty(map[scenario]);
+		if (custom) {
+			return custom;
+		}
+		return getUiText('step_3.conditions_intro', 'Перед продолжением проверьте правила для выбранного способа получения.');
+	}
+
+	function getConditionsSecondaryNotesList() {
+		var root = getConditionsCopyRoot();
+		var fromConfig = Array.isArray(root.secondary_notes) ? root.secondary_notes : [];
+		var filtered = [];
+		var i;
+		for (i = 0; i < fromConfig.length; i += 1) {
+			var line = trimNonEmpty(fromConfig[i]);
+			if (line) {
+				filtered.push(line);
+			}
+		}
+		if (filtered.length) {
+			return filtered;
+		}
+		return [
+			getUiText('step_3.secondary_note_1', 'Проверяйте корректность телефона: статус заказа приходит в уведомления.'),
+			getUiText('step_3.secondary_note_2', 'При изменении сценария условия и доступность дат обновляются автоматически.'),
+			getUiText('step_3.secondary_note_3', 'Для вопросов по срокам и логистике используйте контакты поддержки магазина.')
+		];
+	}
+
+	function getConditionsCardTitle(scenario, block, rules) {
+		var custom = trimNonEmpty(block.title);
+		if (custom) {
+			return custom;
+		}
+		var cr = rules.copy_rules && typeof rules.copy_rules === 'object' ? rules.copy_rules : {};
+		if (trimNonEmpty(cr.conditions_title)) {
+			return trimNonEmpty(cr.conditions_title);
+		}
+		if (trimNonEmpty(rules.label)) {
+			return trimNonEmpty(rules.label);
+		}
+		if (scenario === 'krasnoyarsk_delivery') {
+			return getUiText('step_3.krasnoyarsk_title', 'Доставка по Красноярску');
+		}
+		if (scenario === 'other_city_delivery') {
+			return getUiText('step_3.other_city_title', 'Доставка в другой город');
+		}
+		return getUiText('step_3.pickup_title', 'Самовывоз');
+	}
+
+	function getConditionsStepPanelTitle(state) {
+		var scenario = normalizeScenarioId(state.frontendStore.fulfillment.scenario || '');
+		var block = getConditionsBlockForScenario(scenario);
+		var rules = getScenarioRulesById(scenario);
+		return getConditionsCardTitle(scenario, block, rules);
+	}
+
+	function getPickupPointForConditions(state) {
+		var scenarioData = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenarioData || {}) : {};
+		var point = scenarioData.pickup_point && typeof scenarioData.pickup_point === 'object' ? scenarioData.pickup_point : null;
+		if (!point) {
+			point = getPickupPointById('');
+		}
+		return point;
+	}
+
+	function buildPickupOfficeBlockHtml(state, block) {
+		var point = getPickupPointForConditions(state);
+		var officeTitle = trimNonEmpty(block.office_block_title) || getUiText('step_3.pickup_office_block_title', 'Офис и график работы');
+		var address = trimNonEmpty(block.office_address);
+		if (!address && point && point.address) {
+			address = String(point.address);
+		}
+		var pointName = point && point.title ? String(point.title) : '';
+		var desc = trimNonEmpty(block.office_description);
+		if (!desc && point && point.description) {
+			desc = String(point.description);
+		}
+		if (!desc) {
+			desc = getUiText('step_3.pickup_office_default', 'Выдача заказа в офисе самовывоза после уведомления о готовности.');
+		}
+		var plain = trimNonEmpty(block.office_hours_plain);
+		var hours = Array.isArray(block.office_hours) ? block.office_hours : [];
+		var hoursClean = [];
+		var i;
+		for (i = 0; i < hours.length; i += 1) {
+			var slot = trimNonEmpty(hours[i]);
+			if (slot) {
+				hoursClean.push(slot);
+			}
+		}
+		if (!plain && !hoursClean.length) {
+			hoursClean = ['10:00–13:00', '13:00–17:00', '17:00–20:00'];
+		}
+		var helper = trimNonEmpty(block.convenience_helper) || getUiText('step_3.pickup_convenience_helper', 'Можно приехать в удобное время в рамках указанного расписания — уточните готовность заказа по уведомлению.');
+		var critical = trimNonEmpty(block.critical_notice);
+		var showMulti = block.show_multi_office_slot !== false;
+
+		var html = '';
+		html += '<div class="mp-cc-pickup-office">';
+		html += '<div class="mp-cc-pickup-office__head">';
+		html += '<h3 class="mp-cc-pickup-office__heading">' + escapeHtml(officeTitle) + '</h3>';
+		html += '</div>';
+		if (pointName) {
+			html += '<p class="mp-cc-pickup-office__point-name">' + escapeHtml(pointName) + '</p>';
+		}
+		if (address) {
+			html += '<p class="mp-cc-pickup-office__address">' + escapeHtml(address) + '</p>';
+		}
+		html += '<p class="mp-cc-pickup-office__description">' + escapeHtml(desc) + '</p>';
+		html += '<div class="mp-cc-pickup-office__hours" aria-label="' + escapeHtml(getUiText('step_3.pickup_hours_label', 'Часы выдачи')) + '">';
+		if (plain) {
+			html += '<div class="mp-cc-pickup-office__schedule mp-cc-pickup-office__schedule--plain">';
+			var lines = plain.split(/\r?\n/);
+			var firstLine = true;
+			for (i = 0; i < lines.length; i += 1) {
+				var line = trimNonEmpty(lines[i]);
+				if (!line) {
+					continue;
+				}
+				html += '<p class="mp-cc-pickup-office__line' + (firstLine ? ' mp-cc-pickup-office__line--key' : '') + '">' + escapeHtml(line) + '</p>';
+				firstLine = false;
+			}
+			html += '</div>';
+		} else {
+			html += '<div class="mp-cc-pickup-office__schedule mp-cc-pickup-office__schedule--chips">';
+			html += '<div class="mp-cc-pickup-office__chips" role="list">';
+			for (i = 0; i < hoursClean.length; i += 1) {
+				html += '<span class="mp-cc-pickup-office__chip' + (i === 0 ? ' mp-cc-pickup-office__chip--key' : '') + '" role="listitem">' + escapeHtml(hoursClean[i]) + '</span>';
+			}
+			html += '</div>';
+			html += '</div>';
+		}
+		html += '</div>';
+		if (critical) {
+			html += '<div class="mp-cc-pickup-office__critical" role="note">';
+			html += '<span class="mp-cc-pickup-office__critical-icon" aria-hidden="true">!</span>';
+			html += '<p class="mp-cc-pickup-office__critical-text">' + escapeHtml(critical) + '</p>';
+			html += '</div>';
+		}
+		html += '<p class="mp-cc-pickup-office__helper">' + escapeHtml(helper) + '</p>';
+		if (showMulti) {
+			html += '<div class="mp-cc-pickup-office__multi-slot" data-mp-cc-multi-office="1">';
+			html += '<span class="mp-cc-pickup-office__multi-slot-label">' + escapeHtml(getUiText('step_3.pickup_multi_office_hint', 'Дополнительные точки самовывоза будут отображаться здесь при подключении.')) + '</span>';
+			html += '</div>';
+		}
+		html += '</div>';
+		return html;
+	}
+
+	function buildConditionsStepHtml(state) {
+		var scenario = normalizeScenarioId(state.frontendStore.fulfillment.scenario || '');
+		var dateState = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+			? state.frontendStore.fulfillment.date
+			: {};
+		var isConfirmed = Boolean(dateState.conditions_confirmed);
+		var hasError = Boolean(state.frontendStore.form && state.frontendStore.form.errors && state.frontendStore.form.errors.conditions_unconfirmed);
+		var block = getConditionsBlockForScenario(scenario);
+		var scenarioRules = getScenarioRulesById(scenario);
+		var cardTitle = getConditionsCardTitle(scenario, block, scenarioRules);
+		var intro = getConditionsIntroForScenario(scenario);
+		var notes = getConditionsSecondaryNotesList();
+		var html = '';
+		var i;
+
+		html += '<section class="mp-cc-conditions-step" data-mp-cc-conditions-scenario="' + escapeHtml(scenario) + '" aria-label="' + escapeHtml(cardTitle) + '">';
+		html += '<p class="mp-cc-conditions-step__intro">' + escapeHtml(intro) + '</p>';
+		html += '<div class="mp-cc-conditions-step__grid mp-cc-conditions-step__grid--single">';
+		html += '<article class="mp-cc-conditions-card is-active" data-conditions-scenario="' + escapeHtml(scenario) + '">';
+		if (scenario === 'krasnoyarsk_delivery') {
+			var krBody = trimNonEmpty(block.body) || getUiText('step_3.krasnoyarsk_conditions', 'Доставка выполняется в пределах города в выбранную дату. Курьер связывается заранее для подтверждения интервала.');
+			var krDay = trimNonEmpty(block.delivery_within_day) || getUiText('step_3.krasnoyarsk_delivery_day', 'Доставка в течение дня в выбранную дату. Интервал уточняется у курьера.');
+			html += '<p class="mp-cc-conditions-card__text">' + escapeHtml(krBody) + '</p>';
+			html += '<p class="mp-cc-conditions-card__text mp-cc-conditions-card__accent">' + escapeHtml(krDay) + '</p>';
+		} else if (scenario === 'other_city_delivery') {
+			var ocBody = trimNonEmpty(block.body) || getUiText('step_3.other_city_conditions', 'Срок и стоимость уточняются после подтверждения заказа. Отправка выполняется через транспортного партнера по согласованным данным.');
+			var ocLog = trimNonEmpty(block.logistics_note) || getUiText('step_3.other_city_logistics', 'Отправка выполняется через логистическую компанию после комплектации и согласования реквизитов.');
+			html += '<p class="mp-cc-conditions-card__text">' + escapeHtml(ocBody) + '</p>';
+			html += '<p class="mp-cc-conditions-card__text mp-cc-conditions-card__accent">' + escapeHtml(ocLog) + '</p>';
+		} else {
+			var puBody = trimNonEmpty(block.body) || getUiText('step_3.pickup_conditions', 'Заказ выдается в точке самовывоза после подтверждения готовности. Пожалуйста, дождитесь уведомления перед визитом.');
+			html += '<p class="mp-cc-conditions-card__text">' + escapeHtml(puBody) + '</p>';
+			html += buildPickupOfficeBlockHtml(state, block);
+		}
+		html += '</article>';
+		html += '</div>';
+		html += '<div class="mp-cc-conditions-step__confirm' + (hasError ? ' is-error' : '') + '">';
+		html += '<label class="mp-cc-conditions-step__confirm-label">';
+		html += '<input type="checkbox" data-conditions-confirm="1" ' + (isConfirmed ? 'checked' : '') + ' aria-invalid="' + (hasError ? 'true' : 'false') + '" aria-required="true" />';
+		html += '<span>' + escapeHtml(getUiText('step_3.confirm_checkbox', 'Я ознакомился с условиями')) + '</span>';
+		html += '</label>';
+		if (hasError) {
+			html += '<p class="mp-cc-conditions-step__error" role="alert">' + escapeHtml(getUiText('step_3.unconfirmed_error', 'Подтвердите ознакомление с условиями, чтобы продолжить.')) + '</p>';
+		}
+		html += '</div>';
+		html += '<aside class="mp-cc-conditions-step__notes" aria-label="' + escapeHtml(getUiText('step_3.notes_title', 'Важные замечания')) + '">';
+		html += '<h5 class="mp-cc-conditions-step__notes-title">' + escapeHtml(getUiText('step_3.notes_title', 'Важные замечания')) + '</h5>';
+		html += '<ul class="mp-cc-conditions-step__notes-list">';
+		for (i = 0; i < notes.length; i += 1) {
+			if (!notes[i]) {
+				continue;
+			}
+			html += '<li>' + escapeHtml(notes[i]) + '</li>';
+		}
+		html += '</ul>';
+		html += '</aside>';
+		html += '</section>';
+
+		return html;
 	}
 
 	function getPickupPointById(pointId) {
@@ -924,7 +1295,10 @@
 
 		return withTransitionLock(state, $app, function () {
 			runStepTransitionAnimation($app);
-			return postCheckout('session_set_step', { step_id: targetStepId, context_id: state.flowContextId }).then(function () {
+			return postCheckout('session_set_step', { step_id: targetStepId, context_id: state.flowContextId }).then(function (response) {
+				if (!response || !response.success) {
+					return $.Deferred().reject(response).promise();
+				}
 				state.currentStepId = targetStepId;
 				state.frontendStore.steps.current = targetStepId;
 				state.maxReachedIndex = Math.max(state.maxReachedIndex, targetIndex);
@@ -943,6 +1317,25 @@
 					})
 				);
 				return syncStoreWithBackend(state, $app);
+			}).fail(function (xhr) {
+				var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
+				var code = payload.code ? String(payload.code) : '';
+				if (code === 'conditions_unconfirmed') {
+					state.frontendStore.form.errors = state.frontendStore.form.errors || {};
+					state.frontendStore.form.errors.conditions_unconfirmed = true;
+					var msg = payload.message || getStepThreeErrorCopy('conditions_unconfirmed', 'Подтвердите ознакомление с условиями, чтобы продолжить.');
+					notify(msg, 'error');
+					render(state, $app);
+					document.dispatchEvent(
+						new CustomEvent('mp_cc_conditions_step_blocked', {
+							detail: { code: code, payload: payload }
+						})
+					);
+					return;
+				}
+				if (xhr && xhr.status === 422) {
+					notify(payload.message || getUiText('common.error_generic', 'Произошла ошибка. Попробуйте ещё раз.'), 'error');
+				}
 			});
 		});
 	}
@@ -975,6 +1368,18 @@
 				notify(getStepThreeErrorCopy('empty_date', 'Выберите дату, чтобы продолжить.'), 'error');
 				return;
 			}
+		}
+		if (state.currentStepId === 'conditions') {
+			var dateState = state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.date
+				? state.frontendStore.fulfillment.date
+				: {};
+			if (!dateState.conditions_confirmed) {
+				state.frontendStore.form.errors.conditions_unconfirmed = true;
+				render(state, $app);
+				notify(getUiText('step_3.unconfirmed_error', 'Подтвердите ознакомление с условиями, чтобы продолжить.'), 'error');
+				return;
+			}
+			state.frontendStore.form.errors.conditions_unconfirmed = false;
 		}
 		requestForwardValidation(state.currentStepId).then(function (valid) {
 			if (!valid) {
@@ -1069,6 +1474,9 @@
 		if (step && step.id === 'cart') {
 			label = getStepOneLabel(state, 'title', 'step_1.title', label || 'Cart');
 		}
+		if (step && step.id === 'conditions') {
+			label = getConditionsStepPanelTitle(state);
+		}
 		var html = '';
 
 		html += '<section class="mp-cc-step-panel" data-step-panel="' + escapeHtml(step ? step.id : '') + '">';
@@ -1082,6 +1490,9 @@
 		}
 		if (step && step.id === 'date') {
 			html += buildFulfillmentChoiceHtml(state);
+		}
+		if (step && step.id === 'conditions') {
+			html += buildConditionsStepHtml(state);
 		}
 		html += '</div>';
 		if (!isFlagEnabled(state, flagNames.discountPlacement, true)) {
@@ -1448,6 +1859,13 @@
 					html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(String(pickupPoint.address)) + '</p>';
 				}
 			}
+			var receiptPlain = buildConditionsReceiptPlainText(state);
+			if (receiptPlain) {
+				html += '<div class="mp-cc-summary-card__conditions" data-final-review-conditions="1">';
+				html += '<p class="mp-cc-summary-card__conditions-title"><strong>' + escapeHtml(getUiText('step_3.conditions_title', 'Условия получения')) + '</strong></p>';
+				html += '<div class="mp-cc-summary-card__conditions-body">' + formatConditionsReceiptHtmlFromPlain(receiptPlain) + '</div>';
+				html += '</div>';
+			}
 			html += '</div>';
 		}
 		html += '<div class="mp-cc-summary-card__slot" data-mp-cc-summary-slot="1"></div>';
@@ -1795,6 +2213,24 @@
 			if ($target.length) {
 				$target.trigger('focus');
 			}
+		});
+
+		$app.find('[data-conditions-confirm]').off('change').on('change', function () {
+			var isChecked = $(this).is(':checked');
+			var dateBox = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+				? state.frontendStore.fulfillment.date
+				: {};
+			dateBox.conditions_confirmed = isChecked;
+			state.frontendStore.fulfillment.date = dateBox;
+			state.frontendStore.form.errors.conditions_unconfirmed = false;
+			render(state, $app);
+			postCheckout('session_set_answers', {
+				step_id: 'conditions',
+				context_id: state.flowContextId,
+				answers: dateBox
+			}).fail(function () {
+				notify(getUiText('common.error_generic', 'Произошла ошибка. Попробуйте ещё раз.'), 'error');
+			});
 		});
 	}
 

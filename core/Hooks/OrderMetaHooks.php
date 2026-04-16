@@ -8,6 +8,7 @@
 namespace MP\CustomCheckout\Hooks;
 
 use MP\CustomCheckout\DependencyFailureGuard;
+use MP\CustomCheckout\Routing\CheckoutConditionsSummaryBuilder;
 use MP\CustomCheckout\Routing\CheckoutDateAvailabilityEngine;
 use MP\CustomCheckout\Routing\CheckoutScenarioRules;
 use MP\CustomCheckout\Routing\CheckoutSessionService;
@@ -31,6 +32,8 @@ final class OrderMetaHooks {
 		add_action( 'woocommerce_checkout_order_created', array( __CLASS__, 'on_checkout_order_created' ), 10, 2 );
 		add_action( 'mp_custom_checkout_save_order_meta', array( __CLASS__, 'save_scenario_meta' ), 10, 2 );
 		add_action( 'mp_custom_checkout_save_order_meta', array( __CLASS__, 'save_selected_date_meta' ), 12, 2 );
+		add_action( 'mp_custom_checkout_save_order_meta', array( __CLASS__, 'save_conditions_confirmation_meta' ), 14, 2 );
+		add_action( 'mp_custom_checkout_save_order_meta', array( __CLASS__, 'save_conditions_summary_meta' ), 20, 2 );
 	}
 
 	/**
@@ -133,5 +136,69 @@ final class OrderMetaHooks {
 		}
 		$order->update_meta_data( '_mp_cc_selected_date', $selected );
 		$order->update_meta_data( '_mp_cc_selected_date_label', $label );
+	}
+
+	/**
+	 * Аудит: факт подтверждения шага условий (если был отмечен чекбокс в сессии).
+	 *
+	 * @param \WC_Order $order Заказ.
+	 * @param array     $data  Данные checkout.
+	 */
+	public static function save_conditions_confirmation_meta( $order, $data = array() ): void {
+		unset( $data );
+		if ( ! $order instanceof \WC_Order ) {
+			return;
+		}
+
+		$flow     = CheckoutSessionService::get_flow();
+		$answers  = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : array();
+		$date_box = isset( $answers['date_conditions'] ) && is_array( $answers['date_conditions'] ) ? $answers['date_conditions'] : array();
+		$raw      = isset( $date_box['conditions_confirmed'] ) ? $date_box['conditions_confirmed'] : false;
+		$confirmed = false;
+		if ( true === $raw || 1 === $raw || '1' === (string) $raw ) {
+			$confirmed = true;
+		} elseif ( is_string( $raw ) ) {
+			$confirmed = in_array( strtolower( trim( $raw ) ), array( 'true', 'yes', 'on' ), true );
+		}
+
+		$order->update_meta_data( '_mp_cc_conditions_confirmed', $confirmed ? 'yes' : 'no' );
+		if ( $confirmed ) {
+			$order->update_meta_data( '_mp_cc_conditions_confirmed_at', (string) time() );
+		} else {
+			$order->delete_meta_data( '_mp_cc_conditions_confirmed_at' );
+		}
+	}
+
+	/**
+	 * Текст условий получения (единый для писем, админки и списка заказов).
+	 *
+	 * @param \WC_Order $order Заказ.
+	 * @param array     $data  Данные checkout.
+	 */
+	public static function save_conditions_summary_meta( $order, $data = array() ): void {
+		unset( $data );
+		if ( ! $order instanceof \WC_Order ) {
+			return;
+		}
+
+		$flow     = CheckoutSessionService::get_flow();
+		$scenario = isset( $flow['scenario'] ) ? CheckoutScenarioRules::sanitize_scenario( (string) $flow['scenario'] ) : ScenarioStepRegistry::SCENARIO_PICKUP;
+		$text     = CheckoutConditionsSummaryBuilder::build_for_flow( $scenario, $flow );
+
+		/**
+		 * Текст условий при сохранении заказа (после сборки из сессии).
+		 *
+		 * @param string               $text     Текст.
+		 * @param \WC_Order            $order    Заказ.
+		 * @param string               $scenario Сценарий.
+		 * @param array<string, mixed> $flow     Flow.
+		 */
+		$text = (string) apply_filters( 'mp_custom_checkout_order_conditions_summary', $text, $order, $scenario, $flow );
+
+		if ( '' !== trim( $text ) ) {
+			$order->update_meta_data( CheckoutConditionsSummaryBuilder::ORDER_META_KEY, $text );
+		} else {
+			$order->delete_meta_data( CheckoutConditionsSummaryBuilder::ORDER_META_KEY );
+		}
 	}
 }

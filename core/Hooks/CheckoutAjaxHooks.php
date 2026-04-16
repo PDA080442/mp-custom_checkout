@@ -14,6 +14,7 @@ use MP\CustomCheckout\Routing\CheckoutScenarioRules;
 use MP\CustomCheckout\Routing\CheckoutSessionService;
 use MP\CustomCheckout\Routing\CheckoutStepManager;
 use MP\CustomCheckout\Settings\SafeSettingsResolver;
+use MP\CustomCheckout\Settings\ScenarioStepRegistry;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -81,12 +82,18 @@ final class CheckoutAjaxHooks {
 				);
 			}
 
-			$manager = new CheckoutStepManager();
+			$flow    = CheckoutSessionService::get_flow();
+			$manager = new CheckoutStepManager( is_array( $flow ) ? $flow : null );
 			if ( ! $manager->can_navigate_to( $step_id ) ) {
 				wp_send_json_error(
 					array( 'code' => 'invalid_step_navigation', 'message' => __( 'Переход на указанный шаг недоступен.', 'mp-custom-checkout' ) ),
 					400
 				);
+			}
+
+			$block = self::maybe_block_conditions_step_forward( $flow, $manager, $step_id );
+			if ( is_array( $block ) ) {
+				wp_send_json_error( $block, 422 );
 			}
 
 			CheckoutSessionService::set_current_step( $step_id );
@@ -206,6 +213,61 @@ final class CheckoutAjaxHooks {
 		}
 
 		return CheckoutSessionService::validate_context_id( $flow, $posted_context );
+	}
+
+	/**
+	 * Блокирует переход вперёд с шага условий без подтверждения чекбокса (серверная защита).
+	 *
+	 * @param array<string, mixed> $flow Raw flow из сессии.
+	 * @return array<string, string>|null Payload для wp_send_json_error или null.
+	 */
+	private static function maybe_block_conditions_step_forward( array $flow, CheckoutStepManager $manager, string $target_step_id ): ?array {
+		$current = $manager->get_current_step_id();
+		if ( null === $current || ScenarioStepRegistry::STEP_CONDITIONS !== $current ) {
+			return null;
+		}
+
+		$visible = $manager->get_visible_step_ids();
+		$ci      = array_search( $current, $visible, true );
+		$ti      = array_search( $target_step_id, $visible, true );
+		if ( false === $ci || false === $ti ) {
+			return null;
+		}
+		if ( (int) $ti <= (int) $ci ) {
+			return null;
+		}
+
+		$answers  = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : array();
+		$date_box = isset( $answers['date_conditions'] ) && is_array( $answers['date_conditions'] ) ? $answers['date_conditions'] : array();
+		$raw      = isset( $date_box['conditions_confirmed'] ) ? $date_box['conditions_confirmed'] : false;
+		$confirmed = false;
+		if ( true === $raw || 1 === $raw || '1' === (string) $raw ) {
+			$confirmed = true;
+		} elseif ( is_string( $raw ) ) {
+			$confirmed = in_array( strtolower( trim( $raw ) ), array( 'true', 'yes', 'on' ), true );
+		}
+
+		if ( $confirmed ) {
+			return null;
+		}
+
+		$message = SafeSettingsResolver::get( 'step_3.copy.errors.conditions_unconfirmed', __( 'Подтвердите ознакомление с условиями, чтобы продолжить.', 'mp-custom-checkout' ) );
+		$message = is_string( $message ) && '' !== trim( $message ) ? $message : __( 'Подтвердите ознакомление с условиями, чтобы продолжить.', 'mp-custom-checkout' );
+
+		do_action(
+			'mp_custom_checkout_log',
+			'warning',
+			'[conditions_step] forward_blocked_unconfirmed',
+			array(
+				'target_step' => $target_step_id,
+				'context_id'  => isset( $flow['context_id'] ) ? (string) $flow['context_id'] : '',
+			)
+		);
+
+		return array(
+			'code'    => 'conditions_unconfirmed',
+			'message' => $message,
+		);
 	}
 
 	/**

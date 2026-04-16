@@ -156,6 +156,7 @@ final class SafeSettingsResolver {
 						'errors' => array(
 							'invalid_date' => 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.',
 							'empty_date'   => 'Выберите дату, чтобы продолжить.',
+							'conditions_unconfirmed' => 'Подтвердите ознакомление с условиями, чтобы продолжить.',
 						),
 						'admin_preview' => array(
 							'enabled' => true,
@@ -174,6 +175,40 @@ final class SafeSettingsResolver {
 					),
 					'holiday_dates' => array(),
 					'closed_dates'  => array(),
+					'conditions_copy' => array(
+						'intro_by_scenario' => array(
+							'pickup'               => '',
+							'krasnoyarsk_delivery' => '',
+							'other_city_delivery'  => '',
+						),
+						'secondary_notes' => array(
+							'',
+							'',
+							'',
+						),
+						'krasnoyarsk_delivery' => array(
+							'title'               => '',
+							'body'                => '',
+							'delivery_within_day' => 'Доставка в течение дня в выбранную дату. Интервал уточняется у курьера.',
+						),
+						'other_city_delivery' => array(
+							'title'          => '',
+							'body'           => '',
+							'logistics_note' => 'Отправка выполняется через логистическую компанию после комплектации и согласования реквизитов.',
+						),
+						'pickup' => array(
+							'title'                => '',
+							'body'                 => '',
+							'office_block_title'   => 'Офис и график работы',
+							'office_address'       => '',
+							'office_description'   => 'Выдача заказа в офисе самовывоза после уведомления о готовности.',
+							'office_hours_plain'   => "Пн–Пт 10:00–20:00\nСб–Вс 11:00–18:00",
+							'office_hours'         => array( '10:00–13:00', '13:00–17:00', '17:00–20:00' ),
+							'convenience_helper'   => 'Можно приехать в удобное время в рамках указанного расписания — уточните готовность заказа по уведомлению.',
+							'critical_notice'      => '',
+							'show_multi_office_slot' => true,
+						),
+					),
 				);
 				continue;
 			}
