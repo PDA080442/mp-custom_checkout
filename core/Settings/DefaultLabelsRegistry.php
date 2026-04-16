@@ -128,6 +128,9 @@ final class DefaultLabelsRegistry {
 				'gift_card_empty' => 'Введите код подарочной карты.',
 				'gift_card_success' => 'Подарочная карта применена.',
 				'gift_card_error' => 'Не удалось применить подарочную карту.',
+				'payment_title' => 'Способ оплаты',
+				'payment_intro' => 'Выберите удобный способ оплаты.',
+				'payment_error_required' => 'Выберите способ оплаты.',
 			),
 			'coupon' => array(
 				'apply'   => 'Применить',

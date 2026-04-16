@@ -1778,6 +1778,64 @@
 	min-width: 0;
 }
 
+.mp-cc-payment {
+	display: grid;
+	gap: 0.6rem;
+	padding-top: 0.35rem;
+}
+
+.mp-cc-payment__header {
+	display: grid;
+	gap: 0.25rem;
+}
+
+.mp-cc-payment__title {
+	margin: 0;
+	font-size: 0.95rem;
+}
+
+.mp-cc-payment__intro {
+	margin: 0;
+	font-size: 0.8rem;
+	color: var(--mp-cc-color-text-muted);
+}
+
+.mp-cc-payment__grid {
+	display: grid;
+	grid-template-columns: repeat(var(--mp-cc-payment-cols, 2), minmax(0, 1fr));
+	gap: var(--mp-cc-payment-gap, 0.6rem 0.75rem);
+}
+
+.mp-cc-payment-card {
+	display: grid;
+	gap: 0.3rem;
+	padding: 0.65rem 0.75rem;
+	border: 1px solid var(--mp-cc-color-border);
+	border-radius: var(--mp-cc-radius-sm);
+	background: #fff;
+	cursor: pointer;
+}
+
+.mp-cc-payment-card.is-active {
+	border-color: var(--mp-cc-color-accent);
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--mp-cc-color-accent) 55%, transparent);
+}
+
+.mp-cc-payment-card__radio {
+	margin: 0;
+}
+
+.mp-cc-payment-card__title {
+	font-size: 0.9rem;
+	font-weight: 600;
+}
+
+.mp-cc-payment-card__desc {
+	font-size: 0.78rem;
+	color: var(--mp-cc-color-text-muted);
+	line-height: 1.4;
+}
+
 @media (max-width: 52rem) {
 	.mp-cc-contact__grid {
 		grid-template-columns: repeat(var(--mp-cc-contact-cols-tablet, 2), minmax(0, 1fr));
@@ -1785,6 +1843,10 @@
 
 	.mp-cc-contact__field--span-2 {
 		grid-column: span 2;
+	}
+
+	.mp-cc-payment__grid {
+		grid-template-columns: repeat(var(--mp-cc-payment-cols-tablet, 2), minmax(0, 1fr));
 	}
 }
 
@@ -1799,6 +1861,10 @@
 
 	.mp-cc-contact__country {
 		flex: 1 1 100%;
+	}
+
+	.mp-cc-payment__grid {
+		grid-template-columns: repeat(var(--mp-cc-payment-cols-mobile, 1), minmax(0, 1fr));
 	}
 
 	.mp-cc-coupon__row {

@@ -134,6 +134,7 @@
 		var source = window.mpCcAdmin && window.mpCcAdmin.stepFourConfig ? window.mpCcAdmin.stepFourConfig : {};
 		var contact = source.contact_block || {};
 		var address = source.address_block || {};
+		var payment = source.payment_block || {};
 		return {
 			previewEnabled: true,
 			contact: {
@@ -158,6 +159,7 @@
 			},
 			discountLayout: source.discount_layout && typeof source.discount_layout === 'object' ? source.discount_layout : { placement: 'step_4', separate_step_enabled: false, order: ['coupon', 'gift_card'] },
 			discountStyles: source.discount_block_styles && typeof source.discount_block_styles === 'object' ? source.discount_block_styles : { state_empty: 'default', state_success: 'success', state_error: 'error', focus_style: 'default' },
+			payment: payment && typeof payment === 'object' ? payment : {},
 			coupon: source.coupon_block && typeof source.coupon_block === 'object' ? source.coupon_block : {},
 			giftCard: source.gift_card_block && typeof source.gift_card_block === 'object' ? source.gift_card_block : {},
 			geoPreview: source.geo_preview && source.geo_preview.enabled !== false,
@@ -447,6 +449,7 @@
 		html += '<div class="mp-cc-admin-preview__date-rules">';
 		html += '<p><strong>Coupon placement:</strong> ' + escapeHtml(String(cfg.discountLayout.placement || 'step_4')) + ', separate-step ready=' + escapeHtml(cfg.discountLayout.separate_step_enabled ? 'yes' : 'no') + '</p>';
 		html += '<p><strong>Discount styles:</strong> empty=' + escapeHtml(String(cfg.discountStyles.state_empty || 'default')) + ', success=' + escapeHtml(String(cfg.discountStyles.state_success || 'success')) + ', error=' + escapeHtml(String(cfg.discountStyles.state_error || 'error')) + '</p>';
+		html += '<p><strong>Payment block:</strong> title="' + escapeHtml(String(cfg.payment.title || 'Способ оплаты')) + '", style=' + escapeHtml(String(cfg.payment.card_style || 'default')) + ', description=' + escapeHtml(cfg.payment.show_description === false ? 'off' : 'on') + '</p>';
 		html += '</div>';
 		html += '<div class="mp-cc-admin-preview__date-grid">';
 		html += '<article>';
@@ -601,6 +604,18 @@
 		cfg.discountStyles.state_success = readFormValue(ds + '[state_success]', cfg.discountStyles.state_success || 'success');
 		cfg.discountStyles.state_error = readFormValue(ds + '[state_error]', cfg.discountStyles.state_error || 'error');
 		cfg.discountStyles.focus_style = readFormValue(ds + '[focus_style]', cfg.discountStyles.focus_style || 'default');
+		var py = 'mp_custom_checkout_settings[step_4][payment_block]';
+		cfg.payment.title = readFormValue(py + '[title]', cfg.payment.title || 'Способ оплаты');
+		cfg.payment.intro = readFormValue(py + '[intro]', cfg.payment.intro || 'Выберите удобный способ оплаты.');
+		cfg.payment.card_style = readFormValue(py + '[card_style]', cfg.payment.card_style || 'default');
+		cfg.payment.show_description = Boolean(readFormValue(py + '[show_description]', cfg.payment.show_description !== false));
+		cfg.payment.required = Boolean(readFormValue(py + '[required]', cfg.payment.required !== false));
+		cfg.payment.error_message = readFormValue(py + '[error_message]', cfg.payment.error_message || 'Выберите способ оплаты.');
+		cfg.payment.layout = cfg.payment.layout && typeof cfg.payment.layout === 'object' ? cfg.payment.layout : {};
+		cfg.payment.layout.desktop_columns = Number(readFormValue(py + '[layout][desktop_columns]', cfg.payment.layout.desktop_columns || 2));
+		cfg.payment.layout.tablet_columns = Number(readFormValue(py + '[layout][tablet_columns]', cfg.payment.layout.tablet_columns || 2));
+		cfg.payment.layout.mobile_columns = Number(readFormValue(py + '[layout][mobile_columns]', cfg.payment.layout.mobile_columns || 1));
+		cfg.payment.layout.grid_gap = readFormValue(py + '[layout][grid_gap]', cfg.payment.layout.grid_gap || '0.6rem 0.75rem');
 		var cp = 'mp_custom_checkout_settings[step_4][coupon_block]';
 		cfg.coupon.title = readFormValue(cp + '[title]', cfg.coupon.title || 'Промокод');
 		cfg.coupon.intro = readFormValue(cp + '[intro]', cfg.coupon.intro || '');
