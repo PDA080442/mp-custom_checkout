@@ -152,7 +152,9 @@ final class CheckoutLogsHooks {
 			$san = array();
 			foreach ( $value as $k => $v ) {
 				$key = is_string( $k ) ? sanitize_key( $k ) : (string) $k;
-				$san[ $key ] = self::sanitize_context( $v );
+				$san[ $key ] = self::is_sensitive_key( $key )
+					? self::mask_sensitive_value( $v )
+					: self::sanitize_context( $v );
 			}
 			return $san;
 		}
@@ -163,6 +165,36 @@ final class CheckoutLogsHooks {
 			return sanitize_text_field( wp_json_encode( $value ) ?: '' );
 		}
 		return sanitize_text_field( (string) $value );
+	}
+
+	private static function is_sensitive_key( string $key ): bool {
+		$k = strtolower( $key );
+		return false !== strpos( $k, 'email' )
+			|| false !== strpos( $k, 'phone' )
+			|| false !== strpos( $k, 'password' )
+			|| false !== strpos( $k, 'token' )
+			|| false !== strpos( $k, 'nonce' )
+			|| false !== strpos( $k, 'coupon' )
+			|| false !== strpos( $k, 'gift_card' )
+			|| false !== strpos( $k, 'code' )
+			|| false !== strpos( $k, 'address' )
+			|| false !== strpos( $k, 'name' );
+	}
+
+	/**
+	 * @param mixed $value
+	 * @return string
+	 */
+	private static function mask_sensitive_value( $value ): string {
+		$raw = is_scalar( $value ) ? (string) $value : ( wp_json_encode( $value ) ?: '' );
+		$raw = trim( $raw );
+		if ( '' === $raw ) {
+			return '';
+		}
+		if ( strlen( $raw ) <= 4 ) {
+			return '***';
+		}
+		return substr( $raw, 0, 2 ) . str_repeat( '*', max( 3, strlen( $raw ) - 4 ) ) . substr( $raw, -2 );
 	}
 }
 
