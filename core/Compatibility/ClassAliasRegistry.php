@@ -25,6 +25,13 @@ final class ClassAliasRegistry {
 			'MP\\CustomCheckout\\Hooks\\CheckoutEntryAjaxHooks'    => 'MP\\CustomCheckout\\Checkout\\Hooks\\CheckoutEntryAjaxHooks',
 			'MP\\CustomCheckout\\Hooks\\OrderMetaHooks'            => 'MP\\CustomCheckout\\Checkout\\Hooks\\OrderMetaHooks',
 			'MP\\CustomCheckout\\Hooks\\EmailHooks'                => 'MP\\CustomCheckout\\Checkout\\Hooks\\EmailHooks',
+			'MP\\CustomCheckout\\Routing\\CheckoutPermalinkCompatibility' => 'MP\\CustomCheckout\\Checkout\\Routing\\CheckoutPermalinkCompatibility',
+			'MP\\CustomCheckout\\Routing\\CheckoutRouteController'  => 'MP\\CustomCheckout\\Checkout\\Routing\\CheckoutRouteController',
+			'MP\\CustomCheckout\\Routing\\CheckoutSuccessController' => 'MP\\CustomCheckout\\Checkout\\Routing\\CheckoutSuccessController',
+			'MP\\CustomCheckout\\Routing\\CheckoutSuccessOrderReceivedRedirect' => 'MP\\CustomCheckout\\Checkout\\Routing\\CheckoutSuccessOrderReceivedRedirect',
+			'MP\\CustomCheckout\\Routing\\CheckoutSuccessRouteHooks' => 'MP\\CustomCheckout\\Checkout\\Routing\\CheckoutSuccessRouteHooks',
+			'MP\\CustomCheckout\\Routing\\CheckoutEntryService'     => 'MP\\CustomCheckout\\Checkout\\Routing\\CheckoutEntryService',
+			'MP\\CustomCheckout\\Routing\\CheckoutSessionService'   => 'MP\\CustomCheckout\\Checkout\\Routing\\CheckoutSessionService',
 		);
 
 		foreach ( $aliases as $legacy => $modern ) {
