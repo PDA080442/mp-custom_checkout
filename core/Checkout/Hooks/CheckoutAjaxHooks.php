@@ -37,8 +37,27 @@ final class CheckoutAjaxHooks {
 		}
 		check_ajax_referer( 'mp_cc_checkout', 'nonce' );
 		$sub_action = isset( $_POST['sub_action'] ) ? sanitize_key( wp_unslash( $_POST['sub_action'] ) ) : '';
-		if ( self::handle_session_sub_action( $sub_action ) ) {
-			return;
+		if ( '' === $sub_action ) {
+			do_action( 'mp_custom_checkout_log', 'warning', '[ajax] empty_sub_action', array( 'source' => 'ajax', 'event_type' => 'ajax_error' ) );
+		}
+		try {
+			if ( self::handle_session_sub_action( $sub_action ) ) {
+				return;
+			}
+		} catch ( \Throwable $e ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'error',
+				'[ajax] unhandled_exception',
+				array(
+					'source'     => 'ajax',
+					'event_type' => 'ajax_error',
+					'channel'    => 'critical',
+					'sub_action' => $sub_action,
+					'message'    => $e->getMessage(),
+				)
+			);
+			wp_send_json_error( array( 'code' => 'ajax_unhandled_exception', 'message' => __( 'Внутренняя ошибка checkout. Повторите попытку.', 'mp-custom-checkout' ) ), 500 );
 		}
 		do_action( 'mp_custom_checkout_ajax_request', $sub_action );
 		wp_send_json_success( array( 'sub_action' => $sub_action ) );
@@ -132,6 +151,22 @@ final class CheckoutAjaxHooks {
 			}
 			wp_send_json_success( array( 'sub_action' => $sub_action, 'logged' => ! empty( $clean_issues ) ) );
 		}
+		if ( 'client_error_log' === $sub_action ) {
+			$type    = isset( $_POST['error_type'] ) ? sanitize_key( wp_unslash( (string) $_POST['error_type'] ) ) : 'js_error';
+			$message = isset( $_POST['message'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['message'] ) ) : '';
+			$stack   = isset( $_POST['stack'] ) ? sanitize_textarea_field( wp_unslash( (string) $_POST['stack'] ) ) : '';
+			$state   = isset( $_POST['state'] ) ? sanitize_key( wp_unslash( (string) $_POST['state'] ) ) : '';
+			do_action( 'mp_custom_checkout_log', 'error', '[client_js] runtime_error', array( 'source' => 'client_js', 'event_type' => $type, 'message' => $message, 'stack' => $stack, 'state' => $state ) );
+			wp_send_json_success( array( 'sub_action' => $sub_action, 'logged' => true ) );
+		}
+		if ( 'ajax_error_log' === $sub_action ) {
+			$operation = isset( $_POST['operation'] ) ? sanitize_key( wp_unslash( (string) $_POST['operation'] ) ) : '';
+			$status    = isset( $_POST['status'] ) ? (int) $_POST['status'] : 0;
+			$error     = isset( $_POST['error'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['error'] ) ) : '';
+			$response  = isset( $_POST['response_snippet'] ) ? sanitize_textarea_field( wp_unslash( (string) $_POST['response_snippet'] ) ) : '';
+			do_action( 'mp_custom_checkout_log', 'error', '[ajax_client] request_failed', array( 'source' => 'ajax', 'event_type' => 'ajax_error', 'operation' => $operation, 'status' => $status, 'error' => $error, 'response' => $response ) );
+			wp_send_json_success( array( 'sub_action' => $sub_action, 'logged' => true ) );
+		}
 		if ( 'update_quantity' === $sub_action ) {
 			self::handle_update_quantity();
 		}
@@ -155,7 +190,7 @@ final class CheckoutAjaxHooks {
 	}
 
 	private static function is_session_sub_action( string $sub_action ): bool {
-		return in_array( $sub_action, array( 'session_set_step', 'session_set_answers', 'session_set_scenario', 'session_get_state', 'session_abandon', 'update_quantity', 'remove_item', 'validation_log', 'apply_coupon', 'remove_coupon', 'apply_gift_card', 'set_payment_gateway', 'gateway_render_diagnostics', 'submit_payment' ), true );
+		return in_array( $sub_action, array( 'session_set_step', 'session_set_answers', 'session_set_scenario', 'session_get_state', 'session_abandon', 'update_quantity', 'remove_item', 'validation_log', 'apply_coupon', 'remove_coupon', 'apply_gift_card', 'set_payment_gateway', 'gateway_render_diagnostics', 'submit_payment', 'client_error_log', 'ajax_error_log' ), true );
 	}
 
 	private static function handle_set_payment_gateway(): void {

@@ -8,6 +8,8 @@
 namespace MP\CustomCheckout\Admin\Hooks;
 
 use MP\CustomCheckout\Admin\Config\AdminTabRegistry;
+use MP\CustomCheckout\Diagnostics\CheckoutHealthChecks;
+use MP\CustomCheckout\Logging\CheckoutLogStore;
 use MP\CustomCheckout\Settings\AdminSectionsRegistry;
 use MP\CustomCheckout\Settings\OptionKeys;
 use MP\CustomCheckout\Settings\SafeSettingsResolver;
@@ -22,6 +24,7 @@ final class AdminMenuHooks {
 	public static function register(): void {
 		add_action( 'admin_menu', array( __CLASS__, 'register_menu' ) );
 		add_action( 'admin_init', array( __CLASS__, 'register_settings' ) );
+		add_action( 'admin_init', array( __CLASS__, 'handle_logs_actions' ) );
 	}
 
 	public static function register_menu(): void {
@@ -237,13 +240,19 @@ final class AdminMenuHooks {
 				</nav>
 
 				<div class="mp-cc-admin-shell__content">
-					<form method="post" action="<?php echo esc_url( admin_url( 'options.php' ) ); ?>" data-mp-cc-admin-settings-form="1">
-						<?php settings_fields( self::OPTION_GROUP ); ?>
-						<?php self::render_tab_fields( (string) $active_tab, $settings, $tabs ); ?>
-						<p class="submit">
-							<button type="submit" class="button button-primary"><?php esc_html_e( 'Сохранить настройки', 'mp-custom-checkout' ); ?></button>
-						</p>
-					</form>
+					<?php if ( OptionKeys::SECTION_LOGS === $active_tab ) : ?>
+						<div data-mp-cc-admin-settings-form="1">
+							<?php self::render_tab_fields( (string) $active_tab, $settings, $tabs ); ?>
+						</div>
+					<?php else : ?>
+						<form method="post" action="<?php echo esc_url( admin_url( 'options.php' ) ); ?>" data-mp-cc-admin-settings-form="1">
+							<?php settings_fields( self::OPTION_GROUP ); ?>
+							<?php self::render_tab_fields( (string) $active_tab, $settings, $tabs ); ?>
+							<p class="submit">
+								<button type="submit" class="button button-primary"><?php esc_html_e( 'Сохранить настройки', 'mp-custom-checkout' ); ?></button>
+							</p>
+						</form>
+					<?php endif; ?>
 				</div>
 			</div>
 		</div>
@@ -312,6 +321,10 @@ final class AdminMenuHooks {
 	 * @param array<string, array<string, mixed>> $tabs
 	 */
 	private static function render_tab_fields( string $tab_id, array $settings, array $tabs ): void {
+		if ( OptionKeys::SECTION_LOGS === $tab_id ) {
+			self::render_logs_tab( $tab_id, $tabs );
+			return;
+		}
 		$section_value = isset( $settings[ $tab_id ] ) ? $settings[ $tab_id ] : array();
 		$title = isset( AdminSectionsRegistry::sections()[ $tab_id ]['label'] ) ? (string) AdminSectionsRegistry::sections()[ $tab_id ]['label'] : $tab_id;
 		$description = isset( $tabs[ $tab_id ]['description'] ) ? (string) $tabs[ $tab_id ]['description'] : '';
@@ -327,6 +340,113 @@ final class AdminMenuHooks {
 		self::render_field_group( OptionKeys::MAIN . '[' . $tab_id . ']', $section_value, $tab_id );
 		self::render_supplemental_groups_for_tab( $tab_id, $settings );
 		echo '</div>';
+	}
+
+	/**
+	 * @param array<string, array<string, mixed>> $tabs
+	 */
+	private static function render_logs_tab( string $tab_id, array $tabs ): void {
+		$title = isset( AdminSectionsRegistry::sections()[ $tab_id ]['label'] ) ? (string) AdminSectionsRegistry::sections()[ $tab_id ]['label'] : $tab_id;
+		$description = isset( $tabs[ $tab_id ]['description'] ) ? (string) $tabs[ $tab_id ]['description'] : '';
+		echo '<h2>' . esc_html( $title ) . '</h2>';
+		if ( '' !== $description ) {
+			echo '<p class="mp-cc-admin-shell__tab-description">' . esc_html( $description ) . '</p>';
+		}
+		$filters = self::read_log_filters();
+		$rows = CheckoutLogStore::query( $filters );
+		echo '<div class="mp-cc-admin-shell__fields">';
+		echo '<div class="mp-cc-admin-shell__fieldset">';
+		echo '<p><strong>' . esc_html__( 'Фильтры логов', 'mp-custom-checkout' ) . '</strong></p>';
+		echo '<form method="get">';
+		echo '<input type="hidden" name="page" value="' . esc_attr( self::PAGE_SLUG ) . '" />';
+		echo '<input type="hidden" name="tab" value="' . esc_attr( OptionKeys::SECTION_LOGS ) . '" />';
+		echo '<label class="mp-cc-admin-shell__field"><span class="mp-cc-admin-shell__field-label">Level</span><input type="text" name="mp_cc_log_level" value="' . esc_attr( $filters['level'] ) . '" /></label>';
+		echo '<label class="mp-cc-admin-shell__field"><span class="mp-cc-admin-shell__field-label">Source</span><input type="text" name="mp_cc_log_source" value="' . esc_attr( $filters['source'] ) . '" /></label>';
+		echo '<label class="mp-cc-admin-shell__field"><span class="mp-cc-admin-shell__field-label">Channel</span><input type="text" name="mp_cc_log_channel" value="' . esc_attr( $filters['channel'] ) . '" /></label>';
+		echo '<label class="mp-cc-admin-shell__field"><span class="mp-cc-admin-shell__field-label">Event</span><input type="text" name="mp_cc_log_event_type" value="' . esc_attr( $filters['event_type'] ) . '" /></label>';
+		echo '<label class="mp-cc-admin-shell__field"><span class="mp-cc-admin-shell__field-label">Search</span><input type="text" name="mp_cc_log_search" value="' . esc_attr( $filters['search'] ) . '" /></label>';
+		submit_button( __( 'Применить фильтры', 'mp-custom-checkout' ), 'secondary', '', false );
+		echo '</form>';
+		echo '</div>';
+		echo '<div class="mp-cc-admin-shell__fieldset">';
+		echo '<p><strong>' . esc_html__( 'Инструменты эксплуатации', 'mp-custom-checkout' ) . '</strong></p>';
+		echo '<form method="post">';
+		wp_nonce_field( 'mp_cc_logs_actions', 'mp_cc_logs_nonce' );
+		echo '<input type="hidden" name="mp_cc_logs_action" value="export_json" />';
+		echo '<input type="hidden" name="mp_cc_log_level" value="' . esc_attr( $filters['level'] ) . '" />';
+		echo '<input type="hidden" name="mp_cc_log_source" value="' . esc_attr( $filters['source'] ) . '" />';
+		echo '<input type="hidden" name="mp_cc_log_channel" value="' . esc_attr( $filters['channel'] ) . '" />';
+		echo '<input type="hidden" name="mp_cc_log_event_type" value="' . esc_attr( $filters['event_type'] ) . '" />';
+		echo '<input type="hidden" name="mp_cc_log_search" value="' . esc_attr( $filters['search'] ) . '" />';
+		submit_button( __( 'Экспорт JSON', 'mp-custom-checkout' ), 'secondary', '', false );
+		echo '</form>';
+		echo '<form method="post" style="margin-top:8px">';
+		wp_nonce_field( 'mp_cc_logs_actions', 'mp_cc_logs_nonce' );
+		echo '<input type="hidden" name="mp_cc_logs_action" value="clear_logs" />';
+		submit_button( __( 'Очистить логи', 'mp-custom-checkout' ), 'delete', '', false );
+		echo '</form>';
+		echo '</div>';
+		echo '<div class="mp-cc-admin-shell__fieldset">';
+		echo '<p><strong>' . sprintf( esc_html__( 'Записей: %d', 'mp-custom-checkout' ), count( $rows ) ) . '</strong></p>';
+		foreach ( $rows as $idx => $row ) {
+			$time = isset( $row['timestamp'] ) ? (string) $row['timestamp'] : '';
+			$level = isset( $row['level'] ) ? (string) $row['level'] : '';
+			$source = isset( $row['source'] ) ? (string) $row['source'] : '';
+			$message = isset( $row['message'] ) ? (string) $row['message'] : '';
+			$event = isset( $row['event_type'] ) ? (string) $row['event_type'] : '';
+			$channel = isset( $row['channel'] ) ? (string) $row['channel'] : '';
+			$context = isset( $row['context'] ) && is_array( $row['context'] ) ? $row['context'] : array();
+			echo '<details class="mp-cc-admin-shell__fieldset"' . ( 0 === $idx ? ' open' : '' ) . '>';
+			echo '<summary><span>[' . esc_html( $level ) . '] ' . esc_html( $message ) . '</span><em class="mp-cc-admin-shell__type-badge mp-cc-admin-shell__type-badge--logic">' . esc_html( $source ) . '</em></summary>';
+			echo '<p><code>' . esc_html( $time ) . '</code> | <code>' . esc_html( $event ) . '</code> | <code>' . esc_html( $channel ) . '</code></p>';
+			echo '<p><strong>' . esc_html__( 'Контекст', 'mp-custom-checkout' ) . '</strong></p>';
+			echo '<textarea class="large-text code" rows="6" readonly>' . esc_textarea( wp_json_encode( $context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT ) ?: '{}' ) . '</textarea>';
+			echo '</details>';
+		}
+		echo '</div>';
+		echo '</div>';
+	}
+
+	public static function handle_logs_actions(): void {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+		$action = isset( $_POST['mp_cc_logs_action'] ) ? sanitize_key( wp_unslash( (string) $_POST['mp_cc_logs_action'] ) ) : '';
+		if ( '' === $action ) {
+			return;
+		}
+		$page = isset( $_REQUEST['page'] ) ? sanitize_key( wp_unslash( (string) $_REQUEST['page'] ) ) : '';
+		if ( self::PAGE_SLUG !== $page ) {
+			return;
+		}
+		check_admin_referer( 'mp_cc_logs_actions', 'mp_cc_logs_nonce' );
+		if ( 'clear_logs' === $action ) {
+			CheckoutLogStore::clear();
+			wp_safe_redirect( add_query_arg( array( 'page' => self::PAGE_SLUG, 'tab' => OptionKeys::SECTION_LOGS, 'logs_cleared' => '1' ), admin_url( 'admin.php' ) ) );
+			exit;
+		}
+		if ( 'export_json' === $action ) {
+			$rows = CheckoutLogStore::query( self::read_log_filters( true ) );
+			nocache_headers();
+			header( 'Content-Type: application/json; charset=utf-8' );
+			header( 'Content-Disposition: attachment; filename="mp-cc-logs-' . gmdate( 'Ymd-His' ) . '.json"' );
+			echo wp_json_encode( $rows, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT );
+			exit;
+		}
+	}
+
+	/**
+	 * @return array<string, string>
+	 */
+	private static function read_log_filters( bool $prefer_post = false ): array {
+		$src = $prefer_post ? $_POST : $_GET;
+		return array(
+			'level'      => isset( $src['mp_cc_log_level'] ) ? sanitize_key( wp_unslash( (string) $src['mp_cc_log_level'] ) ) : '',
+			'source'     => isset( $src['mp_cc_log_source'] ) ? sanitize_key( wp_unslash( (string) $src['mp_cc_log_source'] ) ) : '',
+			'channel'    => isset( $src['mp_cc_log_channel'] ) ? sanitize_key( wp_unslash( (string) $src['mp_cc_log_channel'] ) ) : '',
+			'event_type' => isset( $src['mp_cc_log_event_type'] ) ? sanitize_key( wp_unslash( (string) $src['mp_cc_log_event_type'] ) ) : '',
+			'search'     => isset( $src['mp_cc_log_search'] ) ? sanitize_text_field( wp_unslash( (string) $src['mp_cc_log_search'] ) ) : '',
+		);
 	}
 
 	/**
@@ -350,7 +470,29 @@ final class AdminMenuHooks {
 				OptionKeys::KEY_REGISTRY,
 				'logic'
 			);
+			self::render_health_checks_group();
 		}
+	}
+
+	private static function render_health_checks_group(): void {
+		$checks = CheckoutHealthChecks::collect();
+		if ( empty( $checks ) ) {
+			return;
+		}
+		echo '<details class="mp-cc-admin-shell__fieldset" open>';
+		echo '<summary><span>' . esc_html__( 'Checkout Health Checks', 'mp-custom-checkout' ) . '</span><em class="mp-cc-admin-shell__type-badge mp-cc-admin-shell__type-badge--validation">' . esc_html__( 'сервис', 'mp-custom-checkout' ) . '</em></summary>';
+		foreach ( $checks as $check ) {
+			$status = isset( $check['status'] ) ? (string) $check['status'] : 'ok';
+			$name = isset( $check['name'] ) ? (string) $check['name'] : '';
+			$message = isset( $check['message'] ) ? (string) $check['message'] : '';
+			$badge_class = 'mp-cc-admin-shell__scenario-badge';
+			if ( 'fail' === $status ) {
+				$badge_class .= ' is-risky';
+			}
+			echo '<p><strong>' . esc_html( $name ) . '</strong> <span class="' . esc_attr( $badge_class ) . '">' . esc_html( strtoupper( $status ) ) . '</span><br />' . esc_html( $message ) . '</p>';
+		}
+		echo '<p><a class="button button-small" href="' . esc_url( admin_url( 'admin.php?page=' . self::PAGE_SLUG . '&tab=' . OptionKeys::SECTION_LOGS ) ) . '">' . esc_html__( 'Открыть логи checkout', 'mp-custom-checkout' ) . '</a></p>';
+		echo '</details>';
 	}
 
 	/**

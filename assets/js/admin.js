@@ -299,7 +299,303 @@
 		return (source && typeof source === 'object') ? source : {};
 	}
 
-	function renderPreview(config) {
+	function getSettingsDefaults() {
+		var source = window.mpCcAdmin && window.mpCcAdmin.settingsDefaults ? window.mpCcAdmin.settingsDefaults : {};
+		return (source && typeof source === 'object') ? source : {};
+	}
+
+	function createPreviewRuntimeMock() {
+		return {
+			cart: {
+				items: [
+					{ title: 'Rose Perfume', qty: 1, amount: '2 490 ₽' },
+					{ title: 'Gift Box', qty: 2, amount: '590 ₽' }
+				]
+			},
+			summary: {
+				items: 3,
+				subtotal: '3 670 ₽',
+				shipping: '490 ₽',
+				discount: '-200 ₽',
+				giftCard: '-100 ₽',
+				tax: '200 ₽',
+				total: '4 060 ₽'
+			},
+			contact: {
+				fullName: 'Иван Иванов',
+				emailMasked: 'iv***@example.com',
+				phoneMasked: '+7 *** ***-45-67'
+			},
+			fulfillment: {
+				scenario: 'Самовывоз',
+				date: '2026-04-20',
+				pickupPoint: 'Офис на Мира, 10'
+			}
+		};
+	}
+
+	function createPreviewStore(initialState) {
+		var state = $.extend(true, {}, initialState || {});
+		return {
+			getState: function () {
+				return $.extend(true, {}, state);
+			},
+			setState: function (nextPatch) {
+				state = $.extend(true, {}, state, nextPatch || {});
+				return this.getState();
+			},
+			reset: function () {
+				state = $.extend(true, {}, initialState || {});
+				return this.getState();
+			}
+		};
+	}
+
+	function debounce(callback, waitMs) {
+		var timeoutId = 0;
+		return function () {
+			var args = arguments;
+			clearTimeout(timeoutId);
+			timeoutId = window.setTimeout(function () {
+				callback.apply(null, args);
+			}, waitMs);
+		};
+	}
+
+	function renderPreviewArea() {
+		var html = '';
+		html += '<section class="mp-cc-admin-preview-area" id="mp-cc-admin-preview-area">';
+		html += '<div class="mp-cc-admin-preview-area__header">';
+		html += '<h2>Live Checkout Preview</h2>';
+		html += '<div class="mp-cc-admin-preview-area__actions">';
+		html += '<label class="mp-cc-admin-preview-area__control">Progress';
+		html += '<select data-mp-cc-progress-style-select="1"><option value="digits">1/2/3</option><option value="labels">Названия</option><option value="dots">Точки</option></select>';
+		html += '</label>';
+		html += '<label class="mp-cc-admin-preview-area__control">Scenario';
+		html += '<select data-mp-cc-scenario-select="1"><option value="pickup">Самовывоз</option><option value="krasnoyarsk_delivery">Красноярск</option><option value="other_city_delivery">Другой город</option></select>';
+		html += '</label>';
+		html += '<label class="mp-cc-admin-preview-area__control">Device';
+		html += '<select data-mp-cc-device-select="1"><option value="desktop">Desktop</option><option value="tablet">Tablet</option><option value="mobile">Mobile</option></select>';
+		html += '</label>';
+		html += '<label class="mp-cc-admin-preview-area__control">Interaction';
+		html += '<select data-mp-cc-interaction-select="1"><option value="default">Default</option><option value="hover">Hover</option><option value="focus">Focus</option></select>';
+		html += '</label>';
+		html += '<label class="mp-cc-admin-preview-area__control">Runtime';
+		html += '<select data-mp-cc-runtime-select="1"><option value="default">Default</option><option value="error">Error</option><option value="disabled">Disabled</option><option value="loading">Loading</option><option value="success">Success</option></select>';
+		html += '</label>';
+		html += '<label class="mp-cc-admin-preview-area__control">Sandbox';
+		html += '<select data-mp-cc-sandbox-select="1"><option value="pickup_happy_path">Pickup happy path</option><option value="delivery_with_coupon">Delivery + coupon</option><option value="payment_error_case">Payment error</option></select>';
+		html += '</label>';
+		html += '<button type="button" class="button button-secondary" data-mp-cc-test-util="fulfillment">Test: fulfillment</button>';
+		html += '<button type="button" class="button button-secondary" data-mp-cc-test-util="discounts">Test: discounts</button>';
+		html += '<button type="button" class="button button-secondary" data-mp-cc-test-util="validation_payment">Test: validation/payment</button>';
+		html += '<button type="button" class="button button-secondary" data-mp-cc-preview-reset="1">Сбросить превью</button>';
+		html += '<button type="button" class="button button-secondary" data-mp-cc-tab-reset="1">Сбросить настройки вкладки по умолчанию</button>';
+		html += '</div>';
+		html += '</div>';
+		html += '<p class="mp-cc-admin-preview-area__warning" data-mp-cc-preview-warning="1" hidden>В превью есть несохранённые изменения.</p>';
+		html += '<nav class="mp-cc-admin-flow-nav" data-mp-cc-preview-flow-nav="1" aria-label="Preview checkout steps"></nav>';
+		html += '<div class="mp-cc-admin-flow-progress" data-mp-cc-preview-progress="1"></div>';
+		html += '<div class="mp-cc-admin-preview-area__body" data-mp-cc-preview-body="1"></div>';
+		html += '</section>';
+		return html;
+	}
+
+	function getPreviewStepItems() {
+		return [
+			{ id: 'step_1', label: 'Шаг 1: Корзина' },
+			{ id: 'step_2', label: 'Шаг 2: Дата' },
+			{ id: 'step_3', label: 'Шаг 3: Условия' },
+			{ id: 'step_4', label: 'Шаг 4: Контакты и оплата' },
+			{ id: 'success', label: 'Success' }
+		];
+	}
+
+	function renderFlowStepSwitcher(activeStepId) {
+		var items = getPreviewStepItems();
+		var html = '';
+		for (var i = 0; i < items.length; i += 1) {
+			var step = items[i];
+			var activeClass = step.id === activeStepId ? ' is-active' : '';
+			html += '<button type="button" class="button mp-cc-admin-flow-nav__button' + activeClass + '" data-mp-cc-preview-step="' + escapeHtml(step.id) + '">' + escapeHtml(step.label) + '</button>';
+		}
+		return html;
+	}
+
+	function renderFlowProgress(activeStepId, styleVariant) {
+		var items = getPreviewStepItems();
+		var activeIndex = 0;
+		var i;
+		for (i = 0; i < items.length; i += 1) {
+			if (items[i].id === activeStepId) {
+				activeIndex = i;
+				break;
+			}
+		}
+		var html = '';
+		html += '<ol class="mp-cc-admin-flow-progress__list" data-variant="' + escapeHtml(styleVariant) + '">';
+		for (i = 0; i < items.length; i += 1) {
+			var label = items[i].label;
+			var number = String(i + 1);
+			var stateClass = i < activeIndex ? ' is-done' : (i === activeIndex ? ' is-active' : '');
+			html += '<li class="mp-cc-admin-flow-progress__item' + stateClass + '">';
+			if (styleVariant === 'labels') {
+				html += '<span class="mp-cc-admin-flow-progress__token">' + escapeHtml(label) + '</span>';
+			} else if (styleVariant === 'dots') {
+				html += '<span class="mp-cc-admin-flow-progress__dot" aria-hidden="true"></span>';
+				html += '<span class="screen-reader-text">' + escapeHtml(label) + '</span>';
+			} else {
+				html += '<span class="mp-cc-admin-flow-progress__token">' + escapeHtml(number) + '</span>';
+			}
+			html += '</li>';
+		}
+		html += '</ol>';
+		return html;
+	}
+
+	function renderCalendarStatePreview(config, previewState) {
+		var scenario = previewState && previewState.scenario ? String(previewState.scenario) : 'pickup';
+		var weekdays = (config.weekdayRules && config.weekdayRules[scenario] && config.weekdayRules[scenario].length) ? config.weekdayRules[scenario] : [1, 2, 3, 4, 5];
+		var blocked = {};
+		var i;
+		var date;
+		for (i = 0; i < config.holidayDates.length; i += 1) {
+			date = String(config.holidayDates[i] || '');
+			if (date) {
+				blocked[date] = 'holiday';
+			}
+		}
+		for (i = 0; i < config.closedDates.length; i += 1) {
+			date = String(config.closedDates[i] || '');
+			if (date) {
+				blocked[date] = 'closed';
+			}
+		}
+		var base = new Date('2026-04-14T00:00:00Z');
+		var html = '<div class="mp-cc-admin-calendar-preview">';
+		for (i = 0; i < 14; i += 1) {
+			var current = new Date(base.getTime() + i * 86400000);
+			var iso = current.toISOString().slice(0, 10);
+			var day = current.getUTCDay();
+			var dayNum = day === 0 ? 7 : day;
+			var allowedWeekday = weekdays.indexOf(dayNum) > -1;
+			var state = blocked[iso] ? blocked[iso] : (allowedWeekday ? 'open' : 'blocked');
+			html += '<span class="mp-cc-admin-calendar-preview__day is-' + escapeHtml(state) + '">' + escapeHtml(iso.slice(8, 10)) + '</span>';
+		}
+		html += '</div>';
+		return html;
+	}
+
+	function renderPaymentGatewayStatePreview(cfg, previewState) {
+		var runtimeState = previewState && previewState.runtimeState ? String(previewState.runtimeState) : 'default';
+		var gateways = (cfg.payment && Array.isArray(cfg.payment.gateway_order) && cfg.payment.gateway_order.length) ? cfg.payment.gateway_order : ['cod', 'card', 'sbp'];
+		var html = '<div class="mp-cc-admin-gateway-preview">';
+		for (var i = 0; i < gateways.length; i += 1) {
+			var key = String(gateways[i] || '');
+			if (!key) {
+				continue;
+			}
+			var active = i === 0 ? ' is-active' : '';
+			var runtimeClass = runtimeState !== 'default' ? ' is-' + escapeHtml(runtimeState) : '';
+			html += '<div class="mp-cc-admin-gateway-preview__item' + active + runtimeClass + '"><strong>' + escapeHtml(key) + '</strong><small>' + escapeHtml(cfg.payment.card_style || 'default') + '</small></div>';
+		}
+		html += '</div>';
+		return html;
+	}
+
+	function renderSummaryReviewPreview(config, previewState) {
+		var runtime = previewState && previewState.runtime ? previewState.runtime : {};
+		var summary = runtime.summary && typeof runtime.summary === 'object' ? runtime.summary : {};
+		var scenario = previewState && previewState.scenario ? String(previewState.scenario) : 'pickup';
+		var html = '';
+		html += '<div class="mp-cc-admin-summary-review">';
+		html += '<div class="mp-cc-admin-summary-review__summary"><strong>' + escapeHtml(config.summaryTitle || 'Сводка') + '</strong>';
+		html += '<p>' + escapeHtml(config.subtotalLabel || 'Подытог') + ': ' + escapeHtml(summary.subtotal || '—') + '</p>';
+		if (scenario !== 'pickup') {
+			html += '<p>' + escapeHtml(config.shippingLabel || 'Доставка') + ': ' + escapeHtml(summary.shipping || '—') + '</p>';
+		}
+		html += '<p>' + escapeHtml(config.discountLabel || 'Скидка') + ': ' + escapeHtml(summary.discount || '—') + '</p>';
+		html += '<p>' + escapeHtml(config.giftCardLabel || 'Подарочная карта') + ': ' + escapeHtml(summary.giftCard || '—') + '</p>';
+		html += '<p><strong>' + escapeHtml(config.totalLabel || 'Итого') + ': ' + escapeHtml(summary.total || '—') + '</strong></p>';
+		html += '</div>';
+		html += '<div class="mp-cc-admin-summary-review__order"><strong>Order review (mock)</strong><p>Сценарий: ' + escapeHtml(scenario) + '</p><p>Runtime: ' + escapeHtml(String((previewState && previewState.runtimeState) || 'default')) + '</p><p>Товары: Rose Perfume x1, Gift Box x2</p></div>';
+		html += '</div>';
+		return html;
+	}
+
+	function applySandboxScenario(previewStore, scenarioKey) {
+		var key = String(scenarioKey || '');
+		if (key === 'delivery_with_coupon') {
+			previewStore.setState({
+				scenario: 'krasnoyarsk_delivery',
+				runtimeState: 'success',
+				runtime: {
+					summary: {
+						items: 3,
+						subtotal: '3 670 ₽',
+						shipping: '490 ₽',
+						discount: '-500 ₽',
+						giftCard: '0 ₽',
+						tax: '200 ₽',
+						total: '3 860 ₽'
+					},
+					fulfillment: {
+						scenario: 'Доставка по Красноярску',
+						date: '2026-04-22',
+						pickupPoint: 'Курьер'
+					}
+				}
+			});
+			return;
+		}
+		if (key === 'payment_error_case') {
+			previewStore.setState({
+				scenario: 'other_city_delivery',
+				runtimeState: 'error',
+				runtime: {
+					summary: {
+						items: 3,
+						subtotal: '3 670 ₽',
+						shipping: '700 ₽',
+						discount: '-0 ₽',
+						giftCard: '-100 ₽',
+						tax: '250 ₽',
+						total: '4 520 ₽'
+					},
+					fulfillment: {
+						scenario: 'Доставка в другой город',
+						date: '2026-04-25',
+						pickupPoint: 'Транспортная компания'
+					}
+				}
+			});
+			return;
+		}
+		previewStore.setState({
+			scenario: 'pickup',
+			runtimeState: 'default',
+			runtime: createPreviewRuntimeMock()
+		});
+	}
+
+	function renderSuccessPreview(runtime) {
+		var rt = runtime && typeof runtime === 'object' ? runtime : {};
+		var summary = rt.summary && typeof rt.summary === 'object' ? rt.summary : {};
+		var contact = rt.contact && typeof rt.contact === 'object' ? rt.contact : {};
+		var fulfillment = rt.fulfillment && typeof rt.fulfillment === 'object' ? rt.fulfillment : {};
+		var html = '';
+		html += '<section class="mp-cc-admin-preview mp-cc-admin-preview--success" id="mp-cc-admin-success-preview">';
+		html += '<h2>Success Screen Preview</h2>';
+		html += '<div class="mp-cc-admin-preview__date-grid">';
+		html += '<article><strong>Fulfillment</strong><p>Сценарий: ' + escapeHtml(String(fulfillment.scenario || '—')) + '</p><p>Дата: ' + escapeHtml(String(fulfillment.date || '—')) + '</p><p>Точка: ' + escapeHtml(String(fulfillment.pickupPoint || '—')) + '</p></article>';
+		html += '<article><strong>Contact Summary</strong><p>' + escapeHtml(String(contact.fullName || '—')) + '</p><p>' + escapeHtml(String(contact.emailMasked || '—')) + '</p><p>' + escapeHtml(String(contact.phoneMasked || '—')) + '</p></article>';
+		html += '<article><strong>Financial Summary</strong><p>Subtotal: ' + escapeHtml(String(summary.subtotal || '—')) + '</p><p>Shipping: ' + escapeHtml(String(summary.shipping || '—')) + '</p><p>Total: <strong>' + escapeHtml(String(summary.total || '—')) + '</strong></p></article>';
+		html += '</div>';
+		html += '</section>';
+		return html;
+	}
+
+	function renderPreview(config, previewState) {
 		var html = '';
 		html += '<section class="mp-cc-admin-preview" id="mp-cc-admin-step1-preview"';
 		html += ' data-card-compact="' + (config.cardCompact ? '1' : '0') + '"';
@@ -307,9 +603,7 @@
 		html += ' data-summary-emphasis="' + escapeHtml(config.summaryEmphasis) + '"';
 		html += '>';
 		html += '<h2>Step 1 Preview</h2>';
-		html += '<div class="mp-cc-admin-preview__toolbar">';
-		html += '<button type="button" class="button button-secondary" data-mp-cc-step1-reset="1">Reset Step 1 to defaults</button>';
-		html += '</div>';
+		html += '<p>Device: <strong>' + escapeHtml(String((previewState && previewState.device) || 'desktop')) + '</strong>, interaction: <strong>' + escapeHtml(String((previewState && previewState.interactionState) || 'default')) + '</strong></p>';
 		html += '<div class="mp-cc-admin-preview__grid">';
 		html += '<article class="mp-cc-admin-preview__card">';
 		html += '<h3>' + escapeHtml(config.title) + '</h3>';
@@ -353,12 +647,14 @@
 			html += '<div class="mp-cc-admin-preview__pickup-map">Map slot reserved</div>';
 			html += '</div>';
 		}
+		html += renderSummaryReviewPreview(config, previewState);
 		html += '</section>';
 		return html;
 	}
 
-	function renderScenarioPreview(config) {
+	function renderScenarioPreview(config, previewState) {
 		var order = Array.isArray(config.cardOrder) ? config.cardOrder : ['pickup', 'delivery'];
+		var selectedScenario = previewState && previewState.scenario ? String(previewState.scenario) : config.defaultScenario;
 		var html = '';
 		html += '<section class="mp-cc-admin-preview mp-cc-admin-preview--scenario" id="mp-cc-admin-scenario-preview">';
 		html += '<h2>Scenario Cards Preview</h2>';
@@ -374,7 +670,8 @@
 				continue;
 			}
 			var card = config.cards[key];
-			html += '<article class="mp-cc-admin-preview__scenario-card">';
+			var selectedClass = selectedScenario.indexOf('pickup') > -1 && key === 'pickup' ? ' is-selected' : (selectedScenario.indexOf('delivery') > -1 && key === 'delivery' ? ' is-selected' : '');
+			html += '<article class="mp-cc-admin-preview__scenario-card' + selectedClass + '">';
 			html += '<div class="mp-cc-admin-preview__scenario-icon mp-cc-admin-preview__scenario-icon--' + escapeHtml(card.iconStyle) + '">' + escapeHtml(card.iconVariant) + '</div>';
 			html += '<h3>' + escapeHtml(card.title) + '</h3>';
 			if (card.description) {
@@ -390,11 +687,13 @@
 		return html;
 	}
 
-	function renderDatePreview(config) {
+	function renderDatePreview(config, previewState) {
 		var blockedTotal = config.holidayDates.length + config.closedDates.length;
+		var scenario = previewState && previewState.scenario ? String(previewState.scenario) : 'pickup';
 		var html = '';
 		html += '<section class="mp-cc-admin-preview mp-cc-admin-preview--date" id="mp-cc-admin-date-preview">';
 		html += '<h2>Date Step Preview</h2>';
+		html += '<p>Scenario: <strong>' + escapeHtml(scenario) + '</strong></p>';
 		html += '<h3>' + escapeHtml(config.title) + '</h3>';
 		html += '<div class="mp-cc-admin-preview__date-grid">';
 		html += '<article><strong>Самовывоз</strong><p>' + escapeHtml(config.helperByScenario.pickup || '—') + '</p></article>';
@@ -411,15 +710,19 @@
 		html += '<p><strong>Blocked dates:</strong> holidays ' + escapeHtml(config.holidayDates.length) + ', closed ' + escapeHtml(config.closedDates.length) + ', total ' + escapeHtml(blockedTotal) + '</p>';
 		html += '<p><strong>Calendar style:</strong> ' + escapeHtml(config.calendarStyle.density) + ', ' + escapeHtml(config.calendarStyle.dayShape) + ', ' + escapeHtml(config.calendarStyle.highlightStyle) + ', weekend tint: ' + escapeHtml(config.calendarStyle.showWeekendTint ? 'on' : 'off') + '</p>';
 		html += '</div>';
+		html += renderCalendarStatePreview(config, previewState);
 		html += '</section>';
 		return html;
 	}
 
-	function renderStepFourPreview(cfg) {
+	function renderStepFourPreview(cfg, previewState) {
 		var order = Array.isArray(cfg.contact.fieldOrder) ? cfg.contact.fieldOrder : [];
+		var runtimeState = previewState && previewState.runtimeState ? String(previewState.runtimeState) : 'default';
+		var interaction = previewState && previewState.interactionState ? String(previewState.interactionState) : 'default';
 		var html = '';
 		html += '<section class="mp-cc-admin-preview mp-cc-admin-preview--step4" id="mp-cc-admin-step4-preview">';
 		html += '<h2>Step 4 Contact Preview</h2>';
+		html += '<p>Runtime: <strong>' + escapeHtml(runtimeState) + '</strong>, interaction: <strong>' + escapeHtml(interaction) + '</strong></p>';
 		html += '<p><strong>' + escapeHtml(cfg.contact.title) + '</strong></p>';
 		if (cfg.contact.intro) {
 			html += '<p>' + escapeHtml(cfg.contact.intro) + '</p>';
@@ -512,6 +815,7 @@
 		html += '<p class="mp-cc-admin-step4-error-sample">' + escapeHtml(String((cfg.payment.messages && cfg.payment.messages.error) || 'Не удалось переключить способ оплаты.')) + '</p>';
 		html += '</article>';
 		html += '</div>';
+		html += renderPaymentGatewayStatePreview(cfg, previewState);
 		html += '<p><strong>' + escapeHtml(cfg.address.title) + '</strong></p>';
 		html += '<p>Address order: ' + escapeHtml(cfg.address.order.join(', ')) + '</p>';
 		if (cfg.geoPreview) {
@@ -740,6 +1044,51 @@
 		}
 	}
 
+	function flattenDefaultsForSection(defaults, node, section, trail) {
+		var current = node && typeof node === 'object' ? node : {};
+		var path = Array.isArray(trail) ? trail : [];
+		var key;
+		for (key in current) {
+			if (!Object.prototype.hasOwnProperty.call(current, key)) {
+				continue;
+			}
+			var nextPath = path.concat([key]);
+			var value = current[key];
+			if (value && typeof value === 'object' && !Array.isArray(value)) {
+				flattenDefaultsForSection(defaults, value, section, nextPath);
+				continue;
+			}
+			var name = 'mp_custom_checkout_settings[' + section + ']';
+			for (var i = 0; i < nextPath.length; i += 1) {
+				name += '[' + nextPath[i] + ']';
+			}
+			defaults[name] = value;
+		}
+	}
+
+	function detectActiveSettingsSection() {
+		var $active = $('.mp-cc-admin-shell__tab.is-active').first();
+		if ($active.length) {
+			var href = String($active.attr('href') || '');
+			var match = href.match(/[?&]tab=([^&]+)/);
+			if (match && match[1]) {
+				return String(match[1]);
+			}
+		}
+		var search = window.location && window.location.search ? String(window.location.search) : '';
+		var fromSearch = search.match(/[?&]tab=([^&]+)/);
+		if (fromSearch && fromSearch[1]) {
+			return String(fromSearch[1]);
+		}
+		var $firstField = $('[name^="mp_custom_checkout_settings["]').first();
+		if (!$firstField.length) {
+			return '';
+		}
+		var name = String($firstField.attr('name') || '');
+		var fallback = name.match(/^mp_custom_checkout_settings\[([^\]]+)\]/);
+		return fallback && fallback[1] ? String(fallback[1]) : '';
+	}
+
 	function enhanceStepOneFields() {
 		var $rows = $('input[name^="mp_custom_checkout_settings[step_1]"], select[name^="mp_custom_checkout_settings[step_1]"], textarea[name^="mp_custom_checkout_settings[step_1]"]')
 			.closest('tr');
@@ -874,6 +1223,17 @@
 		var officeHoursPreviewConfig = getOfficeHoursPreviewConfigFromRuntime();
 		var stepFourConfig = getStepFourConfigFromRuntime();
 		var defaults = getDefaults();
+		var settingsDefaults = getSettingsDefaults();
+		var previewStore = createPreviewStore({
+			runtime: createPreviewRuntimeMock(),
+			activeStep: 'step_1',
+			progressStyle: 'digits',
+			scenario: 'pickup',
+			device: 'desktop',
+			interactionState: 'default',
+			runtimeState: 'default',
+			dirty: false
+		});
 		var flags = window.mpCcAdmin && window.mpCcAdmin.featureFlags ? window.mpCcAdmin.featureFlags : {};
 		if (!config.previewEnabled || flags.admin_live_preview === false) {
 			return;
@@ -882,65 +1242,238 @@
 		if (!$wrap.length) {
 			return;
 		}
-		if ($('#mp-cc-admin-step1-preview').length) {
+		if ($('#mp-cc-admin-preview-area').length) {
 			return;
 		}
-		$wrap.append(renderPreview(config));
-		if (scenarioConfig.previewEnabled) {
-			$wrap.append(renderScenarioPreview(scenarioConfig));
-		}
-		if (dateStepConfig.previewEnabled) {
-			$wrap.append(renderDatePreview(dateStepConfig));
-		}
-		if (officeHoursPreviewConfig.previewEnabled) {
-			$wrap.append(renderOfficeHoursPreview(officeHoursPreviewConfig));
-		}
-		if (stepFourConfig.previewEnabled) {
-			$wrap.append(renderStepFourPreview(stepFourConfig));
-		}
+		$wrap.append(renderPreviewArea());
 		enhanceStepOneFields();
 		enhanceStepThreeFields();
 		enhanceStepFourFields();
 		refreshStepThreeEmptyIndicators();
 
+		var mountPreviews = function (nextConfig, nextScenarioConfig, nextDateConfig, nextOfficeConfig, nextStepFourConfig) {
+			var previewState = previewStore.getState();
+			var activeStep = previewState.activeStep || 'step_1';
+			var progressStyle = previewState.progressStyle || 'digits';
+			var html = '';
+			if (activeStep === 'step_1') {
+				html += renderPreview(nextConfig, previewState);
+			} else if (activeStep === 'step_2' && nextDateConfig.previewEnabled) {
+				html += renderDatePreview(nextDateConfig, previewState);
+			} else if (activeStep === 'step_3' && nextOfficeConfig.previewEnabled) {
+				html += renderOfficeHoursPreview(nextOfficeConfig);
+				if (nextScenarioConfig.previewEnabled) {
+					html += renderScenarioPreview(nextScenarioConfig, previewState);
+				}
+			} else if (activeStep === 'step_4' && nextStepFourConfig.previewEnabled) {
+				html += renderStepFourPreview(nextStepFourConfig, previewState);
+			} else if (activeStep === 'success') {
+				html += renderSuccessPreview(previewState.runtime);
+			} else {
+				html += renderPreview(nextConfig, previewState);
+			}
+			$('[data-mp-cc-preview-body="1"]').html(html);
+			$('[data-mp-cc-preview-body="1"]').attr('data-device', String(previewState.device || 'desktop'));
+			$('[data-mp-cc-preview-body="1"]').attr('data-interaction', String(previewState.interactionState || 'default'));
+			$('[data-mp-cc-preview-body="1"]').attr('data-runtime', String(previewState.runtimeState || 'default'));
+			$('[data-mp-cc-preview-flow-nav="1"]').html(renderFlowStepSwitcher(activeStep));
+			$('[data-mp-cc-preview-progress="1"]').html(renderFlowProgress(activeStep, progressStyle));
+		};
+
+		var updatePreviewWarning = function () {
+			var isDirty = Boolean(previewStore.getState().dirty);
+			$('[data-mp-cc-preview-warning="1"]').prop('hidden', !isDirty);
+		};
+
 		var rerender = function () {
 			var nextConfig = readLiveConfig(config);
-			$('#mp-cc-admin-step1-preview').replaceWith(renderPreview(nextConfig));
-			if (scenarioConfig.previewEnabled) {
-				var nextScenarioConfig = readLiveScenarioConfig(scenarioConfig);
-				$('#mp-cc-admin-scenario-preview').replaceWith(renderScenarioPreview(nextScenarioConfig));
-			}
-			if (dateStepConfig.previewEnabled) {
-				var nextDateConfig = readLiveDateStepConfig(dateStepConfig);
-				$('#mp-cc-admin-date-preview').replaceWith(renderDatePreview(nextDateConfig));
-			}
-			if (officeHoursPreviewConfig.previewEnabled) {
-				var nextOfficeCfg = readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig);
-				$('#mp-cc-admin-office-preview').replaceWith(renderOfficeHoursPreview(nextOfficeCfg));
-			}
-			if (stepFourConfig.previewEnabled) {
-				var nextStepFourCfg = readLiveStepFourConfig(stepFourConfig);
-				$('#mp-cc-admin-step4-preview').replaceWith(renderStepFourPreview(nextStepFourCfg));
-			}
+			var nextScenarioConfig = readLiveScenarioConfig(scenarioConfig);
+			var nextDateConfig = readLiveDateStepConfig(dateStepConfig);
+			var nextOfficeCfg = readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig);
+			var nextStepFourCfg = readLiveStepFourConfig(stepFourConfig);
+			mountPreviews(nextConfig, nextScenarioConfig, nextDateConfig, nextOfficeCfg, nextStepFourCfg);
+			previewStore.setState({ dirty: true });
+			updatePreviewWarning();
 		};
+		var rerenderDebounced = debounce(rerender, 120);
+		mountPreviews(config, scenarioConfig, dateStepConfig, officeHoursPreviewConfig, stepFourConfig);
+		$('[data-mp-cc-progress-style-select="1"]').val('digits');
+		$('[data-mp-cc-scenario-select="1"]').val('pickup');
+		$('[data-mp-cc-device-select="1"]').val('desktop');
+		$('[data-mp-cc-interaction-select="1"]').val('default');
+		$('[data-mp-cc-runtime-select="1"]').val('default');
+		$('[data-mp-cc-sandbox-select="1"]').val('pickup_happy_path');
+		updatePreviewWarning();
+
 		$(document).on('input change', '[name^="mp_custom_checkout_settings[step_1]"]', function () {
-			rerender();
+			rerenderDebounced();
 		});
 		$(document).on('input change', '[name^="mp_custom_checkout_settings[step_2]"]', function () {
-			rerender();
+			rerenderDebounced();
 		});
 		$(document).on('input change', '[name^="mp_custom_checkout_settings[step_3]"]', function () {
 			refreshStepThreeEmptyIndicators();
-			rerender();
+			rerenderDebounced();
 		});
 		$(document).on('input change', '[name^="mp_custom_checkout_settings[step_4]"]', function () {
-			rerender();
+			rerenderDebounced();
+		});
+		$(document).on('click', '[data-mp-cc-preview-reset]', function () {
+			previewStore.reset();
+			mountPreviews(config, scenarioConfig, dateStepConfig, officeHoursPreviewConfig, stepFourConfig);
+			updatePreviewWarning();
+		});
+		$(document).on('click', '[data-mp-cc-preview-step]', function () {
+			var stepId = String($(this).data('mpCcPreviewStep') || '');
+			if (!stepId) {
+				return;
+			}
+			previewStore.setState({ activeStep: stepId, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
+		$(document).on('click', '[data-mp-cc-progress-style]', function () {
+			var style = String($(this).data('mpCcProgressStyle') || '');
+			if (!style) {
+				return;
+			}
+			previewStore.setState({ progressStyle: style, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
+		$(document).on('change', '[data-mp-cc-progress-style-select]', function () {
+			var styleSelect = String($(this).val() || '');
+			if (!styleSelect) {
+				return;
+			}
+			previewStore.setState({ progressStyle: styleSelect, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
+		$(document).on('click', '[data-mp-cc-scenario]', function () {
+			var scenario = String($(this).data('mpCcScenario') || '');
+			if (!scenario) {
+				return;
+			}
+			previewStore.setState({ scenario: scenario, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
+		$(document).on('change', '[data-mp-cc-scenario-select]', function () {
+			var scenarioSelect = String($(this).val() || '');
+			if (!scenarioSelect) {
+				return;
+			}
+			previewStore.setState({ scenario: scenarioSelect, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
+		$(document).on('click', '[data-mp-cc-device]', function () {
+			var device = String($(this).data('mpCcDevice') || '');
+			if (!device) {
+				return;
+			}
+			previewStore.setState({ device: device, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
+		$(document).on('change', '[data-mp-cc-device-select]', function () {
+			var deviceSelect = String($(this).val() || '');
+			if (!deviceSelect) {
+				return;
+			}
+			previewStore.setState({ device: deviceSelect, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
+		$(document).on('click', '[data-mp-cc-interaction]', function () {
+			var interaction = String($(this).data('mpCcInteraction') || '');
+			if (!interaction) {
+				return;
+			}
+			previewStore.setState({ interactionState: interaction, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
+		$(document).on('change', '[data-mp-cc-interaction-select]', function () {
+			var interactionSelect = String($(this).val() || '');
+			if (!interactionSelect) {
+				return;
+			}
+			previewStore.setState({ interactionState: interactionSelect, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
+		$(document).on('click', '[data-mp-cc-runtime]', function () {
+			var runtimeState = String($(this).data('mpCcRuntime') || '');
+			if (!runtimeState) {
+				return;
+			}
+			previewStore.setState({ runtimeState: runtimeState, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
+		$(document).on('change', '[data-mp-cc-runtime-select]', function () {
+			var runtimeSelect = String($(this).val() || '');
+			if (!runtimeSelect) {
+				return;
+			}
+			previewStore.setState({ runtimeState: runtimeSelect, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
+		$(document).on('change', '[data-mp-cc-sandbox-select]', function () {
+			var sandbox = String($(this).val() || '');
+			applySandboxScenario(previewStore, sandbox);
+			previewStore.setState({ dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
+		$(document).on('click', '[data-mp-cc-test-util]', function () {
+			var util = String($(this).data('mpCcTestUtil') || '');
+			if (util === 'fulfillment') {
+				previewStore.setState({ scenario: 'other_city_delivery', dirty: true });
+			} else if (util === 'discounts') {
+				previewStore.setState({
+					runtime: {
+						summary: {
+							items: 3,
+							subtotal: '3 670 ₽',
+							shipping: '490 ₽',
+							discount: '-700 ₽',
+							giftCard: '-300 ₽',
+							tax: '160 ₽',
+							total: '3 320 ₽'
+						}
+					},
+					runtimeState: 'success',
+					dirty: true
+				});
+			} else if (util === 'validation_payment') {
+				previewStore.setState({ runtimeState: 'error', interactionState: 'focus', dirty: true });
+			}
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
+		$(document).on('click', '[data-mp-cc-tab-reset]', function () {
+			var activeSection = detectActiveSettingsSection();
+			if (!activeSection || !settingsDefaults[activeSection] || typeof settingsDefaults[activeSection] !== 'object') {
+				return;
+			}
+			var tabDefaultsMap = {};
+			flattenDefaultsForSection(tabDefaultsMap, settingsDefaults[activeSection], activeSection, []);
+			applyDefaultsToForm(tabDefaultsMap);
+			rerenderDebounced();
 		});
 		$(document).on('click', '[data-mp-cc-step1-reset]', function () {
 			var defaultsMap = {};
 			flattenStepOneDefaults(defaultsMap, defaults, []);
 			applyDefaultsToForm(defaultsMap);
 			rerender();
+		});
+		$(document).on('submit', 'form', function () {
+			previewStore.setState({ dirty: false });
+			updatePreviewWarning();
 		});
 	});
 })(jQuery);

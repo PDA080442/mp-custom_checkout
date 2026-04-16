@@ -52,6 +52,7 @@ final class PluginHooksRegistrar {
 		CheckoutEntryAjaxHooks::register();
 		CheckoutEntryFrontendHooks::register();
 		DiagnosticsHooks::register();
+		CheckoutLogsHooks::register();
 
 		add_action( 'woocommerce_init', array( __CLASS__, 'register_woocommerce_dependent_hooks' ), 30 );
 	}
