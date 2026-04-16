@@ -4030,21 +4030,39 @@ function buildGiftCardBlockHtml(state) {
 			if (!code) {
 				rt.state = 'error';
 				rt.message = copy.emptyMessage;
-			} else if (code.length >= 4 && code.toUpperCase().indexOf('GIFT') === 0) {
-				rt.state = 'success';
-				rt.message = copy.successMessage;
-				if (discounts.gift_card.indexOf(code) < 0) {
-					discounts.gift_card.push(code);
-				}
-			} else {
-				rt.state = 'error';
-				rt.message = copy.errorMessage;
+				discounts.gift_card_runtime = rt;
+				state.frontendStore.discounts = discounts;
+				render(state, $app);
+				return;
 			}
-			discounts.gift_card_runtime = rt;
-			state.frontendStore.discounts = discounts;
-			render(state, $app);
-			saveDiscountDraft(state).fail(function () {
-				notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
+			postCheckout('apply_gift_card', {
+				gift_card_code: code,
+				context_id: state.flowContextId
+			}).then(function (response) {
+				var data = response && response.data ? response.data : {};
+				rt.state = 'success';
+				rt.message = trimNonEmpty(data.message) || copy.successMessage;
+				discounts.gift_card = Array.isArray(data.applied_gift_cards) ? data.applied_gift_cards : discounts.gift_card;
+				discounts.gift_card_runtime = rt;
+				state.frontendStore.discounts = discounts;
+				if (data.flow || data.cart) {
+					syncFromFlow(state, data.flow || {}, data.cart || {});
+				}
+				render(state, $app);
+			}).fail(function (xhr) {
+				var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
+				rt.state = 'error';
+				rt.message = trimNonEmpty(payload.message) || copy.errorMessage;
+				if (Array.isArray(payload.applied_gift_cards)) {
+					discounts.gift_card = payload.applied_gift_cards;
+				}
+				discounts.gift_card_runtime = rt;
+				state.frontendStore.discounts = discounts;
+				if (payload.flow || payload.cart) {
+					syncFromFlow(state, payload.flow || {}, payload.cart || {});
+				}
+				render(state, $app);
+				notify(rt.message, 'error');
 			});
 		});
 
