@@ -411,12 +411,19 @@ final class AdminMenuHooks {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			return;
 		}
+		if ( 'POST' !== strtoupper( (string) ( $_SERVER['REQUEST_METHOD'] ?? '' ) ) ) {
+			return;
+		}
 		$action = isset( $_POST['mp_cc_logs_action'] ) ? sanitize_key( wp_unslash( (string) $_POST['mp_cc_logs_action'] ) ) : '';
 		if ( '' === $action ) {
 			return;
 		}
 		$page = isset( $_REQUEST['page'] ) ? sanitize_key( wp_unslash( (string) $_REQUEST['page'] ) ) : '';
 		if ( self::PAGE_SLUG !== $page ) {
+			return;
+		}
+		$tab = isset( $_REQUEST['tab'] ) ? sanitize_key( wp_unslash( (string) $_REQUEST['tab'] ) ) : '';
+		if ( OptionKeys::SECTION_LOGS !== $tab ) {
 			return;
 		}
 		check_admin_referer( 'mp_cc_logs_actions', 'mp_cc_logs_nonce' );
@@ -476,11 +483,17 @@ final class AdminMenuHooks {
 
 	private static function render_health_checks_group(): void {
 		$checks = CheckoutHealthChecks::collect();
+		$summary = CheckoutHealthChecks::summary();
 		if ( empty( $checks ) ) {
 			return;
 		}
 		echo '<details class="mp-cc-admin-shell__fieldset" open>';
 		echo '<summary><span>' . esc_html__( 'Checkout Health Checks', 'mp-custom-checkout' ) . '</span><em class="mp-cc-admin-shell__type-badge mp-cc-admin-shell__type-badge--validation">' . esc_html__( 'сервис', 'mp-custom-checkout' ) . '</em></summary>';
+		echo '<p><strong>' . esc_html__( 'Health summary:', 'mp-custom-checkout' ) . '</strong> '
+			. '<span class="mp-cc-admin-shell__scenario-badge">' . esc_html( sprintf( 'OK %d', (int) ( $summary['ok'] ?? 0 ) ) ) . '</span> '
+			. '<span class="mp-cc-admin-shell__scenario-badge">' . esc_html( sprintf( 'WARN %d', (int) ( $summary['warn'] ?? 0 ) ) ) . '</span> '
+			. '<span class="mp-cc-admin-shell__scenario-badge' . ( (int) ( $summary['fail'] ?? 0 ) > 0 ? ' is-risky' : '' ) . '">' . esc_html( sprintf( 'FAIL %d', (int) ( $summary['fail'] ?? 0 ) ) ) . '</span>'
+			. '</p>';
 		foreach ( $checks as $check ) {
 			$status = isset( $check['status'] ) ? (string) $check['status'] : 'ok';
 			$name = isset( $check['name'] ) ? (string) $check['name'] : '';

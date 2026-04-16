@@ -24,6 +24,12 @@
 	var draftSaveTimer = null;
 	var pendingCheckoutRequests = 0;
 	var isClientErrorLoggingBound = false;
+	var stepTransitionTimer = 0;
+	var qtyInputDebounceTimers = {};
+	var criticalRequestLocks = {
+		stepTransition: false,
+		paymentSubmit: false
+	};
 
 	function getUiText(path, fallback) {
 		var source = (window.mpCcCheckout && window.mpCcCheckout.uiText) ? window.mpCcCheckout.uiText : {};
@@ -913,6 +919,79 @@
 		return !!(state && state.frontendStore && state.frontendStore.runtime && state.frontendStore.runtime.paymentSubmitting);
 	}
 
+	function lockCriticalRequest(key) {
+		if (!Object.prototype.hasOwnProperty.call(criticalRequestLocks, key)) {
+			return false;
+		}
+		if (criticalRequestLocks[key]) {
+			return false;
+		}
+		criticalRequestLocks[key] = true;
+		return true;
+	}
+
+	function unlockCriticalRequest(key) {
+		if (!Object.prototype.hasOwnProperty.call(criticalRequestLocks, key)) {
+			return;
+		}
+		criticalRequestLocks[key] = false;
+	}
+
+	function recoverFromFailedPayment(state, $app, payload) {
+		state.frontendStore.runtime = state.frontendStore.runtime || {};
+		state.frontendStore.runtime.paymentSubmitting = false;
+		state.frontendStore.runtime.prePaymentConfirm = true;
+		state.frontendStore.payment = state.frontendStore.payment || { gateway: '', state: 'idle' };
+		state.frontendStore.payment.state = 'error';
+		if (payload && (payload.flow || payload.cart)) {
+			syncFromFlow(state, payload.flow || {}, payload.cart || {});
+		}
+		render(state, $app);
+		saveCurrentStepDraft(state);
+	}
+
+	function recoverFromStepAjaxFailure(state, $app, fallbackMessage) {
+		setRuntimeFlag(state, 'blocked', false);
+		syncStoreWithBackend(state, $app).always(function () {
+			if (fallbackMessage) {
+				notify(fallbackMessage, 'error');
+			}
+		});
+	}
+
+	function recoverFromInvalidSessionState(state, $app) {
+		state.frontendStore.runtime = state.frontendStore.runtime || {};
+		if (state.frontendStore.runtime.recoveringSession) {
+			return;
+		}
+		state.frontendStore.runtime.recoveringSession = true;
+		notify(getUiText('common.session_stale', 'Сессия checkout устарела. Состояние будет восстановлено.'), 'warning');
+		postCheckout('session_abandon', { context_id: state.flowContextId }).always(function () {
+			syncStoreWithBackend(state, $app).always(function () {
+				state.frontendStore.runtime.recoveringSession = false;
+				render(state, $app);
+			});
+		});
+	}
+
+	function recoverFromCartDesync(state, $app) {
+		syncStoreWithBackend(state, $app).always(function () {
+			notify(getUiText('step_1.cart_sync_recovered', 'Корзина была рассинхронизирована и восстановлена.'), 'info');
+		});
+	}
+
+	function ensureCartSnapshotConsistency(state, $app) {
+		var cart = state && state.frontendStore ? state.frontendStore.cart : null;
+		var items = cart && Array.isArray(cart.items) ? cart.items : [];
+		var summary = cart && cart.summary ? cart.summary : {};
+		var count = Number(summary.items_count || 0);
+		if (count !== items.length) {
+			recoverFromCartDesync(state, $app);
+			return false;
+		}
+		return true;
+	}
+
 	function submitFinalPayment(state, $app) {
 		if (!state || !state.frontendStore) {
 			return;
@@ -924,6 +1003,10 @@
 		}
 		if (pendingCheckoutRequests > 0) {
 			notify(getUiText('order_review.payment_wait_requests', 'Дождитесь завершения фоновых операций и повторите оплату.'), 'error');
+			return;
+		}
+		if (!lockCriticalRequest('paymentSubmit')) {
+			notify(getUiText('order_review.payment_in_progress', 'Оплата уже отправляется. Подождите.'), 'info');
 			return;
 		}
 		state.frontendStore.runtime.paymentSubmitting = true;
@@ -947,14 +1030,16 @@
 			notify(getUiText('order_review.payment_unconfirmed', 'Платёж не подтверждён. Проверьте состояние заказа.'), 'error');
 		}).fail(function (xhr) {
 			var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
-			state.frontendStore.runtime.paymentSubmitting = false;
-			state.frontendStore.payment.state = 'error';
-			if (payload.flow || payload.cart) {
-				syncFromFlow(state, payload.flow || {}, payload.cart || {});
+			recoverFromFailedPayment(state, $app, payload);
+			if (String(payload.code || '') === 'gateway_not_available') {
+				notify(getUiText('order_review.gateway_unavailable', 'Выбранный gateway недоступен. Выберите другой способ оплаты.'), 'error');
 			}
-			render(state, $app);
-			saveCurrentStepDraft(state);
+			if (String(payload.code || '') === 'stale_context') {
+				recoverFromInvalidSessionState(state, $app);
+			}
 			notify(trimNonEmpty(payload.message) || getUiText('order_review.payment_submit_failed', 'Не удалось отправить оплату. Попробуйте ещё раз.'), 'error');
+		}).always(function () {
+			unlockCriticalRequest('paymentSubmit');
 		});
 	}
 
@@ -2978,6 +3063,11 @@ function buildGiftCardBlockHtml(state) {
 			state.frontendStore = rehydrated.frontendStore;
 			state.flowContextId = rehydrated.flowContextId;
 			render(state, $app);
+		}).fail(function (xhr) {
+			var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
+			if (String(payload.code || '') === 'stale_context') {
+				recoverFromInvalidSessionState(state, $app);
+			}
 		});
 	}
 
@@ -3057,11 +3147,17 @@ function buildGiftCardBlockHtml(state) {
 			return $.Deferred().reject().promise();
 		}
 
+		if (!lockCriticalRequest('stepTransition')) {
+			return $.Deferred().reject().promise();
+		}
 		return withTransitionLock(state, $app, function () {
 			runStepTransitionAnimation($app);
 			return postCheckout('session_set_step', { step_id: targetStepId, context_id: state.flowContextId }).then(function (response) {
 				if (!response || !response.success) {
 					return $.Deferred().reject(response).promise();
+				}
+				if (response.data && response.data.flow) {
+					syncFromFlow(state, response.data.flow, response.data.cart || {});
 				}
 				state.currentStepId = targetStepId;
 				state.frontendStore.steps.current = targetStepId;
@@ -3083,10 +3179,26 @@ function buildGiftCardBlockHtml(state) {
 						}
 					})
 				);
-				return syncStoreWithBackend(state, $app);
+				postCheckout('validation_log', {
+					step_id: targetStepId,
+					context_id: state.flowContextId,
+					errors: {},
+					marker: 'step_transition_ok'
+				});
+				return $.Deferred().resolve().promise();
 			}).fail(function (xhr) {
 				var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
 				var code = payload.code ? String(payload.code) : '';
+				postCheckout('validation_log', {
+					step_id: targetStepId,
+					context_id: state.flowContextId,
+					errors: { transition: code || 'step_transition_failed' },
+					marker: 'step_transition_failed'
+				});
+				if (code === 'stale_context') {
+					recoverFromInvalidSessionState(state, $app);
+					return;
+				}
 				if (code === 'conditions_unconfirmed') {
 					state.frontendStore.form.errors = state.frontendStore.form.errors || {};
 					state.frontendStore.form.errors.conditions_unconfirmed = true;
@@ -3106,8 +3218,10 @@ function buildGiftCardBlockHtml(state) {
 				if (xhr && xhr.status === 422) {
 					notify(payload.message || getUiText('common.error_generic', 'Произошла ошибка. Попробуйте ещё раз.'), 'error');
 				} else {
-					notify(getStepFourAjaxMessage('step_sync_failed', 'step_4.contact_ajax_step_sync_failed', 'Не удалось синхронизировать шаг. Обновите страницу.'), 'error');
+					recoverFromStepAjaxFailure(state, $app, getStepFourAjaxMessage('step_sync_failed', 'step_4.contact_ajax_step_sync_failed', 'Не удалось синхронизировать шаг. Обновите страницу.'));
 				}
+			}).always(function () {
+				unlockCriticalRequest('stepTransition');
 			});
 		});
 	}
@@ -3311,7 +3425,7 @@ function buildGiftCardBlockHtml(state) {
 		var html = '';
 		var i;
 
-		html += '<ol class="mp-cc-progress" role="list" aria-label="Checkout steps">';
+		html += '<ol class="mp-cc-progress" role="list" aria-label="' + escapeHtml(getUiText('checkout.progress_label', 'Checkout steps')) + '">';
 		for (i = 0; i < state.visibleSteps.length; i += 1) {
 			var step = state.visibleSteps[i];
 			var canGo = i <= state.maxReachedIndex;
@@ -3329,7 +3443,7 @@ function buildGiftCardBlockHtml(state) {
 			}
 
 			html += '<li class="' + classes.join(' ') + '">';
-			html += '<button type="button" class="mp-cc-progress__btn" data-step="' + step.id + '"';
+			html += '<button type="button" class="mp-cc-progress__btn" data-step="' + step.id + '" data-step-index="' + i + '"';
 			html += canGo ? '' : ' disabled';
 			html += isCurrent ? ' aria-current="step"' : '';
 			html += '>';
@@ -3916,8 +4030,10 @@ function buildGiftCardBlockHtml(state) {
 			return;
 		}
 		var safeMessage = escapeHtml(message || '');
-		var safeLevel = level === 'error' ? 'error' : 'info';
-		container.innerHTML = '<div class="mp-cc-notice mp-cc-notice--' + safeLevel + '" role="alert">' + safeMessage + '</div>';
+		var safeLevel = level === 'error' ? 'error' : (level === 'success' ? 'success' : 'info');
+		var role = safeLevel === 'error' ? 'alert' : 'status';
+		var live = safeLevel === 'error' ? 'assertive' : 'polite';
+		container.innerHTML = '<div class="mp-cc-notice mp-cc-notice--' + safeLevel + '" role="' + role + '" aria-live="' + live + '" aria-atomic="true">' + safeMessage + '</div>';
 	}
 
 	function focusStepHeading($app) {
@@ -3940,8 +4056,11 @@ function buildGiftCardBlockHtml(state) {
 		if (prefersReducedMotion()) {
 			return;
 		}
-		$app.addClass('is-step-transition');
-		window.setTimeout(function () {
+		window.clearTimeout(stepTransitionTimer);
+		window.requestAnimationFrame(function () {
+			$app.addClass('is-step-transition');
+		});
+		stepTransitionTimer = window.setTimeout(function () {
 			$app.removeClass('is-step-transition');
 		}, animationDurationMs);
 	}
@@ -3976,6 +4095,7 @@ function buildGiftCardBlockHtml(state) {
 		var $progress = $(selectors.progress);
 		var $actions = $(selectors.actions);
 		var $summary = $(selectors.summary);
+		state.__renderCache = state.__renderCache || { stepHtml: '', summaryHtml: '', progressHtml: '', actionsHtml: '' };
 
 		if (!state.visibleSteps.length) {
 			$app.html('<p class="mp-cc-empty">No steps available.</p>');
@@ -3988,19 +4108,73 @@ function buildGiftCardBlockHtml(state) {
 		ensureContactDefaults(state);
 		ensureDiscountDefaults(state);
 
-		$app.html(buildStepPanelHtml(state));
-		$summary.html(buildSummaryHtml(state));
-		applyStepOnePresentation(state);
-		animateSummaryUpdate(state, $summary);
+		var nextStepHtml = '';
+		var nextSummaryHtml = '';
+		try {
+			nextStepHtml = buildStepPanelHtml(state);
+		} catch (stepErr) {
+			reportClientError('render_step_panel_failed', stepErr && stepErr.message ? stepErr.message : 'step_render_failed', stepErr && stepErr.stack ? stepErr.stack : '', 'render');
+			nextStepHtml = '<section class="mp-cc-step-panel"><p class="mp-cc-empty">' + escapeHtml(getUiText('common.render_fallback', 'Часть интерфейса временно недоступна. Попробуйте обновить страницу.')) + '</p></section>';
+		}
+		try {
+			nextSummaryHtml = buildSummaryHtml(state);
+		} catch (summaryErr) {
+			reportClientError('render_summary_failed', summaryErr && summaryErr.message ? summaryErr.message : 'summary_render_failed', summaryErr && summaryErr.stack ? summaryErr.stack : '', 'render');
+			nextSummaryHtml = '<section class="mp-cc-summary-card"><p>' + escapeHtml(getUiText('common.summary_fallback', 'Сводка временно недоступна.')) + '</p></section>';
+		}
+		var nextProgressHtml = '';
+		var nextActionsHtml = '';
+		var isStepChanged = state.__renderCache.stepHtml !== nextStepHtml;
+		var isSummaryChanged = state.__renderCache.summaryHtml !== nextSummaryHtml;
+		var isProgressChanged = false;
+		var isActionsChanged = false;
 		if (isFlagEnabled(state, flagNames.multiStepFlow, true)) {
-			$progress.html(buildProgressHtml(state));
-			$actions.html(buildNavHtml(state));
+			try {
+				nextProgressHtml = buildProgressHtml(state);
+			} catch (progressErr) {
+				reportClientError('render_progress_failed', progressErr && progressErr.message ? progressErr.message : 'progress_render_failed', progressErr && progressErr.stack ? progressErr.stack : '', 'render');
+				nextProgressHtml = '';
+			}
+			try {
+				nextActionsHtml = buildNavHtml(state);
+			} catch (actionsErr) {
+				reportClientError('render_actions_failed', actionsErr && actionsErr.message ? actionsErr.message : 'actions_render_failed', actionsErr && actionsErr.stack ? actionsErr.stack : '', 'render');
+				nextActionsHtml = '';
+			}
+			isProgressChanged = state.__renderCache.progressHtml !== nextProgressHtml;
+			isActionsChanged = state.__renderCache.actionsHtml !== nextActionsHtml;
+		}
+		if (isStepChanged) {
+			$app.html(nextStepHtml);
+			state.__renderCache.stepHtml = nextStepHtml;
+		}
+		if (isSummaryChanged) {
+			$summary.html(nextSummaryHtml);
+			state.__renderCache.summaryHtml = nextSummaryHtml;
+			animateSummaryUpdate(state, $summary);
+		}
+		applyStepOnePresentation(state);
+		if (isFlagEnabled(state, flagNames.multiStepFlow, true)) {
+			if (isProgressChanged) {
+				$progress.html(nextProgressHtml);
+				state.__renderCache.progressHtml = nextProgressHtml;
+			}
+			if (isActionsChanged) {
+				$actions.html(nextActionsHtml);
+				state.__renderCache.actionsHtml = nextActionsHtml;
+			}
 		} else {
 			$progress.empty();
 			$actions.empty();
+			state.__renderCache.progressHtml = '';
+			state.__renderCache.actionsHtml = '';
 		}
-		bindHandlers(state, $app, $progress, $actions);
-		focusStepHeading($app);
+		if (isStepChanged || isSummaryChanged || isProgressChanged || isActionsChanged) {
+			bindHandlers(state, $app, $progress, $actions);
+		}
+		if (isStepChanged) {
+			focusStepHeading($app);
+		}
 
 		document.dispatchEvent(
 			new CustomEvent('mp_cc_store_synced', {
@@ -4044,6 +4218,32 @@ function buildGiftCardBlockHtml(state) {
 			}
 			setCurrentStep(state, $app, String(target));
 		});
+		$progress.find('.mp-cc-progress__btn').off('keydown').on('keydown', function (event) {
+			var key = String(event.key || '');
+			if (key !== 'ArrowRight' && key !== 'ArrowLeft' && key !== 'ArrowDown' && key !== 'ArrowUp' && key !== 'Home' && key !== 'End') {
+				return;
+			}
+			var $buttons = $progress.find('.mp-cc-progress__btn');
+			var idx = $buttons.index(this);
+			if (idx < 0) {
+				return;
+			}
+			var next = idx;
+			if (key === 'ArrowRight' || key === 'ArrowDown') {
+				next = Math.min($buttons.length - 1, idx + 1);
+			} else if (key === 'ArrowLeft' || key === 'ArrowUp') {
+				next = Math.max(0, idx - 1);
+			} else if (key === 'Home') {
+				next = 0;
+			} else if (key === 'End') {
+				next = $buttons.length - 1;
+			}
+			event.preventDefault();
+			var $next = $buttons.eq(next);
+			if ($next.length) {
+				$next.trigger('focus');
+			}
+		});
 
 		$app.find('[data-cart-qty-btn]').off('click').on('click', function () {
 			var $btn = $(this);
@@ -4067,6 +4267,18 @@ function buildGiftCardBlockHtml(state) {
 				return;
 			}
 			applyQuantityChange(state, $app, $item, Number($input.val() || 0));
+		});
+		$app.find('[data-cart-qty-input]').off('input').on('input', function () {
+			var $input = $(this);
+			var $item = $input.closest('[data-cart-item-key]');
+			var itemKey = String($item.data('cart-item-key') || '');
+			if (!$item.length || !itemKey) {
+				return;
+			}
+			window.clearTimeout(qtyInputDebounceTimers[itemKey] || 0);
+			qtyInputDebounceTimers[itemKey] = window.setTimeout(function () {
+				applyQuantityChange(state, $app, $item, Number($input.val() || 0));
+			}, 220);
 		});
 
 		$app.find('[data-cart-remove]').off('click').on('click', function () {
@@ -4803,6 +5015,7 @@ function buildGiftCardBlockHtml(state) {
 		applyScenarioFieldAvailability(state);
 		ensurePickupScenarioData(state);
 		ensureDateSelection(state);
+		ensureCartSnapshotConsistency(state, $app);
 		render(state, $app);
 
 		syncStoreWithBackend(state, $app).fail(function () {

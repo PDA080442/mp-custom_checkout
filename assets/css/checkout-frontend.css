@@ -343,8 +343,8 @@
 }
 
 .mp-cc-date-step__month-btn {
-	width: 1.9rem;
-	height: 1.9rem;
+	width: 2.25rem;
+	height: 2.25rem;
 	border: 1px solid var(--mp-cc-color-border);
 	border-radius: var(--mp-cc-radius-sm);
 	background: var(--mp-cc-color-background);
@@ -386,7 +386,8 @@
 	border: 1px solid var(--mp-cc-color-border);
 	background: var(--mp-cc-color-background);
 	border-radius: var(--mp-cc-radius-sm);
-	min-height: 2.2rem;
+	min-height: 2.4rem;
+	min-width: 2.4rem;
 	font-size: 0.86rem;
 	font-weight: 600;
 	cursor: pointer;
@@ -911,8 +912,8 @@
 }
 
 .mp-cc-qty-btn {
-	width: 2rem;
-	height: 2rem;
+	width: 2.5rem;
+	height: 2.5rem;
 	border: 1px solid var(--mp-cc-color-border);
 	border-radius: var(--mp-cc-radius-sm);
 	background: var(--mp-cc-color-background);
@@ -959,7 +960,7 @@
 	color: var(--mp-cc-color-error);
 	font-size: 0.85rem;
 	font-weight: 600;
-	padding: 0.35rem 0.45rem;
+	padding: 0.5rem 0.6rem;
 	border-radius: var(--mp-cc-radius-sm);
 	cursor: pointer;
 	transition: background var(--mp-cc-transition-duration) ease, border-color var(--mp-cc-transition-duration) ease;
@@ -1037,6 +1038,7 @@
 
 .mp-cc-nav__btn {
 	min-width: 8rem;
+	min-height: 2.75rem;
 	padding: 0.625rem 1rem;
 	border: 1px solid var(--mp-cc-color-accent);
 	border-radius: var(--mp-cc-radius-sm);
@@ -1282,6 +1284,7 @@
 	.mp-cc-summary-card {
 		position: sticky;
 		top: 1rem;
+		contain: layout paint;
 	}
 }
 
@@ -1294,6 +1297,7 @@
 		padding: 0.85rem;
 		max-height: 70vh;
 		overflow: auto;
+		will-change: transform;
 	}
 
 	/* На мобилке оставляем в липком блоке только финансовые строки. */
@@ -1352,7 +1356,7 @@
 .mp-cc-notice--error {
 	border-color: var(--mp-cc-color-error);
 	background: #fff2f2;
-	color: var(--mp-cc-color-error);
+	color: #7a102c;
 }
 
 .mp-cc-notice--success {
@@ -1510,6 +1514,16 @@
 
 	.mp-cc-nav__btn {
 		width: 100%;
+	}
+
+	.mp-cc-qty-btn,
+	.mp-cc-nav__btn,
+	.mp-cc-date-step__month-btn,
+	.mp-cc-calendar__day,
+	.mp-cc-cart-item__remove,
+	.mp-cc-summary-card__btn,
+	.mp-cc-fulfillment-card {
+		min-height: 2.75rem;
 	}
 
 	.mp-cc-summary-card {

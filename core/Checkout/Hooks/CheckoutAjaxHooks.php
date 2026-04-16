@@ -39,6 +39,11 @@ final class CheckoutAjaxHooks {
 		$sub_action = isset( $_POST['sub_action'] ) ? sanitize_key( wp_unslash( $_POST['sub_action'] ) ) : '';
 		if ( '' === $sub_action ) {
 			do_action( 'mp_custom_checkout_log', 'warning', '[ajax] empty_sub_action', array( 'source' => 'ajax', 'event_type' => 'ajax_error' ) );
+			wp_send_json_error( array( 'code' => 'empty_sub_action', 'message' => __( 'Не указано действие checkout.', 'mp-custom-checkout' ) ), 400 );
+		}
+		if ( ! self::is_session_sub_action( $sub_action ) ) {
+			do_action( 'mp_custom_checkout_log', 'warning', '[ajax] unknown_sub_action', array( 'source' => 'ajax', 'event_type' => 'ajax_error', 'sub_action' => $sub_action ) );
+			wp_send_json_error( array( 'code' => 'unknown_sub_action', 'message' => __( 'Неизвестное действие checkout.', 'mp-custom-checkout' ) ), 400 );
 		}
 		try {
 			if ( self::handle_session_sub_action( $sub_action ) ) {
@@ -82,7 +87,14 @@ final class CheckoutAjaxHooks {
 				wp_send_json_error( $block, 422 );
 			}
 			CheckoutSessionService::set_current_step( $step_id );
-			wp_send_json_success( array( 'sub_action' => $sub_action, 'current_step' => $step_id ) );
+			wp_send_json_success(
+				array(
+					'sub_action'    => $sub_action,
+					'current_step'  => $step_id,
+					'flow'          => self::build_flow_payload(),
+					'cart'          => CheckoutRouteContext::get_cart_data(),
+				)
+			);
 		}
 		if ( 'session_set_answers' === $sub_action ) {
 			$step_id = isset( $_POST['step_id'] ) ? sanitize_key( wp_unslash( $_POST['step_id'] ) ) : '';
@@ -90,12 +102,13 @@ final class CheckoutAjaxHooks {
 			if ( '' === $step_id ) {
 				wp_send_json_error( array( 'code' => 'invalid_step_id', 'message' => __( 'Не указан шаг checkout.', 'mp-custom-checkout' ) ), 400 );
 			}
-			if ( in_array( $step_id, array( 'date', 'conditions' ), true ) && ! self::validate_date_answers_payload( is_array( $answers ) ? $answers : array() ) ) {
+			$answers = self::sanitize_payload_shape( is_array( $answers ) ? $answers : array(), 4, 80 );
+			if ( in_array( $step_id, array( 'date', 'conditions' ), true ) && ! self::validate_date_answers_payload( $answers ) ) {
 				$message = SafeSettingsResolver::get( 'step_3.copy.errors.invalid_date', __( 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.', 'mp-custom-checkout' ) );
 				$message = is_string( $message ) && '' !== trim( $message ) ? $message : __( 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.', 'mp-custom-checkout' );
 				wp_send_json_error( array( 'code' => 'invalid_date_selection', 'message' => $message ), 422 );
 			}
-			CheckoutSessionService::set_step_answers( $step_id, is_array( $answers ) ? $answers : array() );
+			CheckoutSessionService::set_step_answers( $step_id, $answers );
 			wp_send_json_success( array( 'sub_action' => $sub_action, 'step_id' => $step_id, 'flow' => self::build_flow_payload(), 'cart' => CheckoutRouteContext::get_cart_data() ) );
 		}
 		if ( 'session_set_scenario' === $sub_action ) {
@@ -122,6 +135,9 @@ final class CheckoutAjaxHooks {
 		if ( 'validation_log' === $sub_action ) {
 			$step_id = isset( $_POST['step_id'] ) ? sanitize_key( wp_unslash( $_POST['step_id'] ) ) : '';
 			$errors  = isset( $_POST['errors'] ) && is_array( $_POST['errors'] ) ? wp_unslash( $_POST['errors'] ) : array();
+			if ( '' === $step_id ) {
+				wp_send_json_error( array( 'code' => 'invalid_step_id', 'message' => __( 'Не указан шаг для validation_log.', 'mp-custom-checkout' ) ), 400 );
+			}
 			$clean_errors = array();
 			foreach ( $errors as $field => $reason ) {
 				$key = sanitize_key( (string) $field );
@@ -156,6 +172,9 @@ final class CheckoutAjaxHooks {
 			$message = isset( $_POST['message'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['message'] ) ) : '';
 			$stack   = isset( $_POST['stack'] ) ? sanitize_textarea_field( wp_unslash( (string) $_POST['stack'] ) ) : '';
 			$state   = isset( $_POST['state'] ) ? sanitize_key( wp_unslash( (string) $_POST['state'] ) ) : '';
+			if ( '' === $message ) {
+				wp_send_json_error( array( 'code' => 'empty_client_error', 'message' => __( 'Пустое сообщение client error.', 'mp-custom-checkout' ) ), 400 );
+			}
 			do_action( 'mp_custom_checkout_log', 'error', '[client_js] runtime_error', array( 'source' => 'client_js', 'event_type' => $type, 'message' => $message, 'stack' => $stack, 'state' => $state ) );
 			wp_send_json_success( array( 'sub_action' => $sub_action, 'logged' => true ) );
 		}
@@ -191,6 +210,53 @@ final class CheckoutAjaxHooks {
 
 	private static function is_session_sub_action( string $sub_action ): bool {
 		return in_array( $sub_action, array( 'session_set_step', 'session_set_answers', 'session_set_scenario', 'session_get_state', 'session_abandon', 'update_quantity', 'remove_item', 'validation_log', 'apply_coupon', 'remove_coupon', 'apply_gift_card', 'set_payment_gateway', 'gateway_render_diagnostics', 'submit_payment', 'client_error_log', 'ajax_error_log' ), true );
+	}
+
+	/**
+	 * @param mixed $payload
+	 * @return array<string, mixed>
+	 */
+	private static function sanitize_payload_shape( $payload, int $max_depth = 4, int $max_items = 80 ): array {
+		if ( ! is_array( $payload ) ) {
+			return array();
+		}
+		return self::sanitize_payload_shape_recursive( $payload, 0, $max_depth, $max_items );
+	}
+
+	/**
+	 * @param array<mixed, mixed> $node
+	 * @return array<string, mixed>
+	 */
+	private static function sanitize_payload_shape_recursive( array $node, int $depth, int $max_depth, int $max_items ): array {
+		if ( $depth >= $max_depth ) {
+			return array();
+		}
+		$out = array();
+		$count = 0;
+		foreach ( $node as $key => $value ) {
+			if ( $count >= $max_items ) {
+				break;
+			}
+			$count++;
+			$k = sanitize_key( is_string( $key ) ? $key : (string) $key );
+			if ( '' === $k ) {
+				continue;
+			}
+			if ( is_array( $value ) ) {
+				$out[ $k ] = self::sanitize_payload_shape_recursive( $value, $depth + 1, $max_depth, $max_items );
+				continue;
+			}
+			if ( is_bool( $value ) || is_int( $value ) || is_float( $value ) || null === $value ) {
+				$out[ $k ] = $value;
+				continue;
+			}
+			if ( is_object( $value ) ) {
+				$out[ $k ] = sanitize_text_field( wp_json_encode( $value ) ?: '' );
+				continue;
+			}
+			$out[ $k ] = sanitize_textarea_field( (string) $value );
+		}
+		return $out;
 	}
 
 	private static function handle_set_payment_gateway(): void {
