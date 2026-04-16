@@ -82,9 +82,14 @@ final class CheckoutScenarioRules {
 		$is_pickup = ScenarioStepRegistry::SCENARIO_PICKUP === $scenario;
 
 		return array(
-			'hide_address_fields'    => $is_pickup,
-			'required_address_fields'=> ! $is_pickup,
-			'visible_groups'         => $is_pickup ? array( 'contact', 'pickup_point' ) : array( 'contact', 'shipping_address' ),
+			'hide_address_fields'     => $is_pickup,
+			'required_address_fields' => ! $is_pickup,
+			'hide_country'            => $is_pickup,
+			'hide_region'             => $is_pickup,
+			'hide_city'               => $is_pickup,
+			'hide_address_lines'      => $is_pickup,
+			'hide_postcode'           => $is_pickup,
+			'visible_groups'          => $is_pickup ? array( 'contact', 'pickup_point' ) : array( 'contact', 'shipping_address' ),
 		);
 	}
 

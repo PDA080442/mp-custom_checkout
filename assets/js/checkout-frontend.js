@@ -318,6 +318,32 @@
 		return vis[key] !== false;
 	}
 
+	function shouldRenderAddressSubfield(key, contact) {
+		if (!isAddressSubfieldVisible(key)) {
+			return false;
+		}
+		var vis = contact && contact.__address_visibility ? contact.__address_visibility : {};
+		if (vis.hide_address_fields) {
+			return false;
+		}
+		if (key === 'country' && vis.hide_country) {
+			return false;
+		}
+		if (key === 'state' && vis.hide_region) {
+			return false;
+		}
+		if (key === 'city' && vis.hide_city) {
+			return false;
+		}
+		if ((key === 'address_1' || key === 'address_2') && vis.hide_address_lines) {
+			return false;
+		}
+		if (key === 'postcode' && vis.hide_postcode) {
+			return false;
+		}
+		return true;
+	}
+
 	function getAddressLabel(key) {
 		var cfg = getStepFourConfig();
 		var labels = cfg.address_block && cfg.address_block.labels ? cfg.address_block.labels : {};
@@ -417,10 +443,13 @@
 		var ab = cfg.address_block || {};
 		var defCountry = trimNonEmpty(ab.default_country) ? String(ab.default_country) : 'RU';
 		var geo = getAddressGeoMerged();
-		if (!trimNonEmpty(contact.country)) {
+		var needGeoKey = shouldRenderAddressSubfield('country', contact)
+			|| shouldRenderAddressSubfield('state', contact)
+			|| shouldRenderAddressSubfield('city', contact);
+		if (needGeoKey && !trimNonEmpty(contact.country)) {
 			contact.country = defCountry;
 		}
-		if (!isCountryInGeo(geo, contact.country)) {
+		if (needGeoKey && !isCountryInGeo(geo, contact.country)) {
 			contact.country = defCountry;
 		}
 		var regions = getRegionsForCountry(geo, contact.country);
@@ -618,7 +647,7 @@
 			var ki;
 			for (ki = 0; ki < order.length; ki++) {
 				var ak = order[ki];
-				if (!isAddressSubfieldVisible(ak)) {
+				if (!shouldRenderAddressSubfield(ak, contact)) {
 					continue;
 				}
 				if (ak === 'address_2') {
@@ -822,6 +851,17 @@
 		var order = Array.isArray(ab.subfields_order)
 			? ab.subfields_order
 			: ['country', 'state', 'city', 'address_1', 'address_2', 'postcode'];
+		var pi;
+		var hasAnyAddressField = false;
+		for (pi = 0; pi < order.length; pi++) {
+			if (shouldRenderAddressSubfield(order[pi], contact)) {
+				hasAnyAddressField = true;
+				break;
+			}
+		}
+		if (!hasAnyAddressField) {
+			return '';
+		}
 		var html = '';
 		html += '<section class="mp-cc-address" aria-labelledby="mp-cc-address-title">';
 		html += '<header class="mp-cc-address__header">';
@@ -834,7 +874,7 @@
 		var idx;
 		for (idx = 0; idx < order.length; idx++) {
 			var key = order[idx];
-			if (!isAddressSubfieldVisible(key)) {
+			if (!shouldRenderAddressSubfield(key, contact)) {
 				continue;
 			}
 			var err = getContactFieldError(state, key);
@@ -1883,6 +1923,38 @@
 		applyScenarioFieldAvailability(state);
 	}
 
+	function stripAddressFieldErrors(state) {
+		if (!state || !state.frontendStore || !state.frontendStore.form || !state.frontendStore.form.errors) {
+			return;
+		}
+		var errors = state.frontendStore.form.errors.contact;
+		if (!errors || typeof errors !== 'object') {
+			return;
+		}
+		var contact = state.frontendStore.form.contact || {};
+		var vis = contact.__address_visibility;
+		var keys = ['country', 'state', 'city', 'address_1', 'address_2', 'postcode'];
+		var i;
+		for (i = 0; i < keys.length; i++) {
+			var k = keys[i];
+			if (!vis || vis.hide_address_fields) {
+				delete errors[k];
+				continue;
+			}
+			if (k === 'country' && vis.hide_country) {
+				delete errors[k];
+			} else if (k === 'state' && vis.hide_region) {
+				delete errors[k];
+			} else if (k === 'city' && vis.hide_city) {
+				delete errors[k];
+			} else if ((k === 'address_1' || k === 'address_2') && vis.hide_address_lines) {
+				delete errors[k];
+			} else if (k === 'postcode' && vis.hide_postcode) {
+				delete errors[k];
+			}
+		}
+	}
+
 	function applyScenarioFieldAvailability(state) {
 		if (!state || !state.frontendStore || !state.frontendStore.fulfillment) {
 			return;
@@ -1890,13 +1962,20 @@
 		var scenarioId = normalizeScenarioId(state.frontendStore.fulfillment.scenario || 'pickup');
 		var rules = getScenarioRulesById(scenarioId);
 		var fieldRules = rules.field_rules && typeof rules.field_rules === 'object' ? rules.field_rules : {};
+		var hideAll = Boolean(fieldRules.hide_address_fields);
 		var contact = state.frontendStore.form && state.frontendStore.form.contact ? state.frontendStore.form.contact : {};
 		contact.__address_visibility = {
-			hide_address_fields: Boolean(fieldRules.hide_address_fields),
+			hide_address_fields: hideAll,
 			required_address_fields: Boolean(fieldRules.required_address_fields),
-			visible_groups: Array.isArray(fieldRules.visible_groups) ? fieldRules.visible_groups : []
+			visible_groups: Array.isArray(fieldRules.visible_groups) ? fieldRules.visible_groups : [],
+			hide_country: Object.prototype.hasOwnProperty.call(fieldRules, 'hide_country') ? Boolean(fieldRules.hide_country) : hideAll,
+			hide_region: Object.prototype.hasOwnProperty.call(fieldRules, 'hide_region') ? Boolean(fieldRules.hide_region) : hideAll,
+			hide_city: Object.prototype.hasOwnProperty.call(fieldRules, 'hide_city') ? Boolean(fieldRules.hide_city) : hideAll,
+			hide_address_lines: Object.prototype.hasOwnProperty.call(fieldRules, 'hide_address_lines') ? Boolean(fieldRules.hide_address_lines) : hideAll,
+			hide_postcode: Object.prototype.hasOwnProperty.call(fieldRules, 'hide_postcode') ? Boolean(fieldRules.hide_postcode) : hideAll
 		};
 		state.frontendStore.form.contact = contact;
+		stripAddressFieldErrors(state);
 		document.dispatchEvent(
 			new CustomEvent('mp_cc_address_visibility_changed', {
 				detail: {
@@ -2184,7 +2263,19 @@
 			return state.frontendStore.fulfillment.date || {};
 		}
 		if (storageKey === 'contact_billing') {
-			return state.frontendStore.form.contact || {};
+			var rawContact = state.frontendStore.form.contact || {};
+			var out = {};
+			var ck;
+			for (ck in rawContact) {
+				if (!Object.prototype.hasOwnProperty.call(rawContact, ck)) {
+					continue;
+				}
+				if (ck.indexOf('__') === 0) {
+					continue;
+				}
+				out[ck] = rawContact[ck];
+			}
+			return out;
 		}
 		if (storageKey === 'scenario') {
 			return state.frontendStore.fulfillment.scenarioData || {};
@@ -3368,6 +3459,7 @@
 								detail: { scenario: nextScenario, payload: payload }
 							})
 						);
+						syncStoreWithBackend(state, $app);
 					});
 			});
 		});
@@ -3384,7 +3476,19 @@
 			} else if (bucket === 'date_conditions') {
 				state.frontendStore.fulfillment.date = payload;
 			} else if (bucket === 'contact_billing') {
-				state.frontendStore.form.contact = payload;
+				var cleanContact = {};
+				var pk;
+				for (pk in payload) {
+					if (!Object.prototype.hasOwnProperty.call(payload, pk)) {
+						continue;
+					}
+					if (pk.indexOf('__') === 0) {
+						continue;
+					}
+					cleanContact[pk] = payload[pk];
+				}
+				state.frontendStore.form.contact = cleanContact;
+				applyScenarioFieldAvailability(state);
 				if (payload && typeof payload === 'object') {
 					state.frontendStore.payment.gateway = payload.payment_gateway || payload.gateway || '';
 				}
