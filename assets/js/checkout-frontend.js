@@ -258,6 +258,114 @@
 		return root[key];
 	}
 
+	function getPickupPointForConditions(state) {
+		var scenarioData = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenarioData || {}) : {};
+		var point = scenarioData.pickup_point && typeof scenarioData.pickup_point === 'object' ? scenarioData.pickup_point : null;
+		if (!point) {
+			point = getPickupPointById('');
+		}
+		return point;
+	}
+
+	function buildConditionsReceiptPlainText(state) {
+		var scenario = normalizeScenarioId(state.frontendStore.fulfillment.scenario || '');
+		var root = getConditionsCopyRoot();
+		var introMap = root.intro_by_scenario && typeof root.intro_by_scenario === 'object' ? root.intro_by_scenario : {};
+		var lines = [];
+		var intro = trimNonEmpty(introMap[scenario]) || getUiText('step_3.conditions_intro', 'Перед продолжением проверьте правила для выбранного способа получения.');
+		if (intro) {
+			lines.push(intro);
+		}
+		var block = getConditionsBlockForScenario(scenario);
+		var i;
+		if (scenario === 'krasnoyarsk_delivery') {
+			var krBody = trimNonEmpty(block.body) || getUiText('step_3.krasnoyarsk_conditions', 'Доставка выполняется в пределах города в выбранную дату. Курьер связывается заранее для подтверждения интервала.');
+			var krDay = trimNonEmpty(block.delivery_within_day) || getUiText('step_3.krasnoyarsk_delivery_day', 'Доставка в течение дня в выбранную дату. Интервал уточняется у курьера.');
+			lines.push(krBody, krDay);
+		} else if (scenario === 'other_city_delivery') {
+			var ocBody = trimNonEmpty(block.body) || getUiText('step_3.other_city_conditions', 'Срок и стоимость уточняются после подтверждения заказа. Отправка выполняется через транспортного партнера по согласованным данным.');
+			var ocLog = trimNonEmpty(block.logistics_note) || getUiText('step_3.other_city_logistics', 'Отправка выполняется через логистическую компанию после комплектации и согласования реквизитов.');
+			lines.push(ocBody, ocLog);
+		} else {
+			var puBody = trimNonEmpty(block.body) || getUiText('step_3.pickup_conditions', 'Заказ выдается в точке самовывоза после подтверждения готовности. Пожалуйста, дождитесь уведомления перед визитом.');
+			lines.push(puBody);
+			var officeTitle = trimNonEmpty(block.office_block_title) || getUiText('step_3.pickup_office_block_title', 'Офис и график работы');
+			lines.push(officeTitle);
+			var point = getPickupPointForConditions(state);
+			if (point && point.title) {
+				lines.push(String(point.title));
+			}
+			var address = trimNonEmpty(block.office_address);
+			if (!address && point && point.address) {
+				address = String(point.address);
+			}
+			if (address) {
+				lines.push(address);
+			}
+			var desc = trimNonEmpty(block.office_description);
+			if (!desc && point && point.description) {
+				desc = String(point.description);
+			}
+			if (!desc) {
+				desc = getUiText('step_3.pickup_office_default', 'Выдача заказа в офисе самовывоза после уведомления о готовности.');
+			}
+			lines.push(desc);
+			var plain = trimNonEmpty(block.office_hours_plain);
+			var hoursLabel = getUiText('step_3.pickup_hours_label', 'Часы выдачи');
+			if (plain) {
+				var scheduleLines = plain.split(/\r?\n/).map(function (ln) {
+					return trimNonEmpty(ln);
+				}).filter(Boolean);
+				lines.push(hoursLabel + ':\n' + scheduleLines.join('\n'));
+			} else {
+				var hours = Array.isArray(block.office_hours) ? block.office_hours : [];
+				var hoursClean = [];
+				for (i = 0; i < hours.length; i += 1) {
+					var slot = trimNonEmpty(hours[i]);
+					if (slot) {
+						hoursClean.push(slot);
+					}
+				}
+				if (!hoursClean.length) {
+					hoursClean = ['10:00–13:00', '13:00–17:00', '17:00–20:00'];
+				}
+				lines.push(hoursLabel + ': ' + hoursClean.join(', '));
+			}
+			var critical = trimNonEmpty(block.critical_notice);
+			if (critical) {
+				lines.push(getUiText('step_3.critical_notice_prefix', 'Важно:') + ' ' + critical);
+			}
+			var helper = trimNonEmpty(block.convenience_helper) || getUiText('step_3.pickup_convenience_helper', 'Можно приехать в удобное время в рамках указанного расписания — уточните готовность заказа по уведомлению.');
+			lines.push(helper);
+		}
+		var filtered = [];
+		for (i = 0; i < lines.length; i += 1) {
+			var line = trimNonEmpty(lines[i]);
+			if (line) {
+				filtered.push(lines[i]);
+			}
+		}
+		return filtered.join('\n\n');
+	}
+
+	function formatConditionsReceiptHtmlFromPlain(text) {
+		if (!trimNonEmpty(text)) {
+			return '';
+		}
+		var paras = String(text).split(/\n\n+/);
+		var out = '';
+		var pi;
+		for (pi = 0; pi < paras.length; pi += 1) {
+			var p = trimNonEmpty(paras[pi]);
+			if (!p) {
+				continue;
+			}
+			var inner = escapeHtml(p).replace(/\n/g, '<br />');
+			out += '<p class="mp-cc-summary-card__conditions-para">' + inner + '</p>';
+		}
+		return out;
+	}
+
 	function getConditionsIntroForScenario(scenario) {
 		var root = getConditionsCopyRoot();
 		var map = root.intro_by_scenario && typeof root.intro_by_scenario === 'object' ? root.intro_by_scenario : {};
@@ -1750,6 +1858,13 @@
 				if (pickupPoint.address) {
 					html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(String(pickupPoint.address)) + '</p>';
 				}
+			}
+			var receiptPlain = buildConditionsReceiptPlainText(state);
+			if (receiptPlain) {
+				html += '<div class="mp-cc-summary-card__conditions" data-final-review-conditions="1">';
+				html += '<p class="mp-cc-summary-card__conditions-title"><strong>' + escapeHtml(getUiText('step_3.conditions_title', 'Условия получения')) + '</strong></p>';
+				html += '<div class="mp-cc-summary-card__conditions-body">' + formatConditionsReceiptHtmlFromPlain(receiptPlain) + '</div>';
+				html += '</div>';
 			}
 			html += '</div>';
 		}

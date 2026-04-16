@@ -276,3 +276,36 @@
 		grid-template-columns: 1fr;
 	}
 }
+
+.mp-cc-order-conditions-meta {
+	margin: 10px 0 0;
+	padding: 10px 12px;
+	border: 1px solid #dcdcde;
+	border-radius: 4px;
+	background: #f6f7f7;
+}
+
+.mp-cc-order-conditions-meta__body {
+	margin: 6px 0 0;
+	font-size: 12px;
+	line-height: 1.45;
+	color: #2c3338;
+}
+
+.mp-cc-order-conditions-meta__body .mp-cc-conditions-para {
+	margin: 0 0 6px;
+}
+
+.mp-cc-order-conditions-meta__body .mp-cc-conditions-para:last-child {
+	margin-bottom: 0;
+}
+
+.mp-cc-order-list-conditions {
+	cursor: help;
+	display: inline-block;
+	max-width: 28em;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	vertical-align: top;
+}
