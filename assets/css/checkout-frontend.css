@@ -1675,6 +1675,12 @@
 	outline-width: 3px;
 }
 
+.mp-cc-contact--disabled-muted .mp-cc-input:disabled,
+.mp-cc-contact--disabled-muted .mp-cc-select:disabled {
+	opacity: 0.72;
+	background: #f5f5f5;
+}
+
 .mp-cc-field-hint {
 	margin: 0;
 	font-size: 0.76rem;
