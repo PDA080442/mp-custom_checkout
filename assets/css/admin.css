@@ -261,6 +261,15 @@
 	color: #8a4b00;
 }
 
+.mp-cc-admin-step4-row td {
+	background: #fcfcff;
+}
+
+.mp-cc-admin-preview--step4 article {
+	border-left: 3px solid #dbe4ff;
+	padding-left: 10px;
+}
+
 @media (max-width: 860px) {
 	.mp-cc-admin-preview__grid {
 		grid-template-columns: 1fr;

@@ -214,6 +214,28 @@
 				title: '',
 				intro: '',
 				patronymic_required: false,
+				field_order: ['last_name', 'first_name', 'patronymic', 'email', 'phone'],
+				field_visibility: {
+					last_name: true,
+					first_name: true,
+					patronymic: true,
+					email: true,
+					phone: true
+				},
+				field_required: {
+					last_name: true,
+					first_name: true,
+					patronymic: false,
+					email: true,
+					phone: true
+				},
+				placeholders: {
+					last_name: '',
+					first_name: '',
+					patronymic: '',
+					email: '',
+					phone: ''
+				},
 				labels: {
 					last_name: '',
 					first_name: '',
@@ -232,7 +254,18 @@
 					{ dial: '+7', iso: 'KZ', national_digits: 10 },
 					{ dial: '+375', iso: 'BY', national_digits: 9 }
 				],
-				default_phone_country_iso: 'RU'
+				default_phone_country_iso: 'RU',
+				layout: {
+					desktop_columns: 3,
+					tablet_columns: 2,
+					mobile_columns: 1,
+					grid_gap: '0.75rem 1rem'
+				},
+				field_state_styles: {
+					invalid_style: 'default',
+					hint_style: 'default',
+					focus_style: 'default'
+				}
 			},
 			address_block: {
 				title: '',
@@ -257,8 +290,30 @@
 					postcode: ''
 				}
 			},
-			address_geo: {}
+			address_geo: {},
+			geo_preview: { enabled: false }
 		}, source);
+	}
+
+	function isContactFieldVisible(key) {
+		var cfg = getStepFourConfig();
+		var vis = cfg.contact_block && cfg.contact_block.field_visibility ? cfg.contact_block.field_visibility : {};
+		return vis[key] !== false;
+	}
+
+	function isContactFieldRequired(key) {
+		var cfg = getStepFourConfig();
+		var req = cfg.contact_block && cfg.contact_block.field_required ? cfg.contact_block.field_required : {};
+		if (Object.prototype.hasOwnProperty.call(req, key)) {
+			return Boolean(req[key]);
+		}
+		return key !== 'patronymic';
+	}
+
+	function getContactPlaceholder(key) {
+		var cfg = getStepFourConfig();
+		var placeholders = cfg.contact_block && cfg.contact_block.placeholders ? cfg.contact_block.placeholders : {};
+		return trimNonEmpty(placeholders[key] ? String(placeholders[key]) : '');
 	}
 
 	function getContactLabel(key) {
@@ -608,29 +663,29 @@
 		var codes = Array.isArray(block.phone_country_codes) ? block.phone_country_codes : [];
 		var errors = {};
 		var ok = true;
-		if (!trimNonEmpty(contact.billing_last_name)) {
+		if (isContactFieldVisible('last_name') && isContactFieldRequired('last_name') && !trimNonEmpty(contact.billing_last_name)) {
 			errors.billing_last_name = 'required';
 			ok = false;
 		}
-		if (!trimNonEmpty(contact.billing_first_name)) {
+		if (isContactFieldVisible('first_name') && isContactFieldRequired('first_name') && !trimNonEmpty(contact.billing_first_name)) {
 			errors.billing_first_name = 'required';
 			ok = false;
 		}
-		if (block.patronymic_required && !trimNonEmpty(contact.billing_patronymic)) {
+		if (isContactFieldVisible('patronymic') && (block.patronymic_required || isContactFieldRequired('patronymic')) && !trimNonEmpty(contact.billing_patronymic)) {
 			errors.billing_patronymic = 'required';
 			ok = false;
 		}
-		if (!trimNonEmpty(contact.billing_email)) {
+		if (isContactFieldVisible('email') && isContactFieldRequired('email') && !trimNonEmpty(contact.billing_email)) {
 			errors.billing_email = 'required';
 			ok = false;
-		} else if (!isValidEmailValue(contact.billing_email)) {
+		} else if (isContactFieldVisible('email') && trimNonEmpty(contact.billing_email) && !isValidEmailValue(contact.billing_email)) {
 			errors.billing_email = 'format';
 			ok = false;
 		}
 		var meta = findPhoneCountryMeta(codes, contact.phone_country_iso);
 		var digits = String(contact.billing_phone_national || '').replace(/\D/g, '');
 		var need = meta.national_digits || 10;
-		if (digits.length !== need) {
+		if (isContactFieldVisible('phone') && isContactFieldRequired('phone') && digits.length !== need) {
 			errors.billing_phone_national = 'incomplete';
 			ok = false;
 		}
@@ -734,43 +789,88 @@
 		var errPat = getContactFieldError(state, 'billing_patronymic');
 		var errEmail = getContactFieldError(state, 'billing_email');
 		var errPhone = getContactFieldError(state, 'billing_phone_national');
+		var order = Array.isArray(block.field_order) ? block.field_order : ['last_name', 'first_name', 'patronymic', 'email', 'phone'];
+		var seen = {};
+		var ordered = [];
+		var oi;
+		for (oi = 0; oi < order.length; oi++) {
+			var k = String(order[oi] || '');
+			if (!k || seen[k]) {
+				continue;
+			}
+			seen[k] = true;
+			ordered.push(k);
+		}
+		var fallbackOrder = ['last_name', 'first_name', 'patronymic', 'email', 'phone'];
+		for (oi = 0; oi < fallbackOrder.length; oi++) {
+			if (!seen[fallbackOrder[oi]]) {
+				ordered.push(fallbackOrder[oi]);
+			}
+		}
+		var layout = block.layout && typeof block.layout === 'object' ? block.layout : {};
+		var desktopCols = Math.max(1, Number(layout.desktop_columns || 3));
+		var tabletCols = Math.max(1, Number(layout.tablet_columns || 2));
+		var mobileCols = Math.max(1, Number(layout.mobile_columns || 1));
+		var gridGap = trimNonEmpty(layout.grid_gap) || '0.75rem 1rem';
+		var stateStyles = block.field_state_styles && typeof block.field_state_styles === 'object' ? block.field_state_styles : {};
+		var invalidStyle = trimNonEmpty(stateStyles.invalid_style) || 'default';
+		var hintStyle = trimNonEmpty(stateStyles.hint_style) || 'default';
+		var focusStyle = trimNonEmpty(stateStyles.focus_style) || 'default';
 		var html = '';
-		html += '<section class="mp-cc-contact" aria-labelledby="mp-cc-contact-title">';
+		html += '<section class="mp-cc-contact mp-cc-contact--invalid-' + escapeHtml(invalidStyle) + ' mp-cc-contact--hint-' + escapeHtml(hintStyle) + ' mp-cc-contact--focus-' + escapeHtml(focusStyle) + '" aria-labelledby="mp-cc-contact-title">';
 		html += '<header class="mp-cc-contact__header">';
 		html += '<h3 class="mp-cc-contact__title" id="mp-cc-contact-title">' + escapeHtml(title) + '</h3>';
 		if (intro) {
 			html += '<p class="mp-cc-contact__intro" id="mp-cc-contact-intro">' + escapeHtml(intro) + '</p>';
 		}
 		html += '</header>';
-		html += '<div class="mp-cc-contact__grid">';
-		html += '<div class="mp-cc-contact__field mp-cc-contact__field--span-1">';
+		html += '<div class="mp-cc-contact__grid" style="--mp-cc-contact-cols:' + escapeHtml(String(desktopCols)) + ';--mp-cc-contact-cols-tablet:' + escapeHtml(String(tabletCols)) + ';--mp-cc-contact-cols-mobile:' + escapeHtml(String(mobileCols)) + ';--mp-cc-contact-gap:' + escapeHtml(gridGap) + ';">';
+		for (oi = 0; oi < ordered.length; oi++) {
+			var field = ordered[oi];
+			if (!isContactFieldVisible(field)) {
+				continue;
+			}
+			if (field === 'last_name') {
+				html += '<div class="mp-cc-contact__field mp-cc-contact__field--span-1">';
 		html += '<label class="mp-cc-field-label" for="mp-cc-contact-last-name">' + escapeHtml(getContactLabel('last_name')) + '</label>';
 		html += '<input type="text" class="mp-cc-input' + (errLast ? ' is-invalid' : '') + '" id="mp-cc-contact-last-name" name="billing_last_name" autocomplete="family-name" ';
 		html += 'value="' + escapeHtml(String(contact.billing_last_name || '')) + '" ';
-		html += 'data-contact-field="billing_last_name" aria-required="true"';
+		html += 'data-contact-field="billing_last_name"' + (isContactFieldRequired('last_name') ? ' aria-required="true"' : '');
+		var pLast = getContactPlaceholder('last_name');
+		if (pLast) { html += ' placeholder="' + escapeHtml(pLast) + '"'; }
 		html += errLast ? ' aria-invalid="true"' : '';
 		html += '/>';
 		if (errLast) {
 			html += '<p class="mp-cc-field-error" id="mp-cc-contact-last-name-err" role="alert">' + escapeHtml(getUiText('step_4.contact_error_required', 'Заполните это поле.')) + '</p>';
 		}
 		html += '</div>';
-		html += '<div class="mp-cc-contact__field mp-cc-contact__field--span-1">';
+				continue;
+			}
+			if (field === 'first_name') {
+				html += '<div class="mp-cc-contact__field mp-cc-contact__field--span-1">';
 		html += '<label class="mp-cc-field-label" for="mp-cc-contact-first-name">' + escapeHtml(getContactLabel('first_name')) + '</label>';
 		html += '<input type="text" class="mp-cc-input' + (errFirst ? ' is-invalid' : '') + '" id="mp-cc-contact-first-name" name="billing_first_name" autocomplete="given-name" ';
 		html += 'value="' + escapeHtml(String(contact.billing_first_name || '')) + '" ';
-		html += 'data-contact-field="billing_first_name" aria-required="true"';
+		html += 'data-contact-field="billing_first_name"' + (isContactFieldRequired('first_name') ? ' aria-required="true"' : '');
+		var pFirst = getContactPlaceholder('first_name');
+		if (pFirst) { html += ' placeholder="' + escapeHtml(pFirst) + '"'; }
 		html += errFirst ? ' aria-invalid="true"' : '';
 		html += '/>';
 		if (errFirst) {
 			html += '<p class="mp-cc-field-error" id="mp-cc-contact-first-name-err" role="alert">' + escapeHtml(getUiText('step_4.contact_error_required', 'Заполните это поле.')) + '</p>';
 		}
 		html += '</div>';
-		html += '<div class="mp-cc-contact__field mp-cc-contact__field--span-1">';
+				continue;
+			}
+			if (field === 'patronymic') {
+				html += '<div class="mp-cc-contact__field mp-cc-contact__field--span-1">';
 		html += '<label class="mp-cc-field-label" for="mp-cc-contact-patronymic">' + escapeHtml(getContactLabel('patronymic')) + '</label>';
 		html += '<input type="text" class="mp-cc-input' + (errPat ? ' is-invalid' : '') + '" id="mp-cc-contact-patronymic" name="billing_patronymic" autocomplete="additional-name" ';
 		html += 'value="' + escapeHtml(String(contact.billing_patronymic || '')) + '" ';
 		html += 'data-contact-field="billing_patronymic"';
-		html += block.patronymic_required ? ' aria-required="true"' : '';
+		html += (block.patronymic_required || isContactFieldRequired('patronymic')) ? ' aria-required="true"' : '';
+		var pPatr = getContactPlaceholder('patronymic');
+		if (pPatr) { html += ' placeholder="' + escapeHtml(pPatr) + '"'; }
 		html += ' aria-describedby="mp-cc-contact-patronymic-hint"';
 		html += errPat ? ' aria-invalid="true"' : '';
 		html += '/>';
@@ -779,11 +879,16 @@
 			html += '<p class="mp-cc-field-error" id="mp-cc-contact-patronymic-err" role="alert">' + escapeHtml(getUiText('step_4.contact_error_required', 'Заполните это поле.')) + '</p>';
 		}
 		html += '</div>';
-		html += '<div class="mp-cc-contact__field mp-cc-contact__field--span-2">';
+				continue;
+			}
+			if (field === 'email') {
+				html += '<div class="mp-cc-contact__field mp-cc-contact__field--span-2">';
 		html += '<label class="mp-cc-field-label" for="mp-cc-contact-email">' + escapeHtml(getContactLabel('email')) + '</label>';
 		html += '<input type="email" class="mp-cc-input' + (errEmail ? ' is-invalid' : '') + '" id="mp-cc-contact-email" name="billing_email" autocomplete="email" inputmode="email" ';
 		html += 'value="' + escapeHtml(String(contact.billing_email || '')) + '" ';
-		html += 'data-contact-field="billing_email" aria-required="true"';
+		html += 'data-contact-field="billing_email"' + (isContactFieldRequired('email') ? ' aria-required="true"' : '');
+		var pEmail = getContactPlaceholder('email');
+		if (pEmail) { html += ' placeholder="' + escapeHtml(pEmail) + '"'; }
 		html += ' aria-describedby="mp-cc-contact-email-hint"';
 		html += errEmail ? ' aria-invalid="true"' : '';
 		html += '/>';
@@ -792,7 +897,10 @@
 			html += '<p class="mp-cc-field-error" id="mp-cc-contact-email-err" role="alert">' + escapeHtml(errEmail === 'format' ? getUiText('step_4.contact_error_email', 'Введите корректный email.') : getUiText('step_4.contact_error_required', 'Заполните это поле.')) + '</p>';
 		}
 		html += '</div>';
-		html += '<div class="mp-cc-contact__field mp-cc-contact__field--span-2 mp-cc-contact__field--phone">';
+				continue;
+			}
+			if (field === 'phone') {
+				html += '<div class="mp-cc-contact__field mp-cc-contact__field--span-2 mp-cc-contact__field--phone">';
 		html += '<span class="mp-cc-field-label" id="mp-cc-contact-phone-label">' + escapeHtml(getContactLabel('phone')) + '</span>';
 		html += '<div class="mp-cc-contact__phone-row" role="group" aria-labelledby="mp-cc-contact-phone-label">';
 		html += '<div class="mp-cc-contact__country">';
@@ -817,7 +925,9 @@
 		html += '<label class="mp-cc-visually-hidden" for="mp-cc-contact-phone-national">' + escapeHtml(getContactLabel('phone')) + '</label>';
 		html += '<input type="tel" class="mp-cc-input' + (errPhone ? ' is-invalid' : '') + '" id="mp-cc-contact-phone-national" name="billing_phone_national" autocomplete="tel-national" inputmode="numeric" ';
 		html += 'value="' + escapeHtml(displayPhone) + '" ';
-		html += 'data-contact-phone-national="1" aria-required="true"';
+		html += 'data-contact-phone-national="1"' + (isContactFieldRequired('phone') ? ' aria-required="true"' : '');
+		var pPhone = getContactPlaceholder('phone');
+		if (pPhone) { html += ' placeholder="' + escapeHtml(pPhone) + '"'; }
 		html += ' aria-describedby="mp-cc-contact-phone-hint"';
 		html += errPhone ? ' aria-invalid="true"' : '';
 		html += '/>';
@@ -828,6 +938,8 @@
 			html += '<p class="mp-cc-field-error" id="mp-cc-contact-phone-err" role="alert">' + escapeHtml(getUiText('step_4.contact_error_phone', 'Введите номер полностью.')) + '</p>';
 		}
 		html += '</div>';
+			}
+		}
 		html += '</div>';
 		html += '</section>';
 		return html;
@@ -869,6 +981,11 @@
 		html += '<h3 class="mp-cc-address__title" id="mp-cc-address-title">' + escapeHtml(title) + '</h3>';
 		if (intro) {
 			html += '<p class="mp-cc-address__intro" id="mp-cc-address-intro">' + escapeHtml(intro) + '</p>';
+		}
+		if (cfg.geo_preview && cfg.geo_preview.enabled) {
+			var regionsCount = getRegionsForCountry(geo, String(contact.country || '')).length;
+			var settlementsCount = getSettlementsForRegion(geo, String(contact.country || ''), String(contact.state || '')).length;
+			html += '<p class="mp-cc-address__intro"><strong>Geo debug:</strong> country=' + escapeHtml(String(contact.country || '')) + ', region=' + escapeHtml(String(contact.state || '')) + ', regions=' + escapeHtml(String(regionsCount)) + ', settlements=' + escapeHtml(String(settlementsCount)) + '</p>';
 		}
 		html += '</header>';
 		html += '<div class="mp-cc-address__grid">';
