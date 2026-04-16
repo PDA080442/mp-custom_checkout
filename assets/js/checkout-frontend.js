@@ -2615,6 +2615,26 @@ function buildGiftCardBlockHtml(state) {
 	}
 
 	function parseContext() {
+		var boot = document.getElementById('mp-cc-bootstrap-context');
+		if (boot && boot.textContent) {
+			try {
+				var parsed = JSON.parse(boot.textContent);
+				if (parsed && typeof parsed === 'object') {
+					return parsed;
+				}
+			} catch (e1) {
+				// fall through
+			}
+		}
+
+		var localized = window.mpCcCheckout || {};
+		if (localized.initialContext && typeof localized.initialContext === 'object') {
+			var keys = Object.keys(localized.initialContext);
+			if (keys.length) {
+				return localized.initialContext;
+			}
+		}
+
 		var root = document.querySelector(selectors.root);
 		if (!root) {
 			return {};
@@ -2627,7 +2647,7 @@ function buildGiftCardBlockHtml(state) {
 
 		try {
 			return JSON.parse(raw) || {};
-		} catch (e) {
+		} catch (e2) {
 			return {};
 		}
 	}
@@ -2918,6 +2938,9 @@ function buildGiftCardBlockHtml(state) {
 
 	function syncFromFlow(state, flow, cartPayload) {
 		var nextFlow = flow || {};
+		if (Array.isArray(nextFlow)) {
+			nextFlow = {};
+		}
 		var prevRuntime = state.frontendStore && state.frontendStore.discounts ? state.frontendStore.discounts.coupon_runtime : null;
 		state.context.checkout_flow = nextFlow;
 		if (cartPayload && typeof cartPayload === 'object') {
@@ -3050,16 +3073,32 @@ function buildGiftCardBlockHtml(state) {
 		state.frontendStore.runtime[key] = Boolean(value);
 	}
 
+	function applyContextCartToFrontendStore(frontendStore, context) {
+		if (!frontendStore || !frontendStore.cart) {
+			return;
+		}
+		var cartSnap = normalizeCartPayload(context && context.cart ? context.cart : {});
+		frontendStore.cart.items = cartSnap.items;
+		frontendStore.cart.summary = cartSnap.summary;
+		frontendStore.runtime = frontendStore.runtime || {};
+		frontendStore.runtime.summaryHydrated = cartSnap.items.length > 0;
+	}
+
 	function syncStoreWithBackend(state, $app) {
 		return postCheckout('session_get_state', { context_id: state.flowContextId }).then(function (response) {
-			if (!response || !response.success || !response.data || !response.data.flow) {
+			if (!response || !response.success || !response.data) {
 				return;
 			}
-			syncFromFlow(state, response.data.flow, response.data.cart || {});
+			var flowPayload = response.data.flow;
+			if (flowPayload === undefined || flowPayload === null) {
+				return;
+			}
+			syncFromFlow(state, flowPayload, response.data.cart || {});
 			var rehydrated = buildState(state.context);
 			state.visibleSteps = rehydrated.visibleSteps;
 			state.currentStepId = rehydrated.currentStepId;
 			state.maxReachedIndex = Math.max(state.maxReachedIndex, rehydrated.maxReachedIndex);
+			applyContextCartToFrontendStore(rehydrated.frontendStore, state.context);
 			state.frontendStore = rehydrated.frontendStore;
 			state.flowContextId = rehydrated.flowContextId;
 			render(state, $app);
@@ -5009,6 +5048,11 @@ function buildGiftCardBlockHtml(state) {
 		bindClientErrorLogging();
 		applyThemeVariant(context);
 		var state = buildState(context);
+		// Сервер уже передал снимок корзины в data-mp-cc-context; createFrontendStore иначе оставляет items пустыми до AJAX.
+		var initialCart = normalizeCartPayload(context.cart || {});
+		state.frontendStore.cart.items = initialCart.items;
+		state.frontendStore.cart.summary = initialCart.summary;
+		state.frontendStore.runtime.summaryHydrated = initialCart.items.length > 0;
 		if (!state.frontendStore.fulfillment.scenario) {
 			state.frontendStore.fulfillment.scenario = 'pickup';
 		}

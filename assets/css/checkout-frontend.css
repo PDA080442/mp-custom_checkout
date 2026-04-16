@@ -2061,3 +2061,24 @@
 		max-width: none;
 	}
 }
+
+/* Изоляция от агрессивных стилей темы (формы/сетка). */
+#mp-cc-checkout,
+#mp-cc-checkout * {
+	box-sizing: border-box;
+}
+
+#mp-cc-checkout {
+	width: 100%;
+	max-width: 100%;
+	min-width: 0;
+}
+
+body.woocommerce-checkout #mp-cc-checkout {
+	clear: both;
+}
+
+/* Нативный WC form-checkout не должен дублировать SPA на URL /mp-checkout/ (тема/виджеты/старый вывод). */
+body.mp-custom-checkout form.checkout.woocommerce-checkout {
+	display: none !important;
+}

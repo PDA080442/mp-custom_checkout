@@ -34,6 +34,9 @@ final class CheckoutSessionService {
 		if ( ! CheckoutRouteHooks::is_checkout_route() ) {
 			return;
 		}
+		if ( function_exists( 'wc_load_cart' ) ) {
+			wc_load_cart();
+		}
 		$flow = self::get_flow();
 		if ( self::is_flow_stale( $flow ) ) {
 			$flow = array();

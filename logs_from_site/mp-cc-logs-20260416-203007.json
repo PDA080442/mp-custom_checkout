@@ -1,0 +1,1207 @@
+[
+    {
+        "timestamp": "2026-04-16T20:29:53+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/hub-core/libs/core-importer/LiquidReset.php",
+            "line": 10,
+            "message": "Creation of dynamic property LiquidReset::$core is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:43+00:00",
+        "level": "error",
+        "message": "[client_js] runtime_error",
+        "source": "client_js",
+        "event_type": "window_error",
+        "channel": "general",
+        "context": {
+            "source": "client_js",
+            "event_type": "window_error",
+            "message": "Uncaught TypeError: Cannot read properties of null (reading 'style')",
+            "stack": "TypeError: Cannot read properties of null (reading 'style') at hidePreloader (https://ct360118-wordpress-52keg.tw1.ru/mp-checkout/:600:19) at window.onload (https://ct360118-wordpress-52keg.tw1.ru/mp-checkout/:625:9)",
+            "state": "runtime"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:41+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/hub-core/libs/core-importer/LiquidReset.php",
+            "line": 10,
+            "message": "Creation of dynamic property LiquidReset::$core is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:41+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/hub-core/libs/core-importer/LiquidReset.php",
+            "line": 10,
+            "message": "Creation of dynamic property LiquidReset::$core is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 2,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/hub-elementor-addons/elementor/widgets/custom-menu.php",
+            "line": 1493,
+            "message": "Undefined variable $menu_alignment"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 2,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/hub-elementor-addons/elementor/widgets/custom-menu.php",
+            "line": 1474,
+            "message": "Undefined variable $border_hcolor"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 2,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/hub-elementor-addons/elementor/widgets/custom-menu.php",
+            "line": 1474,
+            "message": "Undefined variable $border_color"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 2,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/hub-elementor-addons/elementor/widgets/custom-menu.php",
+            "line": 1470,
+            "message": "Undefined variable $sticky_dark_bg_hcolor"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 2,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/hub-elementor-addons/elementor/widgets/custom-menu.php",
+            "line": 1470,
+            "message": "Undefined variable $sticky_dark_bg_color"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 2,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/hub-elementor-addons/elementor/widgets/custom-menu.php",
+            "line": 1469,
+            "message": "Undefined variable $sticky_light_bg_hcolor"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 2,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/hub-elementor-addons/elementor/widgets/custom-menu.php",
+            "line": 1469,
+            "message": "Undefined variable $sticky_light_bg_color"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 2,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/hub-elementor-addons/elementor/widgets/custom-menu.php",
+            "line": 1468,
+            "message": "Undefined variable $sticky_bg_hcolor"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 2,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/hub-elementor-addons/elementor/widgets/custom-menu.php",
+            "line": 1468,
+            "message": "Undefined variable $sticky_bg_color"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 2,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/hub-elementor-addons/elementor/widgets/custom-menu.php",
+            "line": 1467,
+            "message": "Undefined variable $bg_hcolor"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 2,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/hub-elementor-addons/elementor/widgets/custom-menu.php",
+            "line": 1467,
+            "message": "Undefined variable $bg_color"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$cond_max_weight is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$cond_min_weight is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$fixedvalue_disable is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$cond_settings is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$69e146b2249eb is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$69e146b2249ea is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$69e146b2249e9 is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$69e146b2249e8 is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$time is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$addpackcost is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$addpackweight is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$fixedpackvalue is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$addcost is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$add_settings is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$nds is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$isavia is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$service is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$pack is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$type is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$from is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:38+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$basic is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:37+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$cond_max_weight is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:37+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$cond_min_weight is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:37+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$fixedvalue_disable is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:37+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$cond_settings is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:37+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$69e146b1077b5 is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:37+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$69e146b1077b4 is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:37+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$69e146b1077b3 is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:37+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$69e146b1077b0 is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:37+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$time is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:37+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$addpackcost is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:37+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$addpackweight is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:37+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$fixedpackvalue is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:37+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$addcost is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:37+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$add_settings is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:37+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$nds is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:37+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$isavia is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:37+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$service is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:37+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$pack is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:37+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$type is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:37+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$from is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:37+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 8192,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/russian-post-and-ems-for-woocommerce/inc/class-rpaefw-shipping-method.php",
+            "line": 33,
+            "message": "Creation of dynamic property RPAEFW_Shipping_Method::$basic is deprecated"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:36+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 2,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/elementor/includes/base/controls-stack.php",
+            "line": 696,
+            "message": "Undefined array key -1"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:36+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 2,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/elementor/includes/base/controls-stack.php",
+            "line": 1141,
+            "message": "Trying to access array offset on value of type bool"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:36+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 2,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/elementor/includes/base/controls-stack.php",
+            "line": 696,
+            "message": "Undefined array key -1"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:36+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 2,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/elementor/includes/base/controls-stack.php",
+            "line": 1141,
+            "message": "Trying to access array offset on value of type bool"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:36+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 2,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/elementor/includes/base/controls-stack.php",
+            "line": 696,
+            "message": "Undefined array key -1"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:36+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 2,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/elementor/includes/base/controls-stack.php",
+            "line": 1141,
+            "message": "Trying to access array offset on value of type bool"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:36+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 2,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/elementor/includes/base/controls-stack.php",
+            "line": 696,
+            "message": "Undefined array key -1"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:36+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 2,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/elementor/includes/base/controls-stack.php",
+            "line": 1141,
+            "message": "Trying to access array offset on value of type bool"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:36+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 2,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/elementor/includes/base/controls-stack.php",
+            "line": 696,
+            "message": "Undefined array key -1"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:36+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 2,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/elementor/includes/base/controls-stack.php",
+            "line": 1141,
+            "message": "Trying to access array offset on value of type bool"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:36+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 2,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/elementor/includes/base/controls-stack.php",
+            "line": 696,
+            "message": "Undefined array key -1"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:36+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 2,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/elementor/includes/base/controls-stack.php",
+            "line": 1141,
+            "message": "Trying to access array offset on value of type bool"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:36+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 2,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/elementor/includes/base/controls-stack.php",
+            "line": 696,
+            "message": "Undefined array key -1"
+        }
+    },
+    {
+        "timestamp": "2026-04-16T20:29:36+00:00",
+        "level": "warning",
+        "message": "[php] runtime_error",
+        "source": "php",
+        "event_type": "php_runtime",
+        "channel": "general",
+        "context": {
+            "source": "php",
+            "event_type": "php_runtime",
+            "channel": "general",
+            "php_type": 2,
+            "file": "/home/c/ct360118/wordpress_52keg/public_html/wp-content/plugins/elementor/includes/base/controls-stack.php",
+            "line": 1141,
+            "message": "Trying to access array offset on value of type bool"
+        }
+    }
+]

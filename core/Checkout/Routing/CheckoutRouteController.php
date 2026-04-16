@@ -56,6 +56,10 @@ final class CheckoutRouteController {
 			$step_manager->set_current_step_id( $resolved_step );
 		}
 
+		if ( function_exists( 'wc_load_cart' ) ) {
+			wc_load_cart();
+		}
+
 		$context = CheckoutRouteContext::collect();
 
 		do_action( 'mp_custom_checkout_route_before_guard', $context );
@@ -83,7 +87,8 @@ final class CheckoutRouteController {
 		status_header( 200 );
 		nocache_headers();
 
-		$mp_cc_checkout_context = $context;
+		$GLOBALS['mp_cc_checkout_context'] = $context;
+		$mp_cc_checkout_context            = $context;
 
 		include $template;
 

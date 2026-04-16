@@ -35,6 +35,9 @@ final class CheckoutAjaxHooks {
 		if ( ! DependencyFailureGuard::is_woocommerce_integration_ready() ) {
 			wp_send_json_error( array( 'message' => __( 'WooCommerce недоступен.', 'mp-custom-checkout' ) ), 503 );
 		}
+		if ( function_exists( 'wc_load_cart' ) ) {
+			wc_load_cart();
+		}
 		check_ajax_referer( 'mp_cc_checkout', 'nonce' );
 		$sub_action = isset( $_POST['sub_action'] ) ? sanitize_key( wp_unslash( $_POST['sub_action'] ) ) : '';
 		if ( '' === $sub_action ) {
