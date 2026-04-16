@@ -35,6 +35,18 @@
 	gap: 14px;
 }
 
+#mp-cc-admin-step1-preview .mp-cc-admin-preview__summary {
+	position: sticky;
+	top: 16px;
+	align-self: start;
+}
+
+@media (max-width: 782px) {
+	#mp-cc-admin-step1-preview .mp-cc-admin-preview__summary {
+		position: static;
+	}
+}
+
 .mp-cc-admin-preview__card,
 .mp-cc-admin-preview__summary {
 	border: 1px solid #e3e3e3;

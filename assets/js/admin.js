@@ -11,15 +11,23 @@
 		var styleControls = source.style_controls || {};
 		var pickupConfig = window.mpCcAdmin && window.mpCcAdmin.pickupConfig ? window.mpCcAdmin.pickupConfig : {};
 		var pickupPoints = pickupConfig.points && Array.isArray(pickupConfig.points) ? pickupConfig.points : [];
+		var scenarioUiConfig = window.mpCcAdmin && window.mpCcAdmin.scenarioUiConfig ? window.mpCcAdmin.scenarioUiConfig : {};
+		var isPickupPreview = String(scenarioUiConfig.default_scenario || '') === 'pickup';
 		return {
 			previewEnabled: Boolean(source.admin_preview && source.admin_preview.enabled !== false),
 			title: labels.title || 'Корзина',
 			summaryTitle: labels.summary_title || 'Сводка заказа',
 			subtotalLabel: labels.subtotal_label || 'Подытог',
+			shippingLabel: labels.shipping_label || 'Доставка',
+			discountLabel: labels.discount_label || 'Скидка',
+			giftCardLabel: labels.gift_card_label || 'Подарочная карта',
+			taxLabel: labels.tax_label || 'Налоги',
+			totalLabel: labels.total_label || 'Итого',
 			itemsLabel: labels.items_label || 'Позиций',
 			continueLabel: labels.continue_label || 'Продолжить оформление',
 			returnLabel: labels.return_label || 'Вернуться в магазин',
 			emptyTitle: labels.empty_title || 'Корзина пуста',
+			isPickupPreview: isPickupPreview,
 			emptyMessage: emptyState.message || '',
 			emptyCta: emptyState.cta_label || labels.return_label || 'Вернуться в магазин',
 			cardCompact: Boolean(styleControls.card_compact),
@@ -312,6 +320,13 @@
 		html += '<h3>' + escapeHtml(config.summaryTitle) + '</h3>';
 		html += '<p>' + escapeHtml(config.itemsLabel) + ': <strong>3</strong></p>';
 		html += '<p>' + escapeHtml(config.subtotalLabel) + ': <strong>3 670 ₽</strong></p>';
+		if (!config.isPickupPreview) {
+			html += '<p>' + escapeHtml(config.shippingLabel) + ': <strong>490 ₽</strong></p>';
+		}
+		html += '<p>' + escapeHtml(config.discountLabel) + ': <strong>-200 ₽</strong></p>';
+		html += '<p>' + escapeHtml(config.giftCardLabel) + ': <strong>-100 ₽</strong></p>';
+		html += '<p>' + escapeHtml(config.taxLabel) + ': <strong>200 ₽</strong></p>';
+		html += '<p><strong>' + escapeHtml(config.totalLabel) + ': 4 060 ₽</strong></p>';
 		html += '<div class="mp-cc-admin-preview__actions">';
 		html += '<button type="button">' + escapeHtml(config.continueLabel) + '</button>';
 		html += '<a href="#">' + escapeHtml(config.returnLabel) + '</a>';
@@ -531,6 +546,11 @@
 		cfg.title = readFormValue('mp_custom_checkout_settings[step_1][labels][title]', cfg.title);
 		cfg.summaryTitle = readFormValue('mp_custom_checkout_settings[step_1][labels][summary_title]', cfg.summaryTitle);
 		cfg.subtotalLabel = readFormValue('mp_custom_checkout_settings[step_1][labels][subtotal_label]', cfg.subtotalLabel);
+		cfg.shippingLabel = readFormValue('mp_custom_checkout_settings[step_1][labels][shipping_label]', cfg.shippingLabel);
+		cfg.discountLabel = readFormValue('mp_custom_checkout_settings[step_1][labels][discount_label]', cfg.discountLabel);
+		cfg.giftCardLabel = readFormValue('mp_custom_checkout_settings[step_1][labels][gift_card_label]', cfg.giftCardLabel);
+		cfg.taxLabel = readFormValue('mp_custom_checkout_settings[step_1][labels][tax_label]', cfg.taxLabel);
+		cfg.totalLabel = readFormValue('mp_custom_checkout_settings[step_1][labels][total_label]', cfg.totalLabel);
 		cfg.itemsLabel = readFormValue('mp_custom_checkout_settings[step_1][labels][items_label]', cfg.itemsLabel);
 		cfg.continueLabel = readFormValue('mp_custom_checkout_settings[step_1][labels][continue_label]', cfg.continueLabel);
 		cfg.returnLabel = readFormValue('mp_custom_checkout_settings[step_1][labels][return_label]', cfg.returnLabel);

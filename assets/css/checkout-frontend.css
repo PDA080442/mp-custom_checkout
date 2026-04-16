@@ -1122,8 +1122,9 @@
 	border-radius: var(--mp-cc-radius-md);
 	box-shadow: var(--mp-cc-shadow-card);
 	background: var(--mp-cc-color-background);
-	position: sticky;
-	top: 1rem;
+	position: relative;
+	top: auto;
+	bottom: auto;
 	backdrop-filter: blur(0px);
 }
 
@@ -1274,6 +1275,35 @@
 @media (max-width: 767px) {
 	#mp-cc-checkout.mp-cc-step1-mobile-compact .mp-cc-cart-item {
 		padding: 0.5rem;
+	}
+}
+
+@media (min-width: 960px) {
+	.mp-cc-summary-card {
+		position: sticky;
+		top: 1rem;
+	}
+}
+
+@media (max-width: 959px) {
+	.mp-cc-summary-card {
+		position: sticky;
+		bottom: 0;
+		top: auto;
+		z-index: 30;
+		padding: 0.85rem;
+		max-height: 70vh;
+		overflow: auto;
+	}
+
+	/* На мобилке оставляем в липком блоке только финансовые строки. */
+	.mp-cc-summary-card__scenario:not(.mp-cc-summary-card__scenario--final-review):not([data-summary-financials='1']):not([data-final-review-financials='1']) {
+		display: none;
+	}
+
+	/* Компенсируем место под липким блоком в конце колонки. */
+	.mp-cc-layout__main {
+		padding-bottom: 12rem;
 	}
 }
 
@@ -1430,7 +1460,7 @@
 	}
 
 	.mp-cc-summary-card {
-		position: static;
+		position: sticky;
 	}
 
 	.mp-cc-nav {
@@ -1483,7 +1513,7 @@
 	}
 
 	.mp-cc-summary-card {
-		position: static;
+		position: sticky;
 	}
 
 	.mp-cc-fulfillment__cards,
