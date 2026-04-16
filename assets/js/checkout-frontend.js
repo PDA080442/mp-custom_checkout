@@ -340,6 +340,28 @@
 				}
 			},
 			address_geo: {},
+			discount_layout: {
+				placement: 'step_4',
+				separate_step_enabled: false,
+				order: ['coupon', 'gift_card']
+			},
+			coupon_block: {
+				title: '',
+				intro: '',
+				input_label: '',
+				placeholder: '',
+				apply_label: '',
+				empty_message: '',
+				success_message: '',
+				error_message: ''
+			},
+			gift_card_block: {
+				title: '',
+				intro: '',
+				input_label: '',
+				placeholder: '',
+				apply_label: ''
+			},
 			geo_preview: { enabled: false }
 		}, source);
 	}
@@ -789,6 +811,51 @@
 		c.billing_phone = buildFullPhoneE164(c);
 		state.frontendStore.form.contact = c;
 		ensureAddressDefaults(state);
+	}
+
+	function ensureDiscountDefaults(state) {
+		if (!state || !state.frontendStore) {
+			return;
+		}
+		var discounts = state.frontendStore.discounts && typeof state.frontendStore.discounts === 'object'
+			? state.frontendStore.discounts
+			: {};
+		discounts.coupons = Array.isArray(discounts.coupons) ? discounts.coupons : [];
+		discounts.gift_card = Array.isArray(discounts.gift_card) ? discounts.gift_card : [];
+		discounts.coupon_runtime = discounts.coupon_runtime && typeof discounts.coupon_runtime === 'object'
+			? discounts.coupon_runtime
+			: { code: '', state: 'empty', message: '' };
+		if (!trimNonEmpty(discounts.coupon_runtime.state)) {
+			discounts.coupon_runtime.state = 'empty';
+		}
+		state.frontendStore.discounts = discounts;
+	}
+
+	function getCouponCopy() {
+		var cfg = getStepFourConfig();
+		var c = cfg.coupon_block || {};
+		return {
+			title: trimNonEmpty(c.title) || getUiText('step_4.coupon_title', 'Промокод'),
+			intro: trimNonEmpty(c.intro) || getUiText('step_4.coupon_intro', 'Введите код купона, если он у вас есть.'),
+			inputLabel: trimNonEmpty(c.input_label) || getUiText('step_4.coupon_input_label', 'Код купона'),
+			placeholder: trimNonEmpty(c.placeholder) || getUiText('step_4.coupon_placeholder', 'Например, SPRING10'),
+			applyLabel: trimNonEmpty(c.apply_label) || getUiText('step_4.coupon_apply', 'Применить'),
+			emptyMessage: trimNonEmpty(c.empty_message) || getUiText('step_4.coupon_empty', 'Введите код купона.'),
+			successMessage: trimNonEmpty(c.success_message) || getUiText('step_4.coupon_success', 'Промокод применён.'),
+			errorMessage: trimNonEmpty(c.error_message) || getUiText('step_4.coupon_error', 'Не удалось применить промокод.')
+		};
+	}
+
+	function getGiftCardCopy() {
+		var cfg = getStepFourConfig();
+		var g = cfg.gift_card_block || {};
+		return {
+			title: trimNonEmpty(g.title) || getUiText('step_4.gift_card_title', 'Подарочная карта'),
+			intro: trimNonEmpty(g.intro) || getUiText('step_4.gift_card_intro', 'Введите код подарочной карты.'),
+			inputLabel: trimNonEmpty(g.input_label) || getUiText('step_4.gift_card_input_label', 'Код подарочной карты'),
+			placeholder: trimNonEmpty(g.placeholder) || getUiText('step_4.gift_card_placeholder', 'Например, GIFT-123'),
+			applyLabel: trimNonEmpty(g.apply_label) || getUiText('step_4.gift_card_apply', 'Применить')
+		};
 	}
 
 	function validateContactPaymentStep(state) {
@@ -1443,6 +1510,72 @@
 		}
 		html += '</div>';
 		html += '</section>';
+		return html;
+	}
+
+	function buildDiscountToolsHtml(state) {
+		ensureDiscountDefaults(state);
+		var cfg = getStepFourConfig();
+		var layout = cfg.discount_layout && typeof cfg.discount_layout === 'object' ? cfg.discount_layout : {};
+		var placement = trimNonEmpty(layout.placement) || 'step_4';
+		var separateStepEnabled = layout.separate_step_enabled === true;
+		var order = Array.isArray(layout.order) ? layout.order : ['coupon', 'gift_card'];
+		if (placement !== 'step_4' && separateStepEnabled) {
+			return '';
+		}
+		var html = '<section class="mp-cc-discount-tools" data-coupon-step-ready="' + (separateStepEnabled ? '1' : '0') + '" data-coupon-placement="' + escapeHtml(placement) + '">';
+		for (var i = 0; i < order.length; i += 1) {
+			var key = String(order[i] || '');
+			if (key === 'coupon') {
+				html += buildCouponBlockHtml(state);
+			} else if (key === 'gift_card') {
+				html += buildGiftCardBlockHtml(state);
+			}
+		}
+		html += '</section>';
+		return html;
+	}
+
+	function buildCouponBlockHtml(state) {
+		var copy = getCouponCopy();
+		var rt = state.frontendStore && state.frontendStore.discounts && state.frontendStore.discounts.coupon_runtime
+			? state.frontendStore.discounts.coupon_runtime
+			: { code: '', state: 'empty', message: '' };
+		var code = String(rt.code || '');
+		var runtimeState = String(rt.state || 'empty');
+		var msg = trimNonEmpty(rt.message);
+		var html = '';
+		html += '<article class="mp-cc-coupon mp-cc-coupon--' + escapeHtml(runtimeState) + '" data-coupon-block="1">';
+		html += '<h4 class="mp-cc-coupon__title">' + escapeHtml(copy.title) + '</h4>';
+		if (copy.intro) {
+			html += '<p class="mp-cc-coupon__intro">' + escapeHtml(copy.intro) + '</p>';
+		}
+		html += '<div class="mp-cc-coupon__row">';
+		html += '<label class="mp-cc-field-label" for="mp-cc-coupon-code">' + escapeHtml(copy.inputLabel) + '</label>';
+		html += '<input type="text" class="mp-cc-input' + (runtimeState === 'error' ? ' is-invalid' : '') + '" id="mp-cc-coupon-code" data-coupon-code="1" value="' + escapeHtml(code) + '" placeholder="' + escapeHtml(copy.placeholder) + '" />';
+		html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--next mp-cc-coupon__apply" data-coupon-apply="1">' + escapeHtml(copy.applyLabel) + '</button>';
+		html += '</div>';
+		if (msg) {
+			html += '<p class="mp-cc-field-hint' + (runtimeState === 'error' ? ' mp-cc-field-error' : '') + '" data-coupon-message="1">' + escapeHtml(msg) + '</p>';
+		}
+		html += '</article>';
+		return html;
+	}
+
+	function buildGiftCardBlockHtml() {
+		var copy = getGiftCardCopy();
+		var html = '';
+		html += '<article class="mp-cc-coupon mp-cc-coupon--gift" data-gift-card-block="1">';
+		html += '<h4 class="mp-cc-coupon__title">' + escapeHtml(copy.title) + '</h4>';
+		if (copy.intro) {
+			html += '<p class="mp-cc-coupon__intro">' + escapeHtml(copy.intro) + '</p>';
+		}
+		html += '<div class="mp-cc-coupon__row">';
+		html += '<label class="mp-cc-field-label" for="mp-cc-gift-card-code">' + escapeHtml(copy.inputLabel) + '</label>';
+		html += '<input type="text" class="mp-cc-input" id="mp-cc-gift-card-code" placeholder="' + escapeHtml(copy.placeholder) + '" />';
+		html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--back mp-cc-coupon__apply" disabled>' + escapeHtml(copy.applyLabel) + '</button>';
+		html += '</div>';
+		html += '</article>';
 		return html;
 	}
 
@@ -2764,6 +2897,15 @@
 		}, 260);
 	}
 
+	function saveDiscountDraft(state) {
+		ensureDiscountDefaults(state);
+		return postCheckout('session_set_answers', {
+			step_id: 'discounts',
+			context_id: state.flowContextId,
+			answers: state.frontendStore.discounts || {}
+		});
+	}
+
 	function getDraftPayloadByStorageKey(state, storageKey) {
 		if (!state || !state.frontendStore) {
 			return {};
@@ -2873,6 +3015,7 @@
 		if (step && step.id === 'contact_payment') {
 			html += buildContactPaymentHtml(state);
 			html += buildAddressBlockHtml(state);
+			html += buildDiscountToolsHtml(state);
 		}
 		html += '</div>';
 		if (!isFlagEnabled(state, flagNames.discountPlacement, true)) {
@@ -3365,6 +3508,7 @@
 		}
 		ensureDateSelection(state);
 		ensureContactDefaults(state);
+		ensureDiscountDefaults(state);
 
 		$app.html(buildStepPanelHtml(state));
 		$summary.html(buildSummaryHtml(state));
@@ -3713,6 +3857,44 @@
 		}).on('blur', function () {
 			ensureContactDefaults(state);
 			saveCurrentStepDraft(state).fail(function () {
+				notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
+			});
+		});
+
+		$app.find('[data-coupon-code]').off('input').on('input', function () {
+			ensureDiscountDefaults(state);
+			var discounts = state.frontendStore.discounts || {};
+			var rt = discounts.coupon_runtime || { code: '', state: 'empty', message: '' };
+			rt.code = String($(this).val() || '');
+			if (trimNonEmpty(rt.code)) {
+				rt.state = 'empty';
+				rt.message = '';
+			}
+			discounts.coupon_runtime = rt;
+			state.frontendStore.discounts = discounts;
+		});
+
+		$app.find('[data-coupon-apply]').off('click').on('click', function () {
+			ensureDiscountDefaults(state);
+			var discounts = state.frontendStore.discounts || {};
+			var rt = discounts.coupon_runtime || { code: '', state: 'empty', message: '' };
+			var copy = getCouponCopy();
+			var code = trimNonEmpty(rt.code);
+			if (!code) {
+				rt.state = 'error';
+				rt.message = copy.emptyMessage;
+			} else if (code.length >= 4 && code.toLowerCase().indexOf('err') !== 0) {
+				rt.state = 'success';
+				rt.message = copy.successMessage;
+				discounts.coupons = [code];
+			} else {
+				rt.state = 'error';
+				rt.message = copy.errorMessage;
+			}
+			discounts.coupon_runtime = rt;
+			state.frontendStore.discounts = discounts;
+			render(state, $app);
+			saveDiscountDraft(state).fail(function () {
 				notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
 			});
 		});
