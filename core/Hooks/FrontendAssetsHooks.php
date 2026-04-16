@@ -90,6 +90,7 @@ final class FrontendAssetsHooks {
 				'stepOneConfig' => self::step_one_config(),
 				'scenarioUiConfig' => self::scenario_ui_config(),
 				'stepThreeConfig' => self::step_three_config(),
+				'stepFourConfig'  => self::step_four_config(),
 				'pickupConfig' => PickupPointRegistry::config(),
 				'scenarioStepMap' => self::scenario_step_map(),
 				'designTokens' => self::design_tokens_for_runtime(),
@@ -222,6 +223,14 @@ final class FrontendAssetsHooks {
 	 */
 	private static function step_three_config(): array {
 		$config = SafeSettingsResolver::get_section( 'step_3' );
+		return is_array( $config ) ? $config : array();
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private static function step_four_config(): array {
+		$config = SafeSettingsResolver::get_section( 'step_4' );
 		return is_array( $config ) ? $config : array();
 	}
 
