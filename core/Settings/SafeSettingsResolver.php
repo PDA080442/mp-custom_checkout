@@ -156,6 +156,7 @@ final class SafeSettingsResolver {
 						'errors' => array(
 							'invalid_date' => 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.',
 							'empty_date'   => 'Выберите дату, чтобы продолжить.',
+							'conditions_unconfirmed' => 'Подтвердите ознакомление с условиями, чтобы продолжить.',
 						),
 						'admin_preview' => array(
 							'enabled' => true,
