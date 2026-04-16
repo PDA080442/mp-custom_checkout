@@ -40,6 +40,7 @@ final class AdminAssetsHooks {
 				'featureFlags' => FeatureFlagResolver::all(),
 				'stepOneConfig' => SafeSettingsResolver::get_section( 'step_1' ),
 				'stepOneDefaults' => self::step_one_defaults(),
+				'settingsDefaults' => self::settings_defaults(),
 				'scenarioUiConfig' => SafeSettingsResolver::get_section( 'step_2' ),
 				'stepThreeConfig' => SafeSettingsResolver::get_section( 'step_3' ),
 				'stepFourConfig' => SafeSettingsResolver::get_section( 'step_4' ),
@@ -68,5 +69,10 @@ final class AdminAssetsHooks {
 		$tree = SafeSettingsResolver::get_defaults_tree();
 		$defaults = isset( $tree['step_1'] ) && is_array( $tree['step_1'] ) ? $tree['step_1'] : array();
 		return $defaults;
+	}
+
+	private static function settings_defaults(): array {
+		$tree = SafeSettingsResolver::get_defaults_tree();
+		return is_array( $tree ) ? $tree : array();
 	}
 }

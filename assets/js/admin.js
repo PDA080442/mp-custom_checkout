@@ -299,6 +299,75 @@
 		return (source && typeof source === 'object') ? source : {};
 	}
 
+	function getSettingsDefaults() {
+		var source = window.mpCcAdmin && window.mpCcAdmin.settingsDefaults ? window.mpCcAdmin.settingsDefaults : {};
+		return (source && typeof source === 'object') ? source : {};
+	}
+
+	function createPreviewRuntimeMock() {
+		return {
+			cart: {
+				items: [
+					{ title: 'Rose Perfume', qty: 1, amount: '2 490 ₽' },
+					{ title: 'Gift Box', qty: 2, amount: '590 ₽' }
+				]
+			},
+			summary: {
+				items: 3,
+				subtotal: '3 670 ₽',
+				shipping: '490 ₽',
+				discount: '-200 ₽',
+				giftCard: '-100 ₽',
+				tax: '200 ₽',
+				total: '4 060 ₽'
+			}
+		};
+	}
+
+	function createPreviewStore(initialState) {
+		var state = $.extend(true, {}, initialState || {});
+		return {
+			getState: function () {
+				return $.extend(true, {}, state);
+			},
+			setState: function (nextPatch) {
+				state = $.extend(true, {}, state, nextPatch || {});
+				return this.getState();
+			},
+			reset: function () {
+				state = $.extend(true, {}, initialState || {});
+				return this.getState();
+			}
+		};
+	}
+
+	function debounce(callback, waitMs) {
+		var timeoutId = 0;
+		return function () {
+			var args = arguments;
+			clearTimeout(timeoutId);
+			timeoutId = window.setTimeout(function () {
+				callback.apply(null, args);
+			}, waitMs);
+		};
+	}
+
+	function renderPreviewArea() {
+		var html = '';
+		html += '<section class="mp-cc-admin-preview-area" id="mp-cc-admin-preview-area">';
+		html += '<div class="mp-cc-admin-preview-area__header">';
+		html += '<h2>Live Checkout Preview</h2>';
+		html += '<div class="mp-cc-admin-preview-area__actions">';
+		html += '<button type="button" class="button button-secondary" data-mp-cc-preview-reset="1">Сбросить превью</button>';
+		html += '<button type="button" class="button button-secondary" data-mp-cc-tab-reset="1">Сбросить настройки вкладки по умолчанию</button>';
+		html += '</div>';
+		html += '</div>';
+		html += '<p class="mp-cc-admin-preview-area__warning" data-mp-cc-preview-warning="1" hidden>В превью есть несохранённые изменения.</p>';
+		html += '<div class="mp-cc-admin-preview-area__body" data-mp-cc-preview-body="1"></div>';
+		html += '</section>';
+		return html;
+	}
+
 	function renderPreview(config) {
 		var html = '';
 		html += '<section class="mp-cc-admin-preview" id="mp-cc-admin-step1-preview"';
@@ -307,9 +376,6 @@
 		html += ' data-summary-emphasis="' + escapeHtml(config.summaryEmphasis) + '"';
 		html += '>';
 		html += '<h2>Step 1 Preview</h2>';
-		html += '<div class="mp-cc-admin-preview__toolbar">';
-		html += '<button type="button" class="button button-secondary" data-mp-cc-step1-reset="1">Reset Step 1 to defaults</button>';
-		html += '</div>';
 		html += '<div class="mp-cc-admin-preview__grid">';
 		html += '<article class="mp-cc-admin-preview__card">';
 		html += '<h3>' + escapeHtml(config.title) + '</h3>';
@@ -740,6 +806,51 @@
 		}
 	}
 
+	function flattenDefaultsForSection(defaults, node, section, trail) {
+		var current = node && typeof node === 'object' ? node : {};
+		var path = Array.isArray(trail) ? trail : [];
+		var key;
+		for (key in current) {
+			if (!Object.prototype.hasOwnProperty.call(current, key)) {
+				continue;
+			}
+			var nextPath = path.concat([key]);
+			var value = current[key];
+			if (value && typeof value === 'object' && !Array.isArray(value)) {
+				flattenDefaultsForSection(defaults, value, section, nextPath);
+				continue;
+			}
+			var name = 'mp_custom_checkout_settings[' + section + ']';
+			for (var i = 0; i < nextPath.length; i += 1) {
+				name += '[' + nextPath[i] + ']';
+			}
+			defaults[name] = value;
+		}
+	}
+
+	function detectActiveSettingsSection() {
+		var $active = $('.mp-cc-admin-shell__tab.is-active').first();
+		if ($active.length) {
+			var href = String($active.attr('href') || '');
+			var match = href.match(/[?&]tab=([^&]+)/);
+			if (match && match[1]) {
+				return String(match[1]);
+			}
+		}
+		var search = window.location && window.location.search ? String(window.location.search) : '';
+		var fromSearch = search.match(/[?&]tab=([^&]+)/);
+		if (fromSearch && fromSearch[1]) {
+			return String(fromSearch[1]);
+		}
+		var $firstField = $('[name^="mp_custom_checkout_settings["]').first();
+		if (!$firstField.length) {
+			return '';
+		}
+		var name = String($firstField.attr('name') || '');
+		var fallback = name.match(/^mp_custom_checkout_settings\[([^\]]+)\]/);
+		return fallback && fallback[1] ? String(fallback[1]) : '';
+	}
+
 	function enhanceStepOneFields() {
 		var $rows = $('input[name^="mp_custom_checkout_settings[step_1]"], select[name^="mp_custom_checkout_settings[step_1]"], textarea[name^="mp_custom_checkout_settings[step_1]"]')
 			.closest('tr');
@@ -874,6 +985,11 @@
 		var officeHoursPreviewConfig = getOfficeHoursPreviewConfigFromRuntime();
 		var stepFourConfig = getStepFourConfigFromRuntime();
 		var defaults = getDefaults();
+		var settingsDefaults = getSettingsDefaults();
+		var previewStore = createPreviewStore({
+			runtime: createPreviewRuntimeMock(),
+			dirty: false
+		});
 		var flags = window.mpCcAdmin && window.mpCcAdmin.featureFlags ? window.mpCcAdmin.featureFlags : {};
 		if (!config.previewEnabled || flags.admin_live_preview === false) {
 			return;
@@ -882,65 +998,89 @@
 		if (!$wrap.length) {
 			return;
 		}
-		if ($('#mp-cc-admin-step1-preview').length) {
+		if ($('#mp-cc-admin-preview-area').length) {
 			return;
 		}
-		$wrap.append(renderPreview(config));
-		if (scenarioConfig.previewEnabled) {
-			$wrap.append(renderScenarioPreview(scenarioConfig));
-		}
-		if (dateStepConfig.previewEnabled) {
-			$wrap.append(renderDatePreview(dateStepConfig));
-		}
-		if (officeHoursPreviewConfig.previewEnabled) {
-			$wrap.append(renderOfficeHoursPreview(officeHoursPreviewConfig));
-		}
-		if (stepFourConfig.previewEnabled) {
-			$wrap.append(renderStepFourPreview(stepFourConfig));
-		}
+		$wrap.append(renderPreviewArea());
 		enhanceStepOneFields();
 		enhanceStepThreeFields();
 		enhanceStepFourFields();
 		refreshStepThreeEmptyIndicators();
 
+		var mountPreviews = function (nextConfig, nextScenarioConfig, nextDateConfig, nextOfficeConfig, nextStepFourConfig) {
+			var html = '';
+			html += renderPreview(nextConfig);
+			if (nextScenarioConfig.previewEnabled) {
+				html += renderScenarioPreview(nextScenarioConfig);
+			}
+			if (nextDateConfig.previewEnabled) {
+				html += renderDatePreview(nextDateConfig);
+			}
+			if (nextOfficeConfig.previewEnabled) {
+				html += renderOfficeHoursPreview(nextOfficeConfig);
+			}
+			if (nextStepFourConfig.previewEnabled) {
+				html += renderStepFourPreview(nextStepFourConfig);
+			}
+			$('[data-mp-cc-preview-body="1"]').html(html);
+		};
+
+		var updatePreviewWarning = function () {
+			var isDirty = Boolean(previewStore.getState().dirty);
+			$('[data-mp-cc-preview-warning="1"]').prop('hidden', !isDirty);
+		};
+
 		var rerender = function () {
 			var nextConfig = readLiveConfig(config);
-			$('#mp-cc-admin-step1-preview').replaceWith(renderPreview(nextConfig));
-			if (scenarioConfig.previewEnabled) {
-				var nextScenarioConfig = readLiveScenarioConfig(scenarioConfig);
-				$('#mp-cc-admin-scenario-preview').replaceWith(renderScenarioPreview(nextScenarioConfig));
-			}
-			if (dateStepConfig.previewEnabled) {
-				var nextDateConfig = readLiveDateStepConfig(dateStepConfig);
-				$('#mp-cc-admin-date-preview').replaceWith(renderDatePreview(nextDateConfig));
-			}
-			if (officeHoursPreviewConfig.previewEnabled) {
-				var nextOfficeCfg = readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig);
-				$('#mp-cc-admin-office-preview').replaceWith(renderOfficeHoursPreview(nextOfficeCfg));
-			}
-			if (stepFourConfig.previewEnabled) {
-				var nextStepFourCfg = readLiveStepFourConfig(stepFourConfig);
-				$('#mp-cc-admin-step4-preview').replaceWith(renderStepFourPreview(nextStepFourCfg));
-			}
+			var nextScenarioConfig = readLiveScenarioConfig(scenarioConfig);
+			var nextDateConfig = readLiveDateStepConfig(dateStepConfig);
+			var nextOfficeCfg = readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig);
+			var nextStepFourCfg = readLiveStepFourConfig(stepFourConfig);
+			mountPreviews(nextConfig, nextScenarioConfig, nextDateConfig, nextOfficeCfg, nextStepFourCfg);
+			previewStore.setState({ dirty: true });
+			updatePreviewWarning();
 		};
+		var rerenderDebounced = debounce(rerender, 120);
+		mountPreviews(config, scenarioConfig, dateStepConfig, officeHoursPreviewConfig, stepFourConfig);
+		updatePreviewWarning();
+
 		$(document).on('input change', '[name^="mp_custom_checkout_settings[step_1]"]', function () {
-			rerender();
+			rerenderDebounced();
 		});
 		$(document).on('input change', '[name^="mp_custom_checkout_settings[step_2]"]', function () {
-			rerender();
+			rerenderDebounced();
 		});
 		$(document).on('input change', '[name^="mp_custom_checkout_settings[step_3]"]', function () {
 			refreshStepThreeEmptyIndicators();
-			rerender();
+			rerenderDebounced();
 		});
 		$(document).on('input change', '[name^="mp_custom_checkout_settings[step_4]"]', function () {
-			rerender();
+			rerenderDebounced();
+		});
+		$(document).on('click', '[data-mp-cc-preview-reset]', function () {
+			previewStore.reset();
+			mountPreviews(config, scenarioConfig, dateStepConfig, officeHoursPreviewConfig, stepFourConfig);
+			updatePreviewWarning();
+		});
+		$(document).on('click', '[data-mp-cc-tab-reset]', function () {
+			var activeSection = detectActiveSettingsSection();
+			if (!activeSection || !settingsDefaults[activeSection] || typeof settingsDefaults[activeSection] !== 'object') {
+				return;
+			}
+			var tabDefaultsMap = {};
+			flattenDefaultsForSection(tabDefaultsMap, settingsDefaults[activeSection], activeSection, []);
+			applyDefaultsToForm(tabDefaultsMap);
+			rerenderDebounced();
 		});
 		$(document).on('click', '[data-mp-cc-step1-reset]', function () {
 			var defaultsMap = {};
 			flattenStepOneDefaults(defaultsMap, defaults, []);
 			applyDefaultsToForm(defaultsMap);
 			rerender();
+		});
+		$(document).on('submit', 'form', function () {
+			previewStore.setState({ dirty: false });
+			updatePreviewWarning();
 		});
 	});
 })(jQuery);
