@@ -94,6 +94,10 @@ final class CheckoutRouteContext {
 				'total'       => '',
 				'discount'    => '',
 				'applied_coupons' => array(),
+				'coupon_lines' => array(),
+				'applied_gift_cards' => array(),
+				'gift_card_total' => '',
+				'gift_card_lines' => array(),
 				'catalog_url' => '',
 			),
 		);
@@ -161,6 +165,37 @@ final class CheckoutRouteContext {
 		$result['summary']['total']       = (string) wc_price( (float) $cart->get_total( 'edit' ) );
 		$result['summary']['discount']    = (string) wc_price( (float) $cart->get_discount_total() );
 		$result['summary']['applied_coupons'] = array_values( $cart->get_applied_coupons() );
+		foreach ( $result['summary']['applied_coupons'] as $coupon_code ) {
+			$amount = (float) $cart->get_coupon_discount_amount( (string) $coupon_code, false );
+			$result['summary']['coupon_lines'][] = array(
+				'code'   => (string) $coupon_code,
+				'amount' => (string) wc_price( $amount ),
+			);
+		}
+		$gift_card_total = 0.0;
+		foreach ( $cart->get_fees() as $fee ) {
+			$name = isset( $fee->name ) ? (string) $fee->name : '';
+			$total = isset( $fee->total ) ? (float) $fee->total : 0.0;
+			if ( $total >= 0 ) {
+				continue;
+			}
+			$lc_name = function_exists( 'mb_strtolower' ) ? mb_strtolower( $name ) : strtolower( $name );
+			if ( false === strpos( $lc_name, 'gift' ) && false === strpos( $lc_name, 'подар' ) && false === strpos( $lc_name, 'pw' ) ) {
+				continue;
+			}
+			$gift_card_total += abs( $total );
+			$result['summary']['gift_card_lines'][] = array(
+				'label'  => $name,
+				'amount' => (string) wc_price( abs( $total ) ),
+			);
+		}
+		$result['summary']['gift_card_total'] = (string) wc_price( $gift_card_total );
+		$flow = CheckoutSessionService::get_public_state();
+		$answers = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : array();
+		$session_discounts = isset( $answers['discounts'] ) && is_array( $answers['discounts'] ) ? $answers['discounts'] : array();
+		if ( isset( $session_discounts['gift_card'] ) && is_array( $session_discounts['gift_card'] ) ) {
+			$result['summary']['applied_gift_cards'] = array_values( array_map( 'strval', $session_discounts['gift_card'] ) );
+		}
 		$catalog_url                      = function_exists( 'wc_get_page_permalink' ) ? wc_get_page_permalink( 'shop' ) : '';
 		$result['summary']['catalog_url'] = is_string( $catalog_url ) && '' !== $catalog_url ? $catalog_url : home_url( '/' );
 
