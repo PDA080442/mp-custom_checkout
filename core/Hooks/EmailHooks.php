@@ -31,9 +31,11 @@ final class EmailHooks {
 		add_action( 'mp_custom_checkout_email_order_meta', array( __CLASS__, 'render_selected_date_meta' ), 11, 4 );
 		add_action( 'mp_custom_checkout_email_order_meta', array( __CLASS__, 'render_pickup_point_meta' ), 12, 4 );
 		add_action( 'mp_custom_checkout_email_order_meta', array( __CLASS__, 'render_conditions_summary_meta' ), 13, 4 );
+		add_action( 'mp_custom_checkout_email_order_meta', array( __CLASS__, 'render_contact_meta' ), 14, 4 );
 		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'render_scenario_admin' ), 12, 1 );
 		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'render_pickup_point_admin' ), 15, 1 );
 		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'render_conditions_summary_admin' ), 18, 1 );
+		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'render_contact_admin' ), 20, 1 );
 		add_filter( 'manage_edit-shop_order_columns', array( __CLASS__, 'add_scenario_order_list_column' ), 25 );
 		add_action( 'manage_shop_order_posts_custom_column', array( __CLASS__, 'render_scenario_order_list_column' ), 25, 2 );
 		add_filter( 'manage_woocommerce_page_wc-orders_columns', array( __CLASS__, 'add_scenario_order_list_column' ), 25 );
@@ -257,6 +259,62 @@ final class EmailHooks {
 	}
 
 	/**
+	 * Контактные данные в email (админ и клиент).
+	 *
+	 * @param \WC_Order       $order Заказ.
+	 * @param bool            $sent_to_admin Админу.
+	 * @param bool            $plain_text Текстовый формат.
+	 * @param \WC_Email|false $email Письмо.
+	 */
+	public static function render_contact_meta( $order, $sent_to_admin, $plain_text, $email = null ): void {
+		unset( $sent_to_admin, $email );
+		if ( ! $order instanceof \WC_Order ) {
+			return;
+		}
+
+		$lines = self::build_contact_lines_for_output( $order );
+		if ( empty( $lines ) ) {
+			return;
+		}
+
+		$title = __( 'Контактные данные', 'mp-custom-checkout' );
+		if ( $plain_text ) {
+			echo "\n" . sanitize_text_field( $title ) . ":\n";
+			foreach ( $lines as $line ) {
+				echo '- ' . sanitize_text_field( $line ) . "\n";
+			}
+			return;
+		}
+
+		echo '<div class="mp-cc-email-contact-meta"><p><strong>' . esc_html( $title ) . '</strong></p><ul>';
+		foreach ( $lines as $line ) {
+			echo '<li>' . esc_html( $line ) . '</li>';
+		}
+		echo '</ul></div>';
+	}
+
+	/**
+	 * Контактные данные в админке заказа.
+	 *
+	 * @param \WC_Order $order Заказ.
+	 */
+	public static function render_contact_admin( $order ): void {
+		if ( ! $order instanceof \WC_Order ) {
+			return;
+		}
+		$lines = self::build_contact_lines_for_output( $order );
+		if ( empty( $lines ) ) {
+			return;
+		}
+
+		echo '<div class="mp-cc-order-contact-meta"><p><strong>' . esc_html__( 'Контактные данные', 'mp-custom-checkout' ) . '</strong></p><ul>';
+		foreach ( $lines as $line ) {
+			echo '<li>' . esc_html( $line ) . '</li>';
+		}
+		echo '</ul></div>';
+	}
+
+	/**
 	 * Добавляет колонку сценария в список заказов (legacy + HPOS).
 	 *
 	 * @param array<string, string> $columns Колонки.
@@ -431,5 +489,49 @@ final class EmailHooks {
 			$out .= '<p class="mp-cc-conditions-para">' . $inner . '</p>';
 		}
 		return $out ? $out : '<p class="mp-cc-conditions-para">' . esc_html( $text ) . '</p>';
+	}
+
+	/**
+	 * @return array<int, string>
+	 */
+	private static function build_contact_lines_for_output( \WC_Order $order ): array {
+		$full_name = trim( $order->get_billing_last_name() . ' ' . $order->get_billing_first_name() );
+		$patronymic = trim( (string) $order->get_meta( '_mp_cc_billing_patronymic', true ) );
+		if ( '' !== $patronymic ) {
+			$full_name = trim( $full_name . ' ' . $patronymic );
+		}
+
+		$email = trim( (string) $order->get_billing_email() );
+		$phone = trim( (string) $order->get_billing_phone() );
+
+		$address_parts = array_filter(
+			array(
+				trim( (string) $order->get_billing_country() ),
+				trim( (string) $order->get_billing_state() ),
+				trim( (string) $order->get_billing_city() ),
+				trim( (string) $order->get_billing_address_1() ),
+				trim( (string) $order->get_billing_address_2() ),
+				trim( (string) $order->get_billing_postcode() ),
+			),
+			static function ( $v ) {
+				return '' !== $v;
+			}
+		);
+		$address = implode( ', ', $address_parts );
+
+		$lines = array();
+		if ( '' !== $full_name ) {
+			$lines[] = __( 'Получатель', 'mp-custom-checkout' ) . ': ' . $full_name;
+		}
+		if ( '' !== $email ) {
+			$lines[] = __( 'Email', 'mp-custom-checkout' ) . ': ' . $email;
+		}
+		if ( '' !== $phone ) {
+			$lines[] = __( 'Телефон', 'mp-custom-checkout' ) . ': ' . $phone;
+		}
+		if ( '' !== $address ) {
+			$lines[] = __( 'Адрес', 'mp-custom-checkout' ) . ': ' . $address;
+		}
+		return $lines;
 	}
 }

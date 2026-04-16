@@ -21,6 +21,7 @@
 		adminLivePreview: 'admin_live_preview'
 	};
 	var animationDurationMs = 180;
+	var draftSaveTimer = null;
 
 	function getUiText(path, fallback) {
 		var source = (window.mpCcCheckout && window.mpCcCheckout.uiText) ? window.mpCcCheckout.uiText : {};
@@ -2252,6 +2253,20 @@
 		});
 	}
 
+	function scheduleCurrentStepDraftSave(state, onError) {
+		if (draftSaveTimer) {
+			window.clearTimeout(draftSaveTimer);
+		}
+		draftSaveTimer = window.setTimeout(function () {
+			draftSaveTimer = null;
+			saveCurrentStepDraft(state).fail(function () {
+				if (typeof onError === 'function') {
+					onError();
+				}
+			});
+		}, 260);
+	}
+
 	function getDraftPayloadByStorageKey(state, storageKey) {
 		if (!state || !state.frontendStore) {
 			return {};
@@ -2706,6 +2721,33 @@
 			html += '<a href="' + escapeHtml(returnUrl) + '" class="mp-cc-summary-card__btn mp-cc-summary-card__btn--ghost">' + escapeHtml(getStepOneLabel(state, 'return_label', 'step_1.return_to_shop', 'Return to shop')) + '</a>';
 			html += '</div>';
 		}
+		if (state.currentStepId === 'contact_payment') {
+			var contact = state.frontendStore && state.frontendStore.form ? (state.frontendStore.form.contact || {}) : {};
+			var fullName = [contact.billing_last_name, contact.billing_first_name, contact.billing_patronymic]
+				.filter(function (part) { return trimNonEmpty(part); })
+				.join(' ');
+			var contactAddress = [contact.country, contact.state, contact.city, contact.address_1, contact.address_2, contact.postcode]
+				.filter(function (part) { return trimNonEmpty(part); })
+				.join(', ');
+			var hasContactReview = trimNonEmpty(fullName) || trimNonEmpty(contact.billing_email) || trimNonEmpty(contact.billing_phone) || trimNonEmpty(contactAddress);
+			if (hasContactReview) {
+				html += '<div class="mp-cc-summary-card__scenario" data-final-review-contact="1">';
+				html += '<p class="mp-cc-summary-card__scenario-title"><strong>' + escapeHtml(getUiText('step_4.title', 'Контактные данные')) + '</strong></p>';
+				if (trimNonEmpty(fullName)) {
+					html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(getUiText('step_4.contact_first_name', 'Получатель')) + ':</strong> ' + escapeHtml(fullName) + '</p>';
+				}
+				if (trimNonEmpty(contact.billing_email)) {
+					html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(getUiText('step_4.contact_email', 'Email')) + ':</strong> ' + escapeHtml(String(contact.billing_email)) + '</p>';
+				}
+				if (trimNonEmpty(contact.billing_phone)) {
+					html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(getUiText('step_4.contact_phone', 'Телефон')) + ':</strong> ' + escapeHtml(String(contact.billing_phone)) + '</p>';
+				}
+				if (trimNonEmpty(contactAddress)) {
+					html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(getUiText('step_4.address_block_title', 'Адрес')) + ':</strong> ' + escapeHtml(contactAddress) + '</p>';
+				}
+				html += '</div>';
+			}
+		}
 		if (state.currentStepId === 'contact_payment' && scenarioLabel) {
 			html += '<div class="mp-cc-summary-card__scenario" data-final-review-scenario="1">';
 			html += '<p class="mp-cc-summary-card__scenario-title"><strong>' + escapeHtml(getUiText('step_2.title', 'Способ получения')) + ':</strong> ' + escapeHtml(scenarioLabel) + '</p>';
@@ -3108,6 +3150,9 @@
 				delete state.frontendStore.form.errors.contact[key];
 			}
 			contact.billing_phone = buildFullPhoneE164(contact);
+			scheduleCurrentStepDraftSave(state, function () {
+				notify(getUiText('common.error_generic', 'Не удалось сохранить данные.'), 'error');
+			});
 		}).on('blur', function () {
 			ensureContactDefaults(state);
 			saveCurrentStepDraft(state).fail(function () {
@@ -3133,6 +3178,9 @@
 			if (state.frontendStore.form.errors && state.frontendStore.form.errors.contact) {
 				delete state.frontendStore.form.errors.contact.billing_phone_national;
 			}
+			scheduleCurrentStepDraftSave(state, function () {
+				notify(getUiText('common.error_generic', 'Не удалось сохранить данные.'), 'error');
+			});
 		}).on('blur', function () {
 			ensureContactDefaults(state);
 			saveCurrentStepDraft(state).fail(function () {
