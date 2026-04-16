@@ -110,6 +110,20 @@ final class AdminMenuHooks {
 				$result[ $key ] = esc_url_raw( $string_raw );
 				continue;
 			}
+			if ( false !== strpos( $node_path, 'accent_color' ) || false !== strpos( $node_path, '.ui_tokens.' ) ) {
+				$color = sanitize_hex_color( $string_raw );
+				$result[ $key ] = $color ? $color : (string) $default_value;
+				continue;
+			}
+			if ( false !== strpos( $node_path, 'icon' ) ) {
+				$result[ $key ] = sanitize_html_class( $string_raw );
+				continue;
+			}
+			if ( false !== strpos( $node_path, 'help_style' ) ) {
+				$style = sanitize_key( $string_raw );
+				$result[ $key ] = in_array( $style, array( 'soft', 'outline', 'solid' ), true ) ? $style : 'soft';
+				continue;
+			}
 			$result[ $key ] = sanitize_textarea_field( $string_raw );
 		}
 		return $result;
@@ -123,6 +137,32 @@ final class AdminMenuHooks {
 		$stored   = get_option( OptionKeys::MAIN, array() );
 		$stored   = is_array( $stored ) ? $stored : array();
 		$settings = array_replace_recursive( $defaults, $stored );
+		$branding = isset( $settings[ OptionKeys::SECTION_GENERAL ]['admin_branding'] ) && is_array( $settings[ OptionKeys::SECTION_GENERAL ]['admin_branding'] )
+			? $settings[ OptionKeys::SECTION_GENERAL ]['admin_branding']
+			: array();
+		$brand_title       = isset( $branding['title'] ) ? (string) $branding['title'] : __( 'MP Custom Checkout — Настройки', 'mp-custom-checkout' );
+		$brand_description = isset( $branding['description'] ) ? (string) $branding['description'] : __( 'Единый экран управления сценариями checkout, текстами, валидацией и визуальным поведением шагов.', 'mp-custom-checkout' );
+		$brand_onboarding  = isset( $branding['onboarding'] ) ? (string) $branding['onboarding'] : '';
+		$brand_icon        = isset( $branding['icon'] ) ? sanitize_html_class( (string) $branding['icon'] ) : 'dashicons-cart';
+		$brand_accent      = isset( $branding['accent_color'] ) ? sanitize_hex_color( (string) $branding['accent_color'] ) : '#2271b1';
+		$help_style        = isset( $branding['help_style'] ) ? sanitize_key( (string) $branding['help_style'] ) : 'soft';
+		$tokens            = isset( $branding['ui_tokens'] ) && is_array( $branding['ui_tokens'] ) ? $branding['ui_tokens'] : array();
+		$preview_enabled   = ! isset( $branding['preview_enabled'] ) || ! empty( $branding['preview_enabled'] );
+		$token_bg          = isset( $tokens['bg'] ) ? sanitize_hex_color( (string) $tokens['bg'] ) : '#ffffff';
+		$token_surface     = isset( $tokens['surface'] ) ? sanitize_hex_color( (string) $tokens['surface'] ) : '#fcfcfc';
+		$token_border      = isset( $tokens['border'] ) ? sanitize_hex_color( (string) $tokens['border'] ) : '#dcdcde';
+		$token_text        = isset( $tokens['text'] ) ? sanitize_hex_color( (string) $tokens['text'] ) : '#1f2328';
+		$token_muted       = isset( $tokens['muted'] ) ? sanitize_hex_color( (string) $tokens['muted'] ) : '#4b5563';
+		$token_risk_bg     = isset( $tokens['risk_bg'] ) ? sanitize_hex_color( (string) $tokens['risk_bg'] ) : '#fff7f7';
+		$token_risk_border = isset( $tokens['risk_border'] ) ? sanitize_hex_color( (string) $tokens['risk_border'] ) : '#fca5a5';
+		$inline_vars       = '--mp-cc-admin-accent:' . ( $brand_accent ?: '#2271b1' ) . ';'
+			. '--mp-cc-admin-bg:' . ( $token_bg ?: '#ffffff' ) . ';'
+			. '--mp-cc-admin-surface:' . ( $token_surface ?: '#fcfcfc' ) . ';'
+			. '--mp-cc-admin-border:' . ( $token_border ?: '#dcdcde' ) . ';'
+			. '--mp-cc-admin-text:' . ( $token_text ?: '#1f2328' ) . ';'
+			. '--mp-cc-admin-muted:' . ( $token_muted ?: '#4b5563' ) . ';'
+			. '--mp-cc-admin-risk-bg:' . ( $token_risk_bg ?: '#fff7f7' ) . ';'
+			. '--mp-cc-admin-risk-border:' . ( $token_risk_border ?: '#fca5a5' ) . ';';
 		$sections   = AdminSectionsRegistry::sections();
 		$tabs       = AdminTabRegistry::tabs();
 		$tab_ids    = array();
@@ -138,11 +178,23 @@ final class AdminMenuHooks {
 			$layout = 'top';
 		}
 		?>
-		<div class="wrap mp-cc-admin-shell mp-cc-admin-shell--<?php echo esc_attr( $layout ); ?>">
-			<h1><?php esc_html_e( 'MP Custom Checkout — Настройки', 'mp-custom-checkout' ); ?></h1>
+		<div class="wrap mp-cc-admin-shell mp-cc-admin-shell--<?php echo esc_attr( $layout ); ?> mp-cc-admin-shell--help-<?php echo esc_attr( $help_style ); ?>" style="<?php echo esc_attr( $inline_vars ); ?>">
+			<h1 class="mp-cc-admin-shell__brand-title"><span class="dashicons <?php echo esc_attr( $brand_icon ); ?>" aria-hidden="true"></span> <?php echo esc_html( $brand_title ); ?></h1>
 			<p class="description">
-				<?php esc_html_e( 'Единый экран управления сценариями checkout, текстами, валидацией и визуальным поведением шагов.', 'mp-custom-checkout' ); ?>
+				<?php echo esc_html( $brand_description ); ?>
 			</p>
+			<?php if ( '' !== trim( $brand_onboarding ) ) : ?>
+				<p class="mp-cc-admin-shell__tab-onboarding"><strong><?php esc_html_e( 'Onboarding:', 'mp-custom-checkout' ); ?></strong> <?php echo esc_html( $brand_onboarding ); ?></p>
+			<?php endif; ?>
+			<?php if ( $preview_enabled ) : ?>
+				<div class="mp-cc-admin-shell__branding-preview" aria-label="<?php esc_attr_e( 'Превью брендирования админки', 'mp-custom-checkout' ); ?>">
+					<span class="dashicons <?php echo esc_attr( $brand_icon ); ?>" aria-hidden="true"></span>
+					<div>
+						<strong><?php echo esc_html( $brand_title ); ?></strong>
+						<p><?php echo esc_html( $brand_description ); ?></p>
+					</div>
+				</div>
+			<?php endif; ?>
 			<?php if ( isset( $_GET['settings-updated'] ) ) : ?>
 				<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Настройки успешно сохранены.', 'mp-custom-checkout' ); ?></p></div>
 			<?php endif; ?>
