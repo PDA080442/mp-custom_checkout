@@ -274,10 +274,30 @@ final class SafeSettingsResolver {
 							'female'      => 'Женщина',
 						),
 						'validation_messages' => array(
+							'required'           => 'Заполните это поле.',
+							'email_invalid'      => 'Введите корректный email.',
+							'phone_required'     => 'Укажите номер телефона.',
+							'phone_format'       => 'Введите номер полностью.',
 							'birthdate_required' => 'Укажите дату рождения.',
 							'birthdate_invalid'  => 'Введите корректную дату рождения.',
 							'birthdate_range'    => 'Допустимый возраст: от 0 до 120 лет.',
 							'order_notes_length' => 'Превышена максимальная длина примечания.',
+							'address_required'   => 'Заполните это поле.',
+							'address_region'     => 'Выберите корректный регион.',
+							'address_city'       => 'Выберите населённый пункт из списка.',
+							'address_postcode'   => 'Слишком длинный индекс.',
+							'step_blocked'       => 'Заполните обязательные поля текущего шага.',
+							'conditions_required'=> 'Подтвердите ознакомление с условиями, чтобы продолжить.',
+						),
+						'validation_constraints' => array(
+							'birthdate_min_age'    => 0,
+							'birthdate_max_age'    => 120,
+							'phone_digits_override'=> 0,
+						),
+						'ajax_messages' => array(
+							'draft_save_failed'    => 'Не удалось сохранить данные.',
+							'step_sync_failed'     => 'Не удалось синхронизировать шаг. Обновите страницу.',
+							'scenario_sync_failed' => 'Не удалось сохранить выбор сценария.',
 						),
 						'order_notes_max_length' => 500,
 						'order_notes_counter'    => array(
@@ -311,6 +331,7 @@ final class SafeSettingsResolver {
 							'invalid_style' => 'default',
 							'hint_style'    => 'default',
 							'focus_style'   => 'default',
+							'disabled_style'=> 'default',
 						),
 					),
 					'address_block' => array(

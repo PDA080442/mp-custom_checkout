@@ -118,6 +118,15 @@
 	background: #f8f9fb;
 }
 
+.mp-cc-admin-step4-error-sample {
+	margin: 6px 0 0;
+	padding: 6px 8px;
+	border: 1px solid #f0a9a9;
+	border-radius: 6px;
+	background: #fff3f3;
+	color: #b42318;
+}
+
 /* Превью блока офиса / графика (шаг 3, самовывоз) — классы .mp-cc-pickup-office в checkout-frontend.css */
 .mp-cc-admin-preview--office {
 	margin-top: 16px;

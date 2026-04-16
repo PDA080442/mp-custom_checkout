@@ -139,12 +139,15 @@
 			contact: {
 				title: String(contact.title || 'Контактные данные'),
 				intro: String(contact.intro || ''),
-				fieldOrder: Array.isArray(contact.field_order) ? contact.field_order : ['last_name', 'first_name', 'patronymic', 'gender', 'birthdate', 'email', 'phone'],
+				fieldOrder: Array.isArray(contact.field_order) ? contact.field_order : ['last_name', 'first_name', 'patronymic', 'gender', 'birthdate', 'email', 'phone', 'order_notes'],
 				fieldVisibility: contact.field_visibility && typeof contact.field_visibility === 'object' ? contact.field_visibility : {},
 				fieldRequired: contact.field_required && typeof contact.field_required === 'object' ? contact.field_required : {},
 				labels: contact.labels && typeof contact.labels === 'object' ? contact.labels : {},
 				placeholders: contact.placeholders && typeof contact.placeholders === 'object' ? contact.placeholders : {},
 				hints: contact.hints && typeof contact.hints === 'object' ? contact.hints : {},
+				validationMessages: contact.validation_messages && typeof contact.validation_messages === 'object' ? contact.validation_messages : {},
+				constraints: contact.validation_constraints && typeof contact.validation_constraints === 'object' ? contact.validation_constraints : {},
+				ajaxMessages: contact.ajax_messages && typeof contact.ajax_messages === 'object' ? contact.ajax_messages : {},
 				layout: contact.layout && typeof contact.layout === 'object' ? contact.layout : {},
 				states: contact.field_state_styles && typeof contact.field_state_styles === 'object' ? contact.field_state_styles : {}
 			},
@@ -388,7 +391,8 @@
 		}
 		html += '<div class="mp-cc-admin-preview__date-rules">';
 		html += '<p><strong>Layout:</strong> desktop ' + escapeHtml(String(cfg.contact.layout.desktop_columns || 3)) + ', tablet ' + escapeHtml(String(cfg.contact.layout.tablet_columns || 2)) + ', mobile ' + escapeHtml(String(cfg.contact.layout.mobile_columns || 1)) + '</p>';
-		html += '<p><strong>Field states:</strong> invalid=' + escapeHtml(String(cfg.contact.states.invalid_style || 'default')) + ', hint=' + escapeHtml(String(cfg.contact.states.hint_style || 'default')) + ', focus=' + escapeHtml(String(cfg.contact.states.focus_style || 'default')) + '</p>';
+		html += '<p><strong>Field states:</strong> invalid=' + escapeHtml(String(cfg.contact.states.invalid_style || 'default')) + ', hint=' + escapeHtml(String(cfg.contact.states.hint_style || 'default')) + ', focus=' + escapeHtml(String(cfg.contact.states.focus_style || 'default')) + ', disabled=' + escapeHtml(String(cfg.contact.states.disabled_style || 'default')) + '</p>';
+		html += '<p><strong>Constraints:</strong> age ' + escapeHtml(String(cfg.contact.constraints.birthdate_min_age || 0)) + '…' + escapeHtml(String(cfg.contact.constraints.birthdate_max_age || 120)) + ', phone digits override=' + escapeHtml(String(cfg.contact.constraints.phone_digits_override || 0)) + '</p>';
 		html += '</div>';
 		html += '<div class="mp-cc-admin-preview__date-grid">';
 		for (var i = 0; i < order.length; i += 1) {
@@ -413,6 +417,28 @@
 			}
 			html += '</article>';
 		}
+		html += '</div>';
+		html += '<div class="mp-cc-admin-preview__date-errors">';
+		html += '<p><strong>Validation texts:</strong></p>';
+		html += '<p>required: ' + escapeHtml(String(cfg.contact.validationMessages.required || '—')) + '</p>';
+		html += '<p>email_invalid: ' + escapeHtml(String(cfg.contact.validationMessages.email_invalid || '—')) + '</p>';
+		html += '<p>phone_required: ' + escapeHtml(String(cfg.contact.validationMessages.phone_required || '—')) + '</p>';
+		html += '<p>phone_format: ' + escapeHtml(String(cfg.contact.validationMessages.phone_format || '—')) + '</p>';
+		html += '<p>step_blocked: ' + escapeHtml(String(cfg.contact.validationMessages.step_blocked || '—')) + '</p>';
+		html += '<p>conditions_required: ' + escapeHtml(String(cfg.contact.validationMessages.conditions_required || '—')) + '</p>';
+		html += '<p><strong>AJAX fallback:</strong> draft=' + escapeHtml(String(cfg.contact.ajaxMessages.draft_save_failed || '—')) + ', sync=' + escapeHtml(String(cfg.contact.ajaxMessages.step_sync_failed || '—')) + ', scenario=' + escapeHtml(String(cfg.contact.ajaxMessages.scenario_sync_failed || '—')) + '</p>';
+		html += '</div>';
+		html += '<div class="mp-cc-admin-preview__date-grid">';
+		html += '<article>';
+		html += '<strong>Preview: field-level error</strong>';
+		html += '<p>Email</p>';
+		html += '<p class="mp-cc-admin-step4-error-sample">' + escapeHtml(String(cfg.contact.validationMessages.email_invalid || 'Введите корректный email.')) + '</p>';
+		html += '</article>';
+		html += '<article>';
+		html += '<strong>Preview: invalid step</strong>';
+		html += '<p>Progress step marked invalid + banner text:</p>';
+		html += '<p class="mp-cc-admin-step4-error-sample">' + escapeHtml(String(cfg.contact.validationMessages.step_blocked || 'Заполните обязательные поля текущего шага.')) + '</p>';
+		html += '</article>';
 		html += '</div>';
 		html += '<p><strong>' + escapeHtml(cfg.address.title) + '</strong></p>';
 		html += '<p>Address order: ' + escapeHtml(cfg.address.order.join(', ')) + '</p>';
@@ -523,9 +549,26 @@
 		cfg.contact.hints.order_notes = readFormValue(p + '[hints][order_notes]', cfg.contact.hints.order_notes || '');
 		cfg.contact.fieldVisibility.order_notes = Boolean(readFormValue(p + '[field_visibility][order_notes]', cfg.contact.fieldVisibility.order_notes !== false));
 		cfg.contact.fieldRequired.order_notes = Boolean(readFormValue(p + '[field_required][order_notes]', cfg.contact.fieldRequired.order_notes !== false));
+		cfg.contact.validationMessages.required = readFormValue(p + '[validation_messages][required]', cfg.contact.validationMessages.required || 'Заполните это поле.');
+		cfg.contact.validationMessages.email_invalid = readFormValue(p + '[validation_messages][email_invalid]', cfg.contact.validationMessages.email_invalid || 'Введите корректный email.');
+		cfg.contact.validationMessages.phone_required = readFormValue(p + '[validation_messages][phone_required]', cfg.contact.validationMessages.phone_required || 'Укажите номер телефона.');
+		cfg.contact.validationMessages.phone_format = readFormValue(p + '[validation_messages][phone_format]', cfg.contact.validationMessages.phone_format || 'Введите номер полностью.');
+		cfg.contact.validationMessages.address_required = readFormValue(p + '[validation_messages][address_required]', cfg.contact.validationMessages.address_required || 'Заполните это поле.');
+		cfg.contact.validationMessages.address_region = readFormValue(p + '[validation_messages][address_region]', cfg.contact.validationMessages.address_region || 'Выберите корректный регион.');
+		cfg.contact.validationMessages.address_city = readFormValue(p + '[validation_messages][address_city]', cfg.contact.validationMessages.address_city || 'Выберите населённый пункт из списка.');
+		cfg.contact.validationMessages.address_postcode = readFormValue(p + '[validation_messages][address_postcode]', cfg.contact.validationMessages.address_postcode || 'Слишком длинный индекс.');
+		cfg.contact.validationMessages.step_blocked = readFormValue(p + '[validation_messages][step_blocked]', cfg.contact.validationMessages.step_blocked || 'Заполните обязательные поля текущего шага.');
+		cfg.contact.validationMessages.conditions_required = readFormValue(p + '[validation_messages][conditions_required]', cfg.contact.validationMessages.conditions_required || 'Подтвердите ознакомление с условиями, чтобы продолжить.');
+		cfg.contact.constraints.birthdate_min_age = Number(readFormValue(p + '[validation_constraints][birthdate_min_age]', cfg.contact.constraints.birthdate_min_age || 0));
+		cfg.contact.constraints.birthdate_max_age = Number(readFormValue(p + '[validation_constraints][birthdate_max_age]', cfg.contact.constraints.birthdate_max_age || 120));
+		cfg.contact.constraints.phone_digits_override = Number(readFormValue(p + '[validation_constraints][phone_digits_override]', cfg.contact.constraints.phone_digits_override || 0));
+		cfg.contact.ajaxMessages.draft_save_failed = readFormValue(p + '[ajax_messages][draft_save_failed]', cfg.contact.ajaxMessages.draft_save_failed || 'Не удалось сохранить данные.');
+		cfg.contact.ajaxMessages.step_sync_failed = readFormValue(p + '[ajax_messages][step_sync_failed]', cfg.contact.ajaxMessages.step_sync_failed || 'Не удалось синхронизировать шаг. Обновите страницу.');
+		cfg.contact.ajaxMessages.scenario_sync_failed = readFormValue(p + '[ajax_messages][scenario_sync_failed]', cfg.contact.ajaxMessages.scenario_sync_failed || 'Не удалось сохранить выбор сценария.');
 		cfg.contact.states.invalid_style = readFormValue(p + '[field_state_styles][invalid_style]', cfg.contact.states.invalid_style || 'default');
 		cfg.contact.states.hint_style = readFormValue(p + '[field_state_styles][hint_style]', cfg.contact.states.hint_style || 'default');
 		cfg.contact.states.focus_style = readFormValue(p + '[field_state_styles][focus_style]', cfg.contact.states.focus_style || 'default');
+		cfg.contact.states.disabled_style = readFormValue(p + '[field_state_styles][disabled_style]', cfg.contact.states.disabled_style || 'default');
 		return cfg;
 	}
 
