@@ -459,6 +459,7 @@
 		html += '<p>' + escapeHtml(String(cfg.giftCard.intro || '')) + '</p>';
 		html += '<p>Label: ' + escapeHtml(String(cfg.giftCard.input_label || 'Код подарочной карты')) + '</p>';
 		html += '<p>Placeholder: ' + escapeHtml(String(cfg.giftCard.placeholder || '')) + '</p>';
+		html += '<p><em>States:</em> empty="' + escapeHtml(String(cfg.giftCard.empty_message || '')) + '", success="' + escapeHtml(String(cfg.giftCard.success_message || '')) + '", error="' + escapeHtml(String(cfg.giftCard.error_message || '')) + '"</p>';
 		html += '</article>';
 		html += '</div>';
 		html += '<p><strong>' + escapeHtml(cfg.address.title) + '</strong></p>';
@@ -608,6 +609,9 @@
 		cfg.giftCard.input_label = readFormValue(gc + '[input_label]', cfg.giftCard.input_label || 'Код подарочной карты');
 		cfg.giftCard.placeholder = readFormValue(gc + '[placeholder]', cfg.giftCard.placeholder || '');
 		cfg.giftCard.apply_label = readFormValue(gc + '[apply_label]', cfg.giftCard.apply_label || 'Применить');
+		cfg.giftCard.empty_message = readFormValue(gc + '[empty_message]', cfg.giftCard.empty_message || '');
+		cfg.giftCard.success_message = readFormValue(gc + '[success_message]', cfg.giftCard.success_message || '');
+		cfg.giftCard.error_message = readFormValue(gc + '[error_message]', cfg.giftCard.error_message || '');
 		return cfg;
 	}
 

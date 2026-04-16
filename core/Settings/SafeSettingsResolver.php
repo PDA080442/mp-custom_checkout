@@ -419,6 +419,9 @@ final class SafeSettingsResolver {
 						'input_label' => 'Код подарочной карты',
 						'placeholder' => 'Например, GIFT-123',
 						'apply_label' => 'Применить',
+						'empty_message'   => 'Введите код подарочной карты.',
+						'success_message' => 'Подарочная карта применена.',
+						'error_message'   => 'Не удалось применить подарочную карту.',
 					),
 					'geo_preview' => array(
 						'enabled' => true,
