@@ -483,11 +483,17 @@ final class AdminMenuHooks {
 
 	private static function render_health_checks_group(): void {
 		$checks = CheckoutHealthChecks::collect();
+		$summary = CheckoutHealthChecks::summary();
 		if ( empty( $checks ) ) {
 			return;
 		}
 		echo '<details class="mp-cc-admin-shell__fieldset" open>';
 		echo '<summary><span>' . esc_html__( 'Checkout Health Checks', 'mp-custom-checkout' ) . '</span><em class="mp-cc-admin-shell__type-badge mp-cc-admin-shell__type-badge--validation">' . esc_html__( 'сервис', 'mp-custom-checkout' ) . '</em></summary>';
+		echo '<p><strong>' . esc_html__( 'Health summary:', 'mp-custom-checkout' ) . '</strong> '
+			. '<span class="mp-cc-admin-shell__scenario-badge">' . esc_html( sprintf( 'OK %d', (int) ( $summary['ok'] ?? 0 ) ) ) . '</span> '
+			. '<span class="mp-cc-admin-shell__scenario-badge">' . esc_html( sprintf( 'WARN %d', (int) ( $summary['warn'] ?? 0 ) ) ) . '</span> '
+			. '<span class="mp-cc-admin-shell__scenario-badge' . ( (int) ( $summary['fail'] ?? 0 ) > 0 ? ' is-risky' : '' ) . '">' . esc_html( sprintf( 'FAIL %d', (int) ( $summary['fail'] ?? 0 ) ) ) . '</span>'
+			. '</p>';
 		foreach ( $checks as $check ) {
 			$status = isset( $check['status'] ) ? (string) $check['status'] : 'ok';
 			$name = isset( $check['name'] ) ? (string) $check['name'] : '';

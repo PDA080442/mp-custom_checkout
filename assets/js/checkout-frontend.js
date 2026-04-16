@@ -3179,10 +3179,22 @@ function buildGiftCardBlockHtml(state) {
 						}
 					})
 				);
+				postCheckout('validation_log', {
+					step_id: targetStepId,
+					context_id: state.flowContextId,
+					errors: {},
+					marker: 'step_transition_ok'
+				});
 				return $.Deferred().resolve().promise();
 			}).fail(function (xhr) {
 				var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
 				var code = payload.code ? String(payload.code) : '';
+				postCheckout('validation_log', {
+					step_id: targetStepId,
+					context_id: state.flowContextId,
+					errors: { transition: code || 'step_transition_failed' },
+					marker: 'step_transition_failed'
+				});
 				if (code === 'stale_context') {
 					recoverFromInvalidSessionState(state, $app);
 					return;
