@@ -55,7 +55,7 @@ final class AdminMenuHooks {
 	public static function sanitize_settings( $value ): array {
 		$incoming = is_array( $value ) ? $value : array();
 		$defaults = SafeSettingsResolver::get_defaults_tree();
-		return self::sanitize_by_shape( $incoming, $defaults );
+		return self::sanitize_by_shape( $incoming, $defaults, '' );
 	}
 
 	/**
@@ -63,10 +63,11 @@ final class AdminMenuHooks {
 	 * @param array<string, mixed> $shape
 	 * @return array<string, mixed>
 	 */
-	private static function sanitize_by_shape( array $incoming, array $shape ): array {
+	private static function sanitize_by_shape( array $incoming, array $shape, string $path ): array {
 		$result = array();
 		foreach ( $shape as $key => $default_value ) {
 			$raw = array_key_exists( $key, $incoming ) ? $incoming[ $key ] : $default_value;
+			$node_path = '' === $path ? (string) $key : $path . '.' . (string) $key;
 			if ( is_array( $default_value ) ) {
 				if ( self::is_list_array( $default_value ) ) {
 					if ( is_array( $raw ) ) {
@@ -78,7 +79,7 @@ final class AdminMenuHooks {
 					continue;
 				}
 				$raw_array       = is_array( $raw ) ? $raw : array();
-				$result[ $key ]  = self::sanitize_by_shape( $raw_array, $default_value );
+				$result[ $key ]  = self::sanitize_by_shape( $raw_array, $default_value, $node_path );
 				continue;
 			}
 			if ( is_bool( $default_value ) ) {
@@ -86,14 +87,30 @@ final class AdminMenuHooks {
 				continue;
 			}
 			if ( is_int( $default_value ) ) {
-				$result[ $key ] = (int) $raw;
+				$next = (int) $raw;
+				if ( false !== strpos( $node_path, 'columns' ) ) {
+					$next = max( 1, min( 4, $next ) );
+				}
+				if ( false !== strpos( $node_path, 'max' ) || false !== strpos( $node_path, 'min' ) ) {
+					$next = max( 0, $next );
+				}
+				$result[ $key ] = $next;
 				continue;
 			}
 			if ( is_float( $default_value ) ) {
 				$result[ $key ] = (float) $raw;
 				continue;
 			}
-			$result[ $key ] = sanitize_textarea_field( (string) $raw );
+			$string_raw = (string) $raw;
+			if ( false !== strpos( $node_path, 'route_slug' ) ) {
+				$result[ $key ] = sanitize_title( $string_raw );
+				continue;
+			}
+			if ( false !== strpos( $node_path, 'url' ) ) {
+				$result[ $key ] = esc_url_raw( $string_raw );
+				continue;
+			}
+			$result[ $key ] = sanitize_textarea_field( $string_raw );
 		}
 		return $result;
 	}
@@ -134,6 +151,19 @@ final class AdminMenuHooks {
 				<a class="button button-small<?php echo 'top' === $layout ? ' button-primary' : ''; ?>" href="<?php echo esc_url( add_query_arg( array( 'page' => self::PAGE_SLUG, 'tab' => $active_tab, 'nav_layout' => 'top' ), admin_url( 'admin.php' ) ) ); ?>"><?php esc_html_e( 'Верхняя навигация', 'mp-custom-checkout' ); ?></a>
 				<a class="button button-small<?php echo 'side' === $layout ? ' button-primary' : ''; ?>" href="<?php echo esc_url( add_query_arg( array( 'page' => self::PAGE_SLUG, 'tab' => $active_tab, 'nav_layout' => 'side' ), admin_url( 'admin.php' ) ) ); ?>"><?php esc_html_e( 'Боковая навигация', 'mp-custom-checkout' ); ?></a>
 			</div>
+			<div class="mp-cc-admin-shell__search" data-mp-cc-search-root="1">
+				<input type="search" class="regular-text" placeholder="<?php echo esc_attr__( 'Поиск по настройкам (ключ, label, helper, path)...', 'mp-custom-checkout' ); ?>" data-mp-cc-settings-search="1" />
+				<div class="mp-cc-admin-shell__filters" data-mp-cc-settings-filters="1">
+					<button type="button" class="button button-small is-active" data-filter="all">Все</button>
+					<button type="button" class="button button-small" data-filter="content">тексты</button>
+					<button type="button" class="button button-small" data-filter="fields">поля</button>
+					<button type="button" class="button button-small" data-filter="styles">стили</button>
+					<button type="button" class="button button-small" data-filter="validation">валидация</button>
+					<button type="button" class="button button-small" data-filter="logic">логика</button>
+					<button type="button" class="button button-small" data-filter="mobile">mobile</button>
+				</div>
+				<p class="description" data-mp-cc-search-status="1"></p>
+			</div>
 
 			<div class="mp-cc-admin-shell__grid">
 				<nav class="mp-cc-admin-shell__tabs" aria-label="<?php esc_attr_e( 'Навигация разделов', 'mp-custom-checkout' ); ?>">
@@ -169,7 +199,32 @@ final class AdminMenuHooks {
 			(function () {
 				var form = document.querySelector('[data-mp-cc-admin-settings-form="1"]');
 				if (!form) { return; }
+				var searchInput = document.querySelector('[data-mp-cc-settings-search="1"]');
+				var filtersRoot = document.querySelector('[data-mp-cc-settings-filters="1"]');
+				var status = document.querySelector('[data-mp-cc-search-status="1"]');
 				var isDirty = false;
+				var activeFilter = 'all';
+				var getScopePass = function (node) {
+					if (activeFilter === 'all') { return true; }
+					var scopes = String(node.getAttribute('data-setting-filters') || '');
+					return scopes.split(',').indexOf(activeFilter) >= 0;
+				};
+				var applySearch = function () {
+					var q = searchInput ? String(searchInput.value || '').toLowerCase().trim() : '';
+					var rows = Array.prototype.slice.call(form.querySelectorAll('.mp-cc-admin-shell__field'));
+					var visible = 0;
+					rows.forEach(function (row) {
+						var text = String(row.textContent || '').toLowerCase();
+						var passQuery = !q || text.indexOf(q) >= 0;
+						var passScope = getScopePass(row);
+						var show = passQuery && passScope;
+						row.style.display = show ? '' : 'none';
+						if (show) { visible += 1; }
+					});
+					if (status) {
+						status.textContent = 'Найдено настроек: ' + visible;
+					}
+				};
 				var onBeforeUnload = function (event) {
 					if (!isDirty) { return; }
 					event.preventDefault();
@@ -178,6 +233,22 @@ final class AdminMenuHooks {
 				form.addEventListener('change', function () { isDirty = true; });
 				form.addEventListener('input', function () { isDirty = true; });
 				form.addEventListener('submit', function () { isDirty = false; });
+				if (searchInput) {
+					searchInput.addEventListener('input', applySearch);
+				}
+				if (filtersRoot) {
+					filtersRoot.addEventListener('click', function (event) {
+						var btn = event.target && event.target.closest('[data-filter]');
+						if (!btn) { return; }
+						var next = String(btn.getAttribute('data-filter') || 'all');
+						activeFilter = next || 'all';
+						Array.prototype.forEach.call(filtersRoot.querySelectorAll('[data-filter]'), function (x) {
+							x.classList.toggle('is-active', x === btn);
+						});
+						applySearch();
+					});
+				}
+				applySearch();
 				window.addEventListener('beforeunload', onBeforeUnload);
 			})();
 		</script>
@@ -273,8 +344,19 @@ final class AdminMenuHooks {
 	 */
 	private static function render_leaf_input( string $name, $value, string $path ): void {
 		$label = str_replace( '_', ' ', basename( str_replace( '.', '/', $path ) ) );
-		echo '<label class="mp-cc-admin-shell__field">';
+		$filters = self::build_filters_for_path( $path );
+		$risky = self::is_risky_path( $path );
+		$scenario = self::scenario_scope_for_path( $path );
+		echo '<label class="mp-cc-admin-shell__field' . ( $risky ? ' is-risky' : '' ) . '" data-setting-filters="' . esc_attr( implode( ',', $filters ) ) . '" data-setting-scenario="' . esc_attr( $scenario ) . '">';
 		echo '<span class="mp-cc-admin-shell__field-label">' . esc_html( ucfirst( $label ) ) . '</span>';
+		if ( 'all' !== $scenario ) {
+			echo '<span class="mp-cc-admin-shell__scenario-badge">' . esc_html( self::scenario_scope_label( $scenario ) ) . '</span>';
+		}
+		$help = self::tooltip_text_for_path( $path );
+		if ( '' !== $help ) {
+			echo '<span class="mp-cc-admin-shell__help" title="' . esc_attr( $help ) . '" aria-label="' . esc_attr( $help ) . '">?</span>';
+			echo '<small class="mp-cc-admin-shell__hint">' . esc_html( $help ) . '</small>';
+		}
 		if ( is_bool( $value ) ) {
 			echo '<input type="checkbox" name="' . esc_attr( $name ) . '" value="1"' . checked( true, $value, false ) . ' />';
 		} elseif ( is_int( $value ) || is_float( $value ) ) {
@@ -292,6 +374,77 @@ final class AdminMenuHooks {
 		}
 		echo '<code class="mp-cc-admin-shell__field-path">' . esc_html( $path ) . '</code>';
 		echo '</label>';
+	}
+
+	/**
+	 * @return array<int, string>
+	 */
+	private static function build_filters_for_path( string $path ): array {
+		$filters = array( 'logic' );
+		$p = strtolower( $path );
+		if ( false !== strpos( $p, 'label' ) || false !== strpos( $p, 'title' ) || false !== strpos( $p, 'placeholder' ) || false !== strpos( $p, 'hint' ) || false !== strpos( $p, 'copy' ) || false !== strpos( $p, 'message' ) ) {
+			$filters[] = 'content';
+		}
+		if ( false !== strpos( $p, 'field_' ) || false !== strpos( $p, 'address' ) || false !== strpos( $p, 'phone' ) || false !== strpos( $p, 'email' ) ) {
+			$filters[] = 'fields';
+		}
+		if ( false !== strpos( $p, 'style' ) || false !== strpos( $p, 'token' ) || false !== strpos( $p, 'theme' ) ) {
+			$filters[] = 'styles';
+		}
+		if ( false !== strpos( $p, 'error' ) || false !== strpos( $p, 'required' ) || false !== strpos( $p, 'validation' ) ) {
+			$filters[] = 'validation';
+		}
+		if ( false !== strpos( $p, 'mobile' ) || false !== strpos( $p, 'tablet' ) || false !== strpos( $p, 'responsive' ) ) {
+			$filters[] = 'mobile';
+		}
+		return array_values( array_unique( $filters ) );
+	}
+
+	private static function scenario_scope_for_path( string $path ): string {
+		$p = strtolower( $path );
+		if ( false !== strpos( $p, 'pickup' ) ) {
+			return 'pickup-only';
+		}
+		if ( false !== strpos( $p, 'delivery' ) || false !== strpos( $p, 'address' ) ) {
+			return 'delivery-only';
+		}
+		return 'all';
+	}
+
+	private static function scenario_scope_label( string $scope ): string {
+		switch ( $scope ) {
+			case 'pickup-only':
+				return __( 'только самовывоз', 'mp-custom-checkout' );
+			case 'delivery-only':
+				return __( 'только доставка', 'mp-custom-checkout' );
+			default:
+				return __( 'все сценарии', 'mp-custom-checkout' );
+		}
+	}
+
+	private static function tooltip_text_for_path( string $path ): string {
+		$p = strtolower( $path );
+		if ( false !== strpos( $p, 'route_slug' ) ) {
+			return __( 'Изменяет URL маршрутов checkout/success. Требует проверки rewrite-правил.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'step_order' ) ) {
+			return __( 'Порядок шагов влияет на навигацию и валидацию. Меняйте с осторожностью.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'checkout_testing_mode' ) ) {
+			return __( 'Тестовый режим оплаты может обходить реальный платёжный процесс.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'field_order' ) ) {
+			return __( 'Определяет визуальный порядок полей в шаге.', 'mp-custom-checkout' );
+		}
+		return '';
+	}
+
+	private static function is_risky_path( string $path ): bool {
+		$p = strtolower( $path );
+		return false !== strpos( $p, 'route_slug' )
+			|| false !== strpos( $p, 'step_order' )
+			|| false !== strpos( $p, 'step_definitions' )
+			|| false !== strpos( $p, 'checkout_testing_mode' );
 	}
 
 	private static function detect_group_type( string $key, string $path ): string {
