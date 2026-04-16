@@ -131,6 +131,9 @@ final class DefaultLabelsRegistry {
 				'payment_title' => 'Способ оплаты',
 				'payment_intro' => 'Выберите удобный способ оплаты.',
 				'payment_error_required' => 'Выберите способ оплаты.',
+				'payment_loading' => 'Сохраняем выбранный способ оплаты...',
+				'payment_success' => 'Способ оплаты обновлён.',
+				'payment_error_switch' => 'Не удалось переключить способ оплаты.',
 			),
 			'coupon' => array(
 				'apply'   => 'Применить',

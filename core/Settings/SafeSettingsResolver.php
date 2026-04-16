@@ -432,6 +432,7 @@ final class SafeSettingsResolver {
 					'payment_block' => array(
 						'title' => 'Способ оплаты',
 						'intro' => 'Выберите удобный способ оплаты.',
+						'gateway_order' => array(),
 						'layout' => array(
 							'desktop_columns' => 2,
 							'tablet_columns'  => 2,
@@ -439,9 +440,20 @@ final class SafeSettingsResolver {
 							'grid_gap'        => '0.6rem 0.75rem',
 						),
 						'card_style' => 'default',
+						'card_active_style' => 'accent',
+						'radio_style' => 'default',
+						'description_style' => 'muted',
 						'show_description' => true,
 						'required' => true,
 						'error_message' => 'Выберите способ оплаты.',
+						'messages' => array(
+							'loading' => 'Сохраняем выбранный способ оплаты...',
+							'success' => 'Способ оплаты обновлён.',
+							'error'   => 'Не удалось переключить способ оплаты.',
+						),
+						'diagnostics' => array(
+							'enabled' => true,
+						),
 					),
 					'geo_preview' => array(
 						'enabled' => true,

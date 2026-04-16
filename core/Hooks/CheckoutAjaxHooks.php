@@ -212,6 +212,40 @@ final class CheckoutAjaxHooks {
 			);
 		}
 
+		if ( 'gateway_render_diagnostics' === $sub_action ) {
+			$issues = isset( $_POST['issues'] ) && is_array( $_POST['issues'] )
+				? wp_unslash( $_POST['issues'] )
+				: array();
+			$clean_issues = array();
+			foreach ( $issues as $issue ) {
+				if ( ! is_scalar( $issue ) ) {
+					continue;
+				}
+				$line = sanitize_text_field( (string) $issue );
+				if ( '' === $line ) {
+					continue;
+				}
+				$clean_issues[] = $line;
+			}
+			if ( ! empty( $clean_issues ) ) {
+				do_action(
+					'mp_custom_checkout_log',
+					'warning',
+					'[payment_gateway] render_diagnostics',
+					array(
+						'issues'     => $clean_issues,
+						'context_id' => isset( $_POST['context_id'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['context_id'] ) ) : '',
+					)
+				);
+			}
+			wp_send_json_success(
+				array(
+					'sub_action' => $sub_action,
+					'logged'     => ! empty( $clean_issues ),
+				)
+			);
+		}
+
 		if ( 'update_quantity' === $sub_action ) {
 			self::handle_update_quantity();
 		}
@@ -248,7 +282,7 @@ final class CheckoutAjaxHooks {
 	private static function is_session_sub_action( string $sub_action ): bool {
 		return in_array(
 			$sub_action,
-			array( 'session_set_step', 'session_set_answers', 'session_set_scenario', 'session_get_state', 'session_abandon', 'update_quantity', 'remove_item', 'validation_log', 'apply_coupon', 'remove_coupon', 'apply_gift_card', 'set_payment_gateway' ),
+			array( 'session_set_step', 'session_set_answers', 'session_set_scenario', 'session_get_state', 'session_abandon', 'update_quantity', 'remove_item', 'validation_log', 'apply_coupon', 'remove_coupon', 'apply_gift_card', 'set_payment_gateway', 'gateway_render_diagnostics' ),
 			true
 		);
 	}
