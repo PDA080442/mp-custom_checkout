@@ -368,9 +368,21 @@
 		html += '<div class="mp-cc-admin-preview-area__header">';
 		html += '<h2>Live Checkout Preview</h2>';
 		html += '<div class="mp-cc-admin-preview-area__actions">';
-		html += '<button type="button" class="button button-secondary" data-mp-cc-progress-style="digits">Прогресс: 1/2/3</button>';
-		html += '<button type="button" class="button button-secondary" data-mp-cc-progress-style="labels">Прогресс: названия</button>';
-		html += '<button type="button" class="button button-secondary" data-mp-cc-progress-style="dots">Прогресс: точки</button>';
+		html += '<label class="mp-cc-admin-preview-area__control">Progress';
+		html += '<select data-mp-cc-progress-style-select="1"><option value="digits">1/2/3</option><option value="labels">Названия</option><option value="dots">Точки</option></select>';
+		html += '</label>';
+		html += '<label class="mp-cc-admin-preview-area__control">Scenario';
+		html += '<select data-mp-cc-scenario-select="1"><option value="pickup">Самовывоз</option><option value="krasnoyarsk_delivery">Красноярск</option><option value="other_city_delivery">Другой город</option></select>';
+		html += '</label>';
+		html += '<label class="mp-cc-admin-preview-area__control">Device';
+		html += '<select data-mp-cc-device-select="1"><option value="desktop">Desktop</option><option value="tablet">Tablet</option><option value="mobile">Mobile</option></select>';
+		html += '</label>';
+		html += '<label class="mp-cc-admin-preview-area__control">Interaction';
+		html += '<select data-mp-cc-interaction-select="1"><option value="default">Default</option><option value="hover">Hover</option><option value="focus">Focus</option></select>';
+		html += '</label>';
+		html += '<label class="mp-cc-admin-preview-area__control">Runtime';
+		html += '<select data-mp-cc-runtime-select="1"><option value="default">Default</option><option value="error">Error</option><option value="disabled">Disabled</option><option value="loading">Loading</option><option value="success">Success</option></select>';
+		html += '</label>';
 		html += '<button type="button" class="button button-secondary" data-mp-cc-preview-reset="1">Сбросить превью</button>';
 		html += '<button type="button" class="button button-secondary" data-mp-cc-tab-reset="1">Сбросить настройки вкладки по умолчанию</button>';
 		html += '</div>';
@@ -435,6 +447,75 @@
 		return html;
 	}
 
+	function renderCalendarStatePreview(config, previewState) {
+		var scenario = previewState && previewState.scenario ? String(previewState.scenario) : 'pickup';
+		var weekdays = (config.weekdayRules && config.weekdayRules[scenario] && config.weekdayRules[scenario].length) ? config.weekdayRules[scenario] : [1, 2, 3, 4, 5];
+		var blocked = {};
+		var i;
+		var date;
+		for (i = 0; i < config.holidayDates.length; i += 1) {
+			date = String(config.holidayDates[i] || '');
+			if (date) {
+				blocked[date] = 'holiday';
+			}
+		}
+		for (i = 0; i < config.closedDates.length; i += 1) {
+			date = String(config.closedDates[i] || '');
+			if (date) {
+				blocked[date] = 'closed';
+			}
+		}
+		var base = new Date('2026-04-14T00:00:00Z');
+		var html = '<div class="mp-cc-admin-calendar-preview">';
+		for (i = 0; i < 14; i += 1) {
+			var current = new Date(base.getTime() + i * 86400000);
+			var iso = current.toISOString().slice(0, 10);
+			var day = current.getUTCDay();
+			var dayNum = day === 0 ? 7 : day;
+			var allowedWeekday = weekdays.indexOf(dayNum) > -1;
+			var state = blocked[iso] ? blocked[iso] : (allowedWeekday ? 'open' : 'blocked');
+			html += '<span class="mp-cc-admin-calendar-preview__day is-' + escapeHtml(state) + '">' + escapeHtml(iso.slice(8, 10)) + '</span>';
+		}
+		html += '</div>';
+		return html;
+	}
+
+	function renderPaymentGatewayStatePreview(cfg, previewState) {
+		var runtimeState = previewState && previewState.runtimeState ? String(previewState.runtimeState) : 'default';
+		var gateways = (cfg.payment && Array.isArray(cfg.payment.gateway_order) && cfg.payment.gateway_order.length) ? cfg.payment.gateway_order : ['cod', 'card', 'sbp'];
+		var html = '<div class="mp-cc-admin-gateway-preview">';
+		for (var i = 0; i < gateways.length; i += 1) {
+			var key = String(gateways[i] || '');
+			if (!key) {
+				continue;
+			}
+			var active = i === 0 ? ' is-active' : '';
+			var runtimeClass = runtimeState !== 'default' ? ' is-' + escapeHtml(runtimeState) : '';
+			html += '<div class="mp-cc-admin-gateway-preview__item' + active + runtimeClass + '"><strong>' + escapeHtml(key) + '</strong><small>' + escapeHtml(cfg.payment.card_style || 'default') + '</small></div>';
+		}
+		html += '</div>';
+		return html;
+	}
+
+	function renderSummaryReviewPreview(config, previewState) {
+		var runtime = previewState && previewState.runtime ? previewState.runtime : {};
+		var summary = runtime.summary && typeof runtime.summary === 'object' ? runtime.summary : {};
+		var scenario = previewState && previewState.scenario ? String(previewState.scenario) : 'pickup';
+		var html = '';
+		html += '<div class="mp-cc-admin-summary-review">';
+		html += '<div class="mp-cc-admin-summary-review__summary"><strong>' + escapeHtml(config.summaryTitle || 'Сводка') + '</strong>';
+		html += '<p>' + escapeHtml(config.subtotalLabel || 'Подытог') + ': ' + escapeHtml(summary.subtotal || '—') + '</p>';
+		if (scenario !== 'pickup') {
+			html += '<p>' + escapeHtml(config.shippingLabel || 'Доставка') + ': ' + escapeHtml(summary.shipping || '—') + '</p>';
+		}
+		html += '<p>' + escapeHtml(config.discountLabel || 'Скидка') + ': ' + escapeHtml(summary.discount || '—') + '</p>';
+		html += '<p><strong>' + escapeHtml(config.totalLabel || 'Итого') + ': ' + escapeHtml(summary.total || '—') + '</strong></p>';
+		html += '</div>';
+		html += '<div class="mp-cc-admin-summary-review__order"><strong>Order review</strong><p>Сценарий: ' + escapeHtml(scenario) + '</p><p>Runtime: ' + escapeHtml(String((previewState && previewState.runtimeState) || 'default')) + '</p></div>';
+		html += '</div>';
+		return html;
+	}
+
 	function renderSuccessPreview(runtime) {
 		var rt = runtime && typeof runtime === 'object' ? runtime : {};
 		var summary = rt.summary && typeof rt.summary === 'object' ? rt.summary : {};
@@ -452,7 +533,7 @@
 		return html;
 	}
 
-	function renderPreview(config) {
+	function renderPreview(config, previewState) {
 		var html = '';
 		html += '<section class="mp-cc-admin-preview" id="mp-cc-admin-step1-preview"';
 		html += ' data-card-compact="' + (config.cardCompact ? '1' : '0') + '"';
@@ -460,6 +541,7 @@
 		html += ' data-summary-emphasis="' + escapeHtml(config.summaryEmphasis) + '"';
 		html += '>';
 		html += '<h2>Step 1 Preview</h2>';
+		html += '<p>Device: <strong>' + escapeHtml(String((previewState && previewState.device) || 'desktop')) + '</strong>, interaction: <strong>' + escapeHtml(String((previewState && previewState.interactionState) || 'default')) + '</strong></p>';
 		html += '<div class="mp-cc-admin-preview__grid">';
 		html += '<article class="mp-cc-admin-preview__card">';
 		html += '<h3>' + escapeHtml(config.title) + '</h3>';
@@ -503,12 +585,14 @@
 			html += '<div class="mp-cc-admin-preview__pickup-map">Map slot reserved</div>';
 			html += '</div>';
 		}
+		html += renderSummaryReviewPreview(config, previewState);
 		html += '</section>';
 		return html;
 	}
 
-	function renderScenarioPreview(config) {
+	function renderScenarioPreview(config, previewState) {
 		var order = Array.isArray(config.cardOrder) ? config.cardOrder : ['pickup', 'delivery'];
+		var selectedScenario = previewState && previewState.scenario ? String(previewState.scenario) : config.defaultScenario;
 		var html = '';
 		html += '<section class="mp-cc-admin-preview mp-cc-admin-preview--scenario" id="mp-cc-admin-scenario-preview">';
 		html += '<h2>Scenario Cards Preview</h2>';
@@ -524,7 +608,8 @@
 				continue;
 			}
 			var card = config.cards[key];
-			html += '<article class="mp-cc-admin-preview__scenario-card">';
+			var selectedClass = selectedScenario.indexOf('pickup') > -1 && key === 'pickup' ? ' is-selected' : (selectedScenario.indexOf('delivery') > -1 && key === 'delivery' ? ' is-selected' : '');
+			html += '<article class="mp-cc-admin-preview__scenario-card' + selectedClass + '">';
 			html += '<div class="mp-cc-admin-preview__scenario-icon mp-cc-admin-preview__scenario-icon--' + escapeHtml(card.iconStyle) + '">' + escapeHtml(card.iconVariant) + '</div>';
 			html += '<h3>' + escapeHtml(card.title) + '</h3>';
 			if (card.description) {
@@ -540,11 +625,13 @@
 		return html;
 	}
 
-	function renderDatePreview(config) {
+	function renderDatePreview(config, previewState) {
 		var blockedTotal = config.holidayDates.length + config.closedDates.length;
+		var scenario = previewState && previewState.scenario ? String(previewState.scenario) : 'pickup';
 		var html = '';
 		html += '<section class="mp-cc-admin-preview mp-cc-admin-preview--date" id="mp-cc-admin-date-preview">';
 		html += '<h2>Date Step Preview</h2>';
+		html += '<p>Scenario: <strong>' + escapeHtml(scenario) + '</strong></p>';
 		html += '<h3>' + escapeHtml(config.title) + '</h3>';
 		html += '<div class="mp-cc-admin-preview__date-grid">';
 		html += '<article><strong>Самовывоз</strong><p>' + escapeHtml(config.helperByScenario.pickup || '—') + '</p></article>';
@@ -561,15 +648,19 @@
 		html += '<p><strong>Blocked dates:</strong> holidays ' + escapeHtml(config.holidayDates.length) + ', closed ' + escapeHtml(config.closedDates.length) + ', total ' + escapeHtml(blockedTotal) + '</p>';
 		html += '<p><strong>Calendar style:</strong> ' + escapeHtml(config.calendarStyle.density) + ', ' + escapeHtml(config.calendarStyle.dayShape) + ', ' + escapeHtml(config.calendarStyle.highlightStyle) + ', weekend tint: ' + escapeHtml(config.calendarStyle.showWeekendTint ? 'on' : 'off') + '</p>';
 		html += '</div>';
+		html += renderCalendarStatePreview(config, previewState);
 		html += '</section>';
 		return html;
 	}
 
-	function renderStepFourPreview(cfg) {
+	function renderStepFourPreview(cfg, previewState) {
 		var order = Array.isArray(cfg.contact.fieldOrder) ? cfg.contact.fieldOrder : [];
+		var runtimeState = previewState && previewState.runtimeState ? String(previewState.runtimeState) : 'default';
+		var interaction = previewState && previewState.interactionState ? String(previewState.interactionState) : 'default';
 		var html = '';
 		html += '<section class="mp-cc-admin-preview mp-cc-admin-preview--step4" id="mp-cc-admin-step4-preview">';
 		html += '<h2>Step 4 Contact Preview</h2>';
+		html += '<p>Runtime: <strong>' + escapeHtml(runtimeState) + '</strong>, interaction: <strong>' + escapeHtml(interaction) + '</strong></p>';
 		html += '<p><strong>' + escapeHtml(cfg.contact.title) + '</strong></p>';
 		if (cfg.contact.intro) {
 			html += '<p>' + escapeHtml(cfg.contact.intro) + '</p>';
@@ -662,6 +753,7 @@
 		html += '<p class="mp-cc-admin-step4-error-sample">' + escapeHtml(String((cfg.payment.messages && cfg.payment.messages.error) || 'Не удалось переключить способ оплаты.')) + '</p>';
 		html += '</article>';
 		html += '</div>';
+		html += renderPaymentGatewayStatePreview(cfg, previewState);
 		html += '<p><strong>' + escapeHtml(cfg.address.title) + '</strong></p>';
 		html += '<p>Address order: ' + escapeHtml(cfg.address.order.join(', ')) + '</p>';
 		if (cfg.geoPreview) {
@@ -1074,6 +1166,10 @@
 			runtime: createPreviewRuntimeMock(),
 			activeStep: 'step_1',
 			progressStyle: 'digits',
+			scenario: 'pickup',
+			device: 'desktop',
+			interactionState: 'default',
+			runtimeState: 'default',
 			dirty: false
 		});
 		var flags = window.mpCcAdmin && window.mpCcAdmin.featureFlags ? window.mpCcAdmin.featureFlags : {};
@@ -1099,24 +1195,27 @@
 			var progressStyle = previewState.progressStyle || 'digits';
 			var html = '';
 			if (activeStep === 'step_1') {
-				html += renderPreview(nextConfig);
+				html += renderPreview(nextConfig, previewState);
 			} else if (activeStep === 'step_2' && nextDateConfig.previewEnabled) {
-				html += renderDatePreview(nextDateConfig);
+				html += renderDatePreview(nextDateConfig, previewState);
 			} else if (activeStep === 'step_3' && nextOfficeConfig.previewEnabled) {
 				html += renderOfficeHoursPreview(nextOfficeConfig);
 				if (nextScenarioConfig.previewEnabled) {
-					html += renderScenarioPreview(nextScenarioConfig);
+					html += renderScenarioPreview(nextScenarioConfig, previewState);
 				}
 			} else if (activeStep === 'step_4' && nextStepFourConfig.previewEnabled) {
-				html += renderStepFourPreview(nextStepFourConfig);
+				html += renderStepFourPreview(nextStepFourConfig, previewState);
 			} else if (activeStep === 'success') {
 				html += renderSuccessPreview(previewState.runtime);
 			} else {
-				html += renderPreview(nextConfig);
+				html += renderPreview(nextConfig, previewState);
 			}
+			$('[data-mp-cc-preview-body="1"]').html(html);
+			$('[data-mp-cc-preview-body="1"]').attr('data-device', String(previewState.device || 'desktop'));
+			$('[data-mp-cc-preview-body="1"]').attr('data-interaction', String(previewState.interactionState || 'default'));
+			$('[data-mp-cc-preview-body="1"]').attr('data-runtime', String(previewState.runtimeState || 'default'));
 			$('[data-mp-cc-preview-flow-nav="1"]').html(renderFlowStepSwitcher(activeStep));
 			$('[data-mp-cc-preview-progress="1"]').html(renderFlowProgress(activeStep, progressStyle));
-			$('[data-mp-cc-preview-body="1"]').html(html);
 		};
 
 		var updatePreviewWarning = function () {
@@ -1136,6 +1235,11 @@
 		};
 		var rerenderDebounced = debounce(rerender, 120);
 		mountPreviews(config, scenarioConfig, dateStepConfig, officeHoursPreviewConfig, stepFourConfig);
+		$('[data-mp-cc-progress-style-select="1"]').val('digits');
+		$('[data-mp-cc-scenario-select="1"]').val('pickup');
+		$('[data-mp-cc-device-select="1"]').val('desktop');
+		$('[data-mp-cc-interaction-select="1"]').val('default');
+		$('[data-mp-cc-runtime-select="1"]').val('default');
 		updatePreviewWarning();
 
 		$(document).on('input change', '[name^="mp_custom_checkout_settings[step_1]"]', function () {
@@ -1171,6 +1275,87 @@
 				return;
 			}
 			previewStore.setState({ progressStyle: style, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
+		$(document).on('change', '[data-mp-cc-progress-style-select]', function () {
+			var styleSelect = String($(this).val() || '');
+			if (!styleSelect) {
+				return;
+			}
+			previewStore.setState({ progressStyle: styleSelect, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
+		$(document).on('click', '[data-mp-cc-scenario]', function () {
+			var scenario = String($(this).data('mpCcScenario') || '');
+			if (!scenario) {
+				return;
+			}
+			previewStore.setState({ scenario: scenario, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
+		$(document).on('change', '[data-mp-cc-scenario-select]', function () {
+			var scenarioSelect = String($(this).val() || '');
+			if (!scenarioSelect) {
+				return;
+			}
+			previewStore.setState({ scenario: scenarioSelect, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
+		$(document).on('click', '[data-mp-cc-device]', function () {
+			var device = String($(this).data('mpCcDevice') || '');
+			if (!device) {
+				return;
+			}
+			previewStore.setState({ device: device, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
+		$(document).on('change', '[data-mp-cc-device-select]', function () {
+			var deviceSelect = String($(this).val() || '');
+			if (!deviceSelect) {
+				return;
+			}
+			previewStore.setState({ device: deviceSelect, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
+		$(document).on('click', '[data-mp-cc-interaction]', function () {
+			var interaction = String($(this).data('mpCcInteraction') || '');
+			if (!interaction) {
+				return;
+			}
+			previewStore.setState({ interactionState: interaction, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
+		$(document).on('change', '[data-mp-cc-interaction-select]', function () {
+			var interactionSelect = String($(this).val() || '');
+			if (!interactionSelect) {
+				return;
+			}
+			previewStore.setState({ interactionState: interactionSelect, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
+		$(document).on('click', '[data-mp-cc-runtime]', function () {
+			var runtimeState = String($(this).data('mpCcRuntime') || '');
+			if (!runtimeState) {
+				return;
+			}
+			previewStore.setState({ runtimeState: runtimeState, dirty: true });
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			updatePreviewWarning();
+		});
+		$(document).on('change', '[data-mp-cc-runtime-select]', function () {
+			var runtimeSelect = String($(this).val() || '');
+			if (!runtimeSelect) {
+				return;
+			}
+			previewStore.setState({ runtimeState: runtimeSelect, dirty: true });
 			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
 			updatePreviewWarning();
 		});
