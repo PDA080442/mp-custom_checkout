@@ -13,6 +13,7 @@ use MP\CustomCheckout\Routing\CheckoutDateAvailabilityEngine;
 use MP\CustomCheckout\Routing\CheckoutScenarioRules;
 use MP\CustomCheckout\Routing\CheckoutSessionService;
 use MP\CustomCheckout\Settings\ScenarioStepRegistry;
+use MP\CustomCheckout\Hooks\CheckoutRouteHooks;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -30,10 +31,36 @@ final class OrderMetaHooks {
 		}
 
 		add_action( 'woocommerce_checkout_order_created', array( __CLASS__, 'on_checkout_order_created' ), 10, 2 );
+		add_action( 'woocommerce_checkout_order_created', array( __CLASS__, 'apply_contact_fields_to_order' ), 11, 2 );
 		add_action( 'mp_custom_checkout_save_order_meta', array( __CLASS__, 'save_scenario_meta' ), 10, 2 );
 		add_action( 'mp_custom_checkout_save_order_meta', array( __CLASS__, 'save_selected_date_meta' ), 12, 2 );
 		add_action( 'mp_custom_checkout_save_order_meta', array( __CLASS__, 'save_conditions_confirmation_meta' ), 14, 2 );
 		add_action( 'mp_custom_checkout_save_order_meta', array( __CLASS__, 'save_conditions_summary_meta' ), 20, 2 );
+		add_filter( 'woocommerce_checkout_update_customer_data', array( __CLASS__, 'maybe_skip_customer_data_sync' ), 10, 1 );
+	}
+
+	/**
+	 * Отключает автозапись checkout-данных в user meta для кастомного flow.
+	 *
+	 * @param bool $should_update Исходное значение Woo.
+	 */
+	public static function maybe_skip_customer_data_sync( bool $should_update ): bool {
+		if ( ! $should_update ) {
+			return false;
+		}
+
+		$flow = CheckoutSessionService::get_flow();
+		if ( empty( $flow ) ) {
+			return $should_update;
+		}
+
+		$answers = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : array();
+		$contact = isset( $answers['contact_billing'] ) && is_array( $answers['contact_billing'] ) ? $answers['contact_billing'] : array();
+		if ( ! empty( $contact ) ) {
+			return false;
+		}
+
+		return CheckoutRouteHooks::is_checkout_route() ? false : $should_update;
 	}
 
 	/**
@@ -52,6 +79,105 @@ final class OrderMetaHooks {
 		 * @param array     $data  Данные формы checkout.
 		 */
 		do_action( 'mp_custom_checkout_save_order_meta', $order, $data );
+	}
+
+	/**
+	 * Маппинг contact_billing в стандартные billing/shipping поля заказа и custom meta.
+	 *
+	 * @param \WC_Order $order Заказ.
+	 * @param array     $data  Данные checkout.
+	 */
+	public static function apply_contact_fields_to_order( $order, $data = array() ): void {
+		unset( $data );
+		if ( ! $order instanceof \WC_Order ) {
+			return;
+		}
+
+		$flow    = CheckoutSessionService::get_flow();
+		$answers = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : array();
+		$contact = isset( $answers['contact_billing'] ) && is_array( $answers['contact_billing'] ) ? $answers['contact_billing'] : array();
+		if ( empty( $contact ) ) {
+			return;
+		}
+
+		$scenario      = isset( $flow['scenario'] ) ? CheckoutScenarioRules::sanitize_scenario( (string) $flow['scenario'] ) : ScenarioStepRegistry::SCENARIO_PICKUP;
+		$rules         = CheckoutScenarioRules::build( $scenario );
+		$field_rules   = isset( $rules['field_rules'] ) && is_array( $rules['field_rules'] ) ? $rules['field_rules'] : array();
+		$hide_address  = ! empty( $field_rules['hide_address_fields'] );
+
+		$billing_map = array(
+			'billing_first_name' => 'set_billing_first_name',
+			'billing_last_name'  => 'set_billing_last_name',
+			'billing_email'      => 'set_billing_email',
+			'billing_phone'      => 'set_billing_phone',
+			'country'            => 'set_billing_country',
+			'state'              => 'set_billing_state',
+			'city'               => 'set_billing_city',
+			'address_1'          => 'set_billing_address_1',
+			'address_2'          => 'set_billing_address_2',
+			'postcode'           => 'set_billing_postcode',
+		);
+		foreach ( $billing_map as $contact_key => $setter ) {
+			if ( ! array_key_exists( $contact_key, $contact ) ) {
+				continue;
+			}
+			if ( $hide_address && in_array( $contact_key, array( 'country', 'state', 'city', 'address_1', 'address_2', 'postcode' ), true ) ) {
+				continue;
+			}
+			$value = sanitize_text_field( (string) $contact[ $contact_key ] );
+			if ( method_exists( $order, $setter ) ) {
+				$order->{$setter}( $value );
+			}
+		}
+
+		// Для единообразия отдаём delivery-адрес и в shipping_*.
+		if ( ! $hide_address ) {
+			$shipping_map = array(
+				'country'   => 'set_shipping_country',
+				'state'     => 'set_shipping_state',
+				'city'      => 'set_shipping_city',
+				'address_1' => 'set_shipping_address_1',
+				'address_2' => 'set_shipping_address_2',
+				'postcode'  => 'set_shipping_postcode',
+			);
+			foreach ( $shipping_map as $contact_key => $setter ) {
+				if ( ! array_key_exists( $contact_key, $contact ) ) {
+					continue;
+				}
+				$value = sanitize_text_field( (string) $contact[ $contact_key ] );
+				if ( method_exists( $order, $setter ) ) {
+					$order->{$setter}( $value );
+				}
+			}
+		}
+
+		$custom_meta_map = array(
+			'_mp_cc_billing_patronymic'   => 'billing_patronymic',
+			'_mp_cc_phone_country_iso'    => 'phone_country_iso',
+			'_mp_cc_phone_dial_code'      => 'phone_dial_code',
+			'_mp_cc_billing_phone_local'  => 'billing_phone_national',
+			'_mp_cc_address_country_code' => 'country',
+			'_mp_cc_address_region_code'  => 'state',
+			'_mp_cc_address_city'         => 'city',
+			'_mp_cc_address_line1'        => 'address_1',
+			'_mp_cc_address_line2'        => 'address_2',
+			'_mp_cc_address_postcode'     => 'postcode',
+		);
+		foreach ( $custom_meta_map as $meta_key => $contact_key ) {
+			if ( ! array_key_exists( $contact_key, $contact ) ) {
+				continue;
+			}
+			if ( $hide_address && in_array( $contact_key, array( 'country', 'state', 'city', 'address_1', 'address_2', 'postcode' ), true ) ) {
+				$order->delete_meta_data( $meta_key );
+				continue;
+			}
+			$value = sanitize_text_field( (string) $contact[ $contact_key ] );
+			if ( '' === $value ) {
+				$order->delete_meta_data( $meta_key );
+			} else {
+				$order->update_meta_data( $meta_key, $value );
+			}
+		}
 	}
 
 	/**
