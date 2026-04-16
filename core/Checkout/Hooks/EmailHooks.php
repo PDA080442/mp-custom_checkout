@@ -19,12 +19,7 @@ final class EmailHooks {
 	public static function register(): void {
 		if ( ! DependencyFailureGuard::is_woocommerce_integration_ready() ) { return; }
 		add_action( 'woocommerce_email_order_meta', array( __CLASS__, 'render_email_order_meta' ), 10, 4 );
-		add_action( 'mp_custom_checkout_email_order_meta', array( __CLASS__, 'render_scenario_meta' ), 10, 4 );
-		add_action( 'mp_custom_checkout_email_order_meta', array( __CLASS__, 'render_selected_date_meta' ), 11, 4 );
-		add_action( 'mp_custom_checkout_email_order_meta', array( __CLASS__, 'render_pickup_point_meta' ), 12, 4 );
-		add_action( 'mp_custom_checkout_email_order_meta', array( __CLASS__, 'render_conditions_summary_meta' ), 13, 4 );
-		add_action( 'mp_custom_checkout_email_order_meta', array( __CLASS__, 'render_contact_meta' ), 14, 4 );
-		add_action( 'mp_custom_checkout_email_order_meta', array( __CLASS__, 'render_discounts_meta' ), 15, 4 );
+		add_action( 'mp_custom_checkout_email_order_meta', array( __CLASS__, 'render_email_checkout_summary' ), 10, 4 );
 		add_action( 'woocommerce_admin_order_data_after_order_details', array( __CLASS__, 'render_custom_data_panel_admin' ), 8, 1 );
 		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'render_scenario_admin' ), 12, 1 );
 		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'render_pickup_point_admin' ), 15, 1 );
@@ -35,6 +30,62 @@ final class EmailHooks {
 		add_action( 'manage_shop_order_posts_custom_column', array( __CLASS__, 'render_scenario_order_list_column' ), 25, 2 );
 		add_filter( 'manage_woocommerce_page_wc-orders_columns', array( __CLASS__, 'add_scenario_order_list_column' ), 25 );
 		add_action( 'manage_woocommerce_page_wc-orders_custom_column', array( __CLASS__, 'render_scenario_order_list_column_hpos' ), 25, 2 );
+	}
+
+	public static function render_email_checkout_summary( $order, $sent_to_admin, $plain_text, $email = null ): void {
+		unset( $email );
+		if ( ! $order instanceof \WC_Order ) { return; }
+
+		$scenario_label = self::get_order_scenario_label( $order );
+		$date_label = self::get_order_date_label( $order );
+		$conditions = self::get_order_conditions_summary( $order );
+		$address = self::build_structured_address_single_line( $order );
+		$discounts = self::build_discounts_lines_for_output( $order );
+		$pickup_title = trim( (string) $order->get_meta( OrderMetaKeys::PICKUP_POINT_TITLE, true ) );
+		$pickup_address = trim( (string) $order->get_meta( OrderMetaKeys::PICKUP_POINT_ADDRESS, true ) );
+		$pickup_value = trim( $pickup_title . ( '' !== $pickup_address ? ' — ' . $pickup_address : '' ) );
+
+		$rows = array();
+		if ( '' !== $scenario_label ) { $rows[] = array( 'Способ получения', $scenario_label ); }
+		if ( '' !== $date_label ) { $rows[] = array( 'Дата получения/доставки', $date_label ); }
+		if ( '' !== $pickup_value ) { $rows[] = array( 'Точка самовывоза', $pickup_value ); }
+		if ( '' !== $address ) { $rows[] = array( 'Адрес', $address ); }
+		if ( '' !== $conditions ) { $rows[] = array( 'Условия получения', self::truncate_conditions_one_line( $conditions ) ); }
+
+		if ( $plain_text ) {
+			if ( empty( $rows ) && empty( $discounts ) ) { return; }
+			$title = $sent_to_admin ? 'Checkout данные (админ)' : 'Checkout данные';
+			echo "\n" . sanitize_text_field( $title ) . ":\n";
+			foreach ( $rows as $row ) {
+				echo '- ' . sanitize_text_field( (string) $row[0] ) . ': ' . sanitize_text_field( (string) $row[1] ) . "\n";
+			}
+			foreach ( $discounts as $line ) {
+				echo '- ' . sanitize_text_field( $line ) . "\n";
+			}
+			return;
+		}
+
+		if ( empty( $rows ) && empty( $discounts ) ) { return; }
+		echo '<div style="margin:16px 0;padding:12px;border:1px solid #e5e7eb;border-radius:8px;background:#fafafa;">';
+		echo '<p style="margin:0 0 10px 0;font-weight:600;font-size:14px;line-height:1.4;">' . esc_html( $sent_to_admin ? 'Checkout данные (админ)' : 'Checkout данные' ) . '</p>';
+		echo '<table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;font-size:13px;line-height:1.45;">';
+		foreach ( $rows as $row ) {
+			echo '<tr>';
+			echo '<td style="vertical-align:top;padding:4px 8px 4px 0;color:#4b5563;white-space:nowrap;">' . esc_html( (string) $row[0] ) . ':</td>';
+			echo '<td style="vertical-align:top;padding:4px 0;color:#111827;">' . esc_html( (string) $row[1] ) . '</td>';
+			echo '</tr>';
+		}
+		foreach ( $discounts as $line ) {
+			echo '<tr><td colspan="2" style="padding:4px 0;color:#111827;">' . esc_html( $line ) . '</td></tr>';
+		}
+		echo '</table>';
+		if ( '' !== $conditions ) {
+			echo '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #e5e7eb;">';
+			echo '<p style="margin:0 0 6px 0;font-weight:600;font-size:12px;">' . esc_html__( 'Условия получения', 'mp-custom-checkout' ) . '</p>';
+			echo '<div style="font-size:12px;color:#4b5563;line-height:1.5;">' . self::format_conditions_html( $conditions ) . '</div>';
+			echo '</div>';
+		}
+		echo '</div>';
 	}
 
 	public static function render_custom_data_panel_admin( $order ): void {
