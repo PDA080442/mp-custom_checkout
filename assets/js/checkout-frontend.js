@@ -23,6 +23,7 @@
 	var animationDurationMs = 180;
 	var draftSaveTimer = null;
 	var pendingCheckoutRequests = 0;
+	var isClientErrorLoggingBound = false;
 
 	function getUiText(path, fallback) {
 		var source = (window.mpCcCheckout && window.mpCcCheckout.uiText) ? window.mpCcCheckout.uiText : {};
@@ -2773,7 +2774,48 @@ function buildGiftCardBlockHtml(state) {
 		request.always(function () {
 			pendingCheckoutRequests = Math.max(0, pendingCheckoutRequests - 1);
 		});
+		if (subAction !== 'ajax_error_log' && subAction !== 'client_error_log') {
+			request.fail(function (xhr, statusText, errorThrown) {
+				var responseSnippet = '';
+				if (xhr && xhr.responseText) {
+					responseSnippet = String(xhr.responseText).slice(0, 300);
+				}
+				postCheckout('ajax_error_log', {
+					operation: subAction,
+					status: xhr && typeof xhr.status === 'number' ? xhr.status : 0,
+					error: String(errorThrown || statusText || 'ajax_failed'),
+					response_snippet: responseSnippet
+				});
+			});
+		}
 		return request;
+	}
+
+	function reportClientError(type, message, stack, state) {
+		postCheckout('client_error_log', {
+			error_type: String(type || 'js_error'),
+			message: String(message || ''),
+			stack: String(stack || ''),
+			state: String(state || '')
+		});
+	}
+
+	function bindClientErrorLogging() {
+		if (isClientErrorLoggingBound) {
+			return;
+		}
+		isClientErrorLoggingBound = true;
+		window.addEventListener('error', function (event) {
+			var msg = event && event.message ? String(event.message) : 'Unknown JS error';
+			var stack = event && event.error && event.error.stack ? String(event.error.stack) : '';
+			reportClientError('window_error', msg, stack, 'runtime');
+		});
+		window.addEventListener('unhandledrejection', function (event) {
+			var reason = event && event.reason ? event.reason : 'Unhandled promise rejection';
+			var message = (typeof reason === 'string') ? reason : (reason && reason.message ? String(reason.message) : 'Unhandled rejection');
+			var stack = reason && reason.stack ? String(reason.stack) : '';
+			reportClientError('unhandled_rejection', message, stack, 'runtime');
+		});
 	}
 
 	function stepKeyById(stepId) {
@@ -4752,6 +4794,7 @@ function buildGiftCardBlockHtml(state) {
 		}
 
 		var context = parseContext();
+		bindClientErrorLogging();
 		applyThemeVariant(context);
 		var state = buildState(context);
 		if (!state.frontendStore.fulfillment.scenario) {
