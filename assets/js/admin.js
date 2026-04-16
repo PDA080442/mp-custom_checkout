@@ -518,6 +518,11 @@
 		cfg.contact.hints.birthdate = readFormValue(p + '[hints][birthdate]', cfg.contact.hints.birthdate || '');
 		cfg.contact.fieldVisibility.birthdate = Boolean(readFormValue(p + '[field_visibility][birthdate]', cfg.contact.fieldVisibility.birthdate !== false));
 		cfg.contact.fieldRequired.birthdate = Boolean(readFormValue(p + '[field_required][birthdate]', cfg.contact.fieldRequired.birthdate !== false));
+		cfg.contact.labels.order_notes = readFormValue(p + '[labels][order_notes]', cfg.contact.labels.order_notes || 'Примечания к заказу');
+		cfg.contact.placeholders.order_notes = readFormValue(p + '[placeholders][order_notes]', cfg.contact.placeholders.order_notes || '');
+		cfg.contact.hints.order_notes = readFormValue(p + '[hints][order_notes]', cfg.contact.hints.order_notes || '');
+		cfg.contact.fieldVisibility.order_notes = Boolean(readFormValue(p + '[field_visibility][order_notes]', cfg.contact.fieldVisibility.order_notes !== false));
+		cfg.contact.fieldRequired.order_notes = Boolean(readFormValue(p + '[field_required][order_notes]', cfg.contact.fieldRequired.order_notes !== false));
 		cfg.contact.states.invalid_style = readFormValue(p + '[field_state_styles][invalid_style]', cfg.contact.states.invalid_style || 'default');
 		cfg.contact.states.hint_style = readFormValue(p + '[field_state_styles][hint_style]', cfg.contact.states.hint_style || 'default');
 		cfg.contact.states.focus_style = readFormValue(p + '[field_state_styles][focus_style]', cfg.contact.states.focus_style || 'default');

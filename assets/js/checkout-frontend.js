@@ -214,7 +214,7 @@
 				title: '',
 				intro: '',
 				patronymic_required: false,
-				field_order: ['last_name', 'first_name', 'patronymic', 'gender', 'birthdate', 'email', 'phone'],
+				field_order: ['last_name', 'first_name', 'patronymic', 'gender', 'birthdate', 'email', 'phone', 'order_notes'],
 				field_visibility: {
 					last_name: true,
 					first_name: true,
@@ -222,7 +222,8 @@
 					gender: true,
 					birthdate: true,
 					email: true,
-					phone: true
+					phone: true,
+					order_notes: true
 				},
 				field_required: {
 					last_name: true,
@@ -231,7 +232,8 @@
 					gender: false,
 					birthdate: true,
 					email: true,
-					phone: true
+					phone: true,
+					order_notes: false
 				},
 				placeholders: {
 					last_name: '',
@@ -240,7 +242,8 @@
 					gender: '',
 					birthdate: '',
 					email: '',
-					phone: ''
+					phone: '',
+					order_notes: ''
 				},
 				labels: {
 					last_name: '',
@@ -250,6 +253,7 @@
 					birthdate: '',
 					email: '',
 					phone: '',
+					order_notes: '',
 					country_code: ''
 				},
 				hints: {
@@ -257,7 +261,8 @@
 					phone: '',
 					patronymic: '',
 					gender: '',
-					birthdate: ''
+					birthdate: '',
+					order_notes: ''
 				},
 				gender_options: {
 					placeholder: '',
@@ -267,8 +272,11 @@
 				validation_messages: {
 					birthdate_required: '',
 					birthdate_invalid: '',
-					birthdate_range: ''
+					birthdate_range: '',
+					order_notes_length: ''
 				},
+				order_notes_max_length: 500,
+				order_notes_counter: { enabled: true },
 				phone_country_codes: [
 					{ dial: '+7', iso: 'RU', national_digits: 10 },
 					{ dial: '+7', iso: 'KZ', national_digits: 10 },
@@ -349,6 +357,7 @@
 			patronymic: 'Отчество',
 			gender: 'Пол',
 			birthdate: 'Дата рождения',
+			order_notes: 'Примечания к заказу',
 			email: 'Email',
 			phone: 'Телефон',
 			country_code: 'Код страны'
@@ -359,6 +368,7 @@
 			patronymic: 'step_4.contact_patronymic',
 			gender: 'step_4.contact_gender',
 			birthdate: 'step_4.contact_birthdate',
+			order_notes: 'step_4.contact_order_notes',
 			email: 'step_4.contact_email',
 			phone: 'step_4.contact_phone',
 			country_code: 'step_4.contact_country_code'
@@ -378,14 +388,16 @@
 			phone: 'Введите номер без кода страны — он выбран слева.',
 			patronymic: 'Укажите при наличии.',
 			gender: 'Необязательное поле.',
-			birthdate: 'Используем для корректной обработки заказа и персонализации сервиса.'
+			birthdate: 'Используем для корректной обработки заказа и персонализации сервиса.',
+			order_notes: 'Оставьте детали по доставке, упаковке или пожелания к заказу.'
 		};
 		var path = {
 			email: 'step_4.contact_hint_email',
 			phone: 'step_4.contact_hint_phone',
 			patronymic: 'step_4.contact_hint_patronymic',
 			gender: 'step_4.contact_hint_gender',
-			birthdate: 'step_4.contact_hint_birthdate'
+			birthdate: 'step_4.contact_hint_birthdate',
+			order_notes: 'step_4.contact_hint_order_notes'
 		};
 		return getUiText(path[key] || 'step_4.title', fb[key] || '');
 	}
@@ -410,6 +422,22 @@
 			return trimNonEmpty(vm.birthdate_invalid) || getUiText('step_4.contact_error_birthdate_invalid', 'Введите корректную дату рождения.');
 		}
 		return trimNonEmpty(vm.birthdate_range) || getUiText('step_4.contact_error_birthdate_range', 'Допустимый возраст: от 0 до 120 лет.');
+	}
+
+	function getOrderNotesSettings() {
+		var cfg = getStepFourConfig();
+		var block = cfg.contact_block || {};
+		var maxLen = Number(block.order_notes_max_length || 500);
+		if (!Number.isFinite(maxLen) || maxLen <= 0) {
+			maxLen = 500;
+		}
+		var vm = block.validation_messages && typeof block.validation_messages === 'object' ? block.validation_messages : {};
+		var counter = block.order_notes_counter && typeof block.order_notes_counter === 'object' ? block.order_notes_counter : {};
+		return {
+			maxLength: maxLen,
+			showCounter: counter.enabled !== false,
+			lengthErrorText: trimNonEmpty(vm.order_notes_length) || getUiText('step_4.contact_error_order_notes_length', 'Превышена максимальная длина примечания.')
+		};
 	}
 
 	function getAddressGeoMerged() {
@@ -762,6 +790,13 @@
 				}
 			}
 		}
+		if (isContactFieldVisible('order_notes') && trimNonEmpty(contact.order_notes)) {
+			var notesCfg = getOrderNotesSettings();
+			if (String(contact.order_notes).length > notesCfg.maxLength) {
+				errors.order_notes = 'length';
+				ok = false;
+			}
+		}
 		if (isContactFieldVisible('email') && isContactFieldRequired('email') && !trimNonEmpty(contact.billing_email)) {
 			errors.billing_email = 'required';
 			ok = false;
@@ -876,9 +911,10 @@
 		var errPat = getContactFieldError(state, 'billing_patronymic');
 		var errGender = getContactFieldError(state, 'billing_gender');
 		var errBirth = getContactFieldError(state, 'billing_birthdate');
+		var errNotes = getContactFieldError(state, 'order_notes');
 		var errEmail = getContactFieldError(state, 'billing_email');
 		var errPhone = getContactFieldError(state, 'billing_phone_national');
-		var order = Array.isArray(block.field_order) ? block.field_order : ['last_name', 'first_name', 'patronymic', 'gender', 'birthdate', 'email', 'phone'];
+		var order = Array.isArray(block.field_order) ? block.field_order : ['last_name', 'first_name', 'patronymic', 'gender', 'birthdate', 'email', 'phone', 'order_notes'];
 		var seen = {};
 		var ordered = [];
 		var oi;
@@ -890,8 +926,9 @@
 			seen[k] = true;
 			ordered.push(k);
 		}
-		var fallbackOrder = ['last_name', 'first_name', 'patronymic', 'gender', 'birthdate', 'email', 'phone'];
+		var fallbackOrder = ['last_name', 'first_name', 'patronymic', 'gender', 'birthdate', 'email', 'phone', 'order_notes'];
 		var genderOptions = getGenderOptions();
+		var notesCfg = getOrderNotesSettings();
 		for (oi = 0; oi < fallbackOrder.length; oi++) {
 			if (!seen[fallbackOrder[oi]]) {
 				ordered.push(fallbackOrder[oi]);
@@ -1229,6 +1266,34 @@
 				html += '/>';
 				if (err) {
 					html += '<p class="mp-cc-field-error" id="mp-cc-address-postcode-err" role="alert">' + escapeHtml(pcMsg) + '</p>';
+				}
+				html += '</div>';
+				continue;
+			}
+			if (field === 'order_notes') {
+				var notesValue = String(contact.order_notes || '');
+				if (notesValue.length > notesCfg.maxLength) {
+					notesValue = notesValue.slice(0, notesCfg.maxLength);
+				}
+				var remain = notesCfg.maxLength - notesValue.length;
+				html += '<div class="mp-cc-contact__field mp-cc-contact__field--span-2">';
+				html += '<label class="mp-cc-field-label" for="mp-cc-contact-order-notes">' + escapeHtml(getContactLabel('order_notes')) + '</label>';
+				html += '<textarea class="mp-cc-input' + (errNotes ? ' is-invalid' : '') + '" id="mp-cc-contact-order-notes" name="order_notes" rows="4"';
+				html += ' data-contact-field="order_notes" maxlength="' + escapeHtml(String(notesCfg.maxLength)) + '"';
+				var pNotes = getContactPlaceholder('order_notes');
+				if (pNotes) { html += ' placeholder="' + escapeHtml(pNotes) + '"'; }
+				html += errNotes ? ' aria-invalid="true"' : '';
+				html += '>';
+				html += escapeHtml(notesValue);
+				html += '</textarea>';
+				if (trimNonEmpty(getContactHint('order_notes'))) {
+					html += '<p class="mp-cc-field-hint">' + escapeHtml(getContactHint('order_notes')) + '</p>';
+				}
+				if (notesCfg.showCounter) {
+					html += '<p class="mp-cc-field-hint" data-order-notes-counter="1">' + escapeHtml('Осталось символов: ' + String(remain)) + '</p>';
+				}
+				if (errNotes) {
+					html += '<p class="mp-cc-field-error" id="mp-cc-contact-order-notes-err" role="alert">' + escapeHtml(notesCfg.lengthErrorText) + '</p>';
 				}
 				html += '</div>';
 			}
@@ -3397,12 +3462,26 @@
 				return;
 			}
 			var contact = state.frontendStore.form.contact || {};
-			contact[key] = $(this).val();
+			var val = $(this).val();
+			if (key === 'order_notes') {
+				var settings = getOrderNotesSettings();
+				val = String(val || '');
+				if (val.length > settings.maxLength) {
+					val = val.slice(0, settings.maxLength);
+					$(this).val(val);
+				}
+			}
+			contact[key] = val;
 			state.frontendStore.form.contact = contact;
 			if (state.frontendStore.form.errors && state.frontendStore.form.errors.contact) {
 				delete state.frontendStore.form.errors.contact[key];
 			}
 			contact.billing_phone = buildFullPhoneE164(contact);
+			if (key === 'order_notes') {
+				var cfgNotes = getOrderNotesSettings();
+				var remain = Math.max(0, cfgNotes.maxLength - String(val || '').length);
+				$app.find('[data-order-notes-counter="1"]').text('Осталось символов: ' + String(remain));
+			}
 			scheduleCurrentStepDraftSave(state, function () {
 				notify(getUiText('common.error_generic', 'Не удалось сохранить данные.'), 'error');
 			});

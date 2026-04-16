@@ -309,8 +309,11 @@ final class EmailHooks {
 		} elseif ( 'female' === $gender ) {
 			$lines[] = __( 'Пол', 'mp-custom-checkout' ) . ': ' . __( 'Женщина', 'mp-custom-checkout' );
 		}
+		$order_note = trim( (string) $order->get_meta( '_mp_cc_order_notes', true ) );
 		if ( empty( $lines ) ) {
-			return;
+			if ( '' === $order_note ) {
+				return;
+			}
 		}
 
 		echo '<div class="mp-cc-order-contact-meta"><p><strong>' . esc_html__( 'Контактные данные', 'mp-custom-checkout' ) . '</strong></p><ul>';
@@ -318,6 +321,9 @@ final class EmailHooks {
 			echo '<li>' . esc_html( $line ) . '</li>';
 		}
 		echo '</ul></div>';
+		if ( '' !== $order_note ) {
+			echo '<div class="mp-cc-order-contact-meta"><p><strong>' . esc_html__( 'Примечание к заказу', 'mp-custom-checkout' ) . '</strong></p><p>' . nl2br( esc_html( $order_note ), false ) . '</p></div>';
+		}
 	}
 
 	/**
