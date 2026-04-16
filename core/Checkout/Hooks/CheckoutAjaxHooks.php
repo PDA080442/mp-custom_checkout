@@ -87,7 +87,14 @@ final class CheckoutAjaxHooks {
 				wp_send_json_error( $block, 422 );
 			}
 			CheckoutSessionService::set_current_step( $step_id );
-			wp_send_json_success( array( 'sub_action' => $sub_action, 'current_step' => $step_id ) );
+			wp_send_json_success(
+				array(
+					'sub_action'    => $sub_action,
+					'current_step'  => $step_id,
+					'flow'          => self::build_flow_payload(),
+					'cart'          => CheckoutRouteContext::get_cart_data(),
+				)
+			);
 		}
 		if ( 'session_set_answers' === $sub_action ) {
 			$step_id = isset( $_POST['step_id'] ) ? sanitize_key( wp_unslash( $_POST['step_id'] ) ) : '';
