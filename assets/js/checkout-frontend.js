@@ -214,41 +214,89 @@
 				title: '',
 				intro: '',
 				patronymic_required: false,
-				field_order: ['last_name', 'first_name', 'patronymic', 'email', 'phone'],
+				field_order: ['last_name', 'first_name', 'patronymic', 'gender', 'birthdate', 'email', 'phone', 'order_notes'],
 				field_visibility: {
 					last_name: true,
 					first_name: true,
 					patronymic: true,
+					gender: true,
+					birthdate: true,
 					email: true,
-					phone: true
+					phone: true,
+					order_notes: true
 				},
 				field_required: {
 					last_name: true,
 					first_name: true,
 					patronymic: false,
+					gender: false,
+					birthdate: true,
 					email: true,
-					phone: true
+					phone: true,
+					order_notes: false
 				},
 				placeholders: {
 					last_name: '',
 					first_name: '',
 					patronymic: '',
+					gender: '',
+					birthdate: '',
 					email: '',
-					phone: ''
+					phone: '',
+					order_notes: ''
 				},
 				labels: {
 					last_name: '',
 					first_name: '',
 					patronymic: '',
+					gender: '',
+					birthdate: '',
 					email: '',
 					phone: '',
+					order_notes: '',
 					country_code: ''
 				},
 				hints: {
 					email: '',
 					phone: '',
-					patronymic: ''
+					patronymic: '',
+					gender: '',
+					birthdate: '',
+					order_notes: ''
 				},
+				gender_options: {
+					placeholder: '',
+					male: '',
+					female: ''
+				},
+				validation_messages: {
+					required: '',
+					email_invalid: '',
+					phone_required: '',
+					phone_format: '',
+					birthdate_required: '',
+					birthdate_invalid: '',
+					birthdate_range: '',
+					order_notes_length: '',
+					address_required: '',
+					address_region: '',
+					address_city: '',
+					address_postcode: '',
+					step_blocked: '',
+					conditions_required: ''
+				},
+				validation_constraints: {
+					birthdate_min_age: 0,
+					birthdate_max_age: 120,
+					phone_digits_override: 0
+				},
+				ajax_messages: {
+					draft_save_failed: '',
+					step_sync_failed: '',
+					scenario_sync_failed: ''
+				},
+				order_notes_max_length: 500,
+				order_notes_counter: { enabled: true },
 				phone_country_codes: [
 					{ dial: '+7', iso: 'RU', national_digits: 10 },
 					{ dial: '+7', iso: 'KZ', national_digits: 10 },
@@ -264,7 +312,8 @@
 				field_state_styles: {
 					invalid_style: 'default',
 					hint_style: 'default',
-					focus_style: 'default'
+					focus_style: 'default',
+					disabled_style: 'default'
 				}
 			},
 			address_block: {
@@ -327,6 +376,9 @@
 			last_name: 'Фамилия',
 			first_name: 'Имя',
 			patronymic: 'Отчество',
+			gender: 'Пол',
+			birthdate: 'Дата рождения',
+			order_notes: 'Примечания к заказу',
 			email: 'Email',
 			phone: 'Телефон',
 			country_code: 'Код страны'
@@ -335,6 +387,9 @@
 			last_name: 'step_4.contact_last_name',
 			first_name: 'step_4.contact_first_name',
 			patronymic: 'step_4.contact_patronymic',
+			gender: 'step_4.contact_gender',
+			birthdate: 'step_4.contact_birthdate',
+			order_notes: 'step_4.contact_order_notes',
 			email: 'step_4.contact_email',
 			phone: 'step_4.contact_phone',
 			country_code: 'step_4.contact_country_code'
@@ -352,14 +407,93 @@
 		var fb = {
 			email: 'На этот адрес отправим подтверждение заказа.',
 			phone: 'Введите номер без кода страны — он выбран слева.',
-			patronymic: 'Укажите при наличии.'
+			patronymic: 'Укажите при наличии.',
+			gender: 'Необязательное поле.',
+			birthdate: 'Используем для корректной обработки заказа и персонализации сервиса.',
+			order_notes: 'Оставьте детали по доставке, упаковке или пожелания к заказу.'
 		};
 		var path = {
 			email: 'step_4.contact_hint_email',
 			phone: 'step_4.contact_hint_phone',
-			patronymic: 'step_4.contact_hint_patronymic'
+			patronymic: 'step_4.contact_hint_patronymic',
+			gender: 'step_4.contact_hint_gender',
+			birthdate: 'step_4.contact_hint_birthdate',
+			order_notes: 'step_4.contact_hint_order_notes'
 		};
 		return getUiText(path[key] || 'step_4.title', fb[key] || '');
+	}
+
+	function getGenderOptions() {
+		var cfg = getStepFourConfig();
+		var go = cfg.contact_block && cfg.contact_block.gender_options ? cfg.contact_block.gender_options : {};
+		return {
+			placeholder: trimNonEmpty(go.placeholder) || getUiText('step_4.contact_gender_placeholder', 'Не указывать'),
+			male: trimNonEmpty(go.male) || getUiText('step_4.contact_gender_male', 'Мужчина'),
+			female: trimNonEmpty(go.female) || getUiText('step_4.contact_gender_female', 'Женщина')
+		};
+	}
+
+	function getBirthdateErrorText(code) {
+		var cfg = getStepFourConfig();
+		var vm = cfg.contact_block && cfg.contact_block.validation_messages ? cfg.contact_block.validation_messages : {};
+		if (code === 'required') {
+			return trimNonEmpty(vm.birthdate_required) || getUiText('step_4.contact_error_birthdate_required', 'Укажите дату рождения.');
+		}
+		if (code === 'invalid') {
+			return trimNonEmpty(vm.birthdate_invalid) || getUiText('step_4.contact_error_birthdate_invalid', 'Введите корректную дату рождения.');
+		}
+		return trimNonEmpty(vm.birthdate_range) || getUiText('step_4.contact_error_birthdate_range', 'Допустимый возраст: от 0 до 120 лет.');
+	}
+
+	function getStepFourValidationMessages() {
+		var cfg = getStepFourConfig();
+		return cfg.contact_block && cfg.contact_block.validation_messages && typeof cfg.contact_block.validation_messages === 'object'
+			? cfg.contact_block.validation_messages
+			: {};
+	}
+
+	function getStepFourAjaxMessage(code, fallbackKey, fallbackText) {
+		var cfg = getStepFourConfig();
+		var ajax = cfg.contact_block && cfg.contact_block.ajax_messages && typeof cfg.contact_block.ajax_messages === 'object'
+			? cfg.contact_block.ajax_messages
+			: {};
+		return trimNonEmpty(ajax[code]) || getUiText(fallbackKey, fallbackText);
+	}
+
+	function getFieldConstraintConfig() {
+		var cfg = getStepFourConfig();
+		var raw = cfg.contact_block && cfg.contact_block.validation_constraints && typeof cfg.contact_block.validation_constraints === 'object'
+			? cfg.contact_block.validation_constraints
+			: {};
+		var minAge = Number(raw.birthdate_min_age);
+		var maxAge = Number(raw.birthdate_max_age);
+		var phoneOverride = Number(raw.phone_digits_override);
+		if (!Number.isFinite(minAge) || minAge < 0) {
+			minAge = 0;
+		}
+		if (!Number.isFinite(maxAge) || maxAge < minAge) {
+			maxAge = 120;
+		}
+		if (!Number.isFinite(phoneOverride) || phoneOverride < 0) {
+			phoneOverride = 0;
+		}
+		return { minAge: minAge, maxAge: maxAge, phoneDigitsOverride: phoneOverride };
+	}
+
+	function getOrderNotesSettings() {
+		var cfg = getStepFourConfig();
+		var block = cfg.contact_block || {};
+		var maxLen = Number(block.order_notes_max_length || 500);
+		if (!Number.isFinite(maxLen) || maxLen <= 0) {
+			maxLen = 500;
+		}
+		var vm = block.validation_messages && typeof block.validation_messages === 'object' ? block.validation_messages : {};
+		var counter = block.order_notes_counter && typeof block.order_notes_counter === 'object' ? block.order_notes_counter : {};
+		return {
+			maxLength: maxLen,
+			showCounter: counter.enabled !== false,
+			lengthErrorText: trimNonEmpty(vm.order_notes_length) || getUiText('step_4.contact_error_order_notes_length', 'Превышена максимальная длина примечания.')
+		};
 	}
 
 	function getAddressGeoMerged() {
@@ -370,6 +504,7 @@
 	function isAddressSubfieldVisible(key) {
 		var cfg = getStepFourConfig();
 		var ab = cfg.address_block || {};
+		var vm = getStepFourValidationMessages();
 		var vis = ab.subfields_visible && typeof ab.subfields_visible === 'object' ? ab.subfields_visible : {};
 		return vis[key] !== false;
 	}
@@ -635,6 +770,7 @@
 		var cfg = getStepFourConfig();
 		var block = cfg.contact_block || {};
 		var codes = Array.isArray(block.phone_country_codes) ? block.phone_country_codes : [];
+		var constraints = getFieldConstraintConfig();
 		var defIso = trimNonEmpty(block.default_phone_country_iso) ? String(block.default_phone_country_iso) : 'RU';
 		if (!trimNonEmpty(c.phone_country_iso)) {
 			c.phone_country_iso = defIso;
@@ -675,6 +811,50 @@
 			errors.billing_patronymic = 'required';
 			ok = false;
 		}
+		if (isContactFieldVisible('gender') && isContactFieldRequired('gender') && !trimNonEmpty(contact.billing_gender)) {
+			errors.billing_gender = 'required';
+			ok = false;
+		}
+		if (isContactFieldVisible('birthdate')) {
+			var birthRaw = trimNonEmpty(contact.billing_birthdate);
+			if (isContactFieldRequired('birthdate') && !birthRaw) {
+				errors.billing_birthdate = 'required';
+				ok = false;
+			} else if (birthRaw) {
+				var m = birthRaw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+				if (!m) {
+					errors.billing_birthdate = 'invalid';
+					ok = false;
+				} else {
+					var yyyy = Number(m[1]);
+					var mm = Number(m[2]) - 1;
+					var dd = Number(m[3]);
+					var date = new Date(yyyy, mm, dd);
+					if (date.getFullYear() !== yyyy || date.getMonth() !== mm || date.getDate() !== dd) {
+						errors.billing_birthdate = 'invalid';
+						ok = false;
+					} else {
+						var today = new Date();
+						var age = today.getFullYear() - yyyy;
+						var beforeBirthday = (today.getMonth() < mm) || (today.getMonth() === mm && today.getDate() < dd);
+						if (beforeBirthday) {
+							age -= 1;
+						}
+						if (age < constraints.minAge || age > constraints.maxAge) {
+							errors.billing_birthdate = 'range';
+							ok = false;
+						}
+					}
+				}
+			}
+		}
+		if (isContactFieldVisible('order_notes') && trimNonEmpty(contact.order_notes)) {
+			var notesCfg = getOrderNotesSettings();
+			if (String(contact.order_notes).length > notesCfg.maxLength) {
+				errors.order_notes = 'length';
+				ok = false;
+			}
+		}
 		if (isContactFieldVisible('email') && isContactFieldRequired('email') && !trimNonEmpty(contact.billing_email)) {
 			errors.billing_email = 'required';
 			ok = false;
@@ -684,9 +864,12 @@
 		}
 		var meta = findPhoneCountryMeta(codes, contact.phone_country_iso);
 		var digits = String(contact.billing_phone_national || '').replace(/\D/g, '');
-		var need = meta.national_digits || 10;
-		if (isContactFieldVisible('phone') && isContactFieldRequired('phone') && digits.length !== need) {
-			errors.billing_phone_national = 'incomplete';
+		var need = constraints.phoneDigitsOverride > 0 ? constraints.phoneDigitsOverride : (meta.national_digits || 10);
+		if (isContactFieldVisible('phone') && isContactFieldRequired('phone') && !digits.length) {
+			errors.billing_phone_national = 'required';
+			ok = false;
+		} else if (isContactFieldVisible('phone') && isContactFieldRequired('phone') && digits.length !== need) {
+			errors.billing_phone_national = 'format';
 			ok = false;
 		}
 		var addrVis = contact.__address_visibility;
@@ -717,8 +900,14 @@
 					continue;
 				}
 				if (ak === 'state') {
-					if (!trimNonEmpty(contact.state)) {
-						errors.state = 'required';
+					var stateVal = trimNonEmpty(contact.state);
+					var regions = getRegionsForCountry(geo, contact.country);
+					var requiresKnownRegion = regions.length > 0;
+					if (!stateVal) {
+						errors.state = 'region';
+						ok = false;
+					} else if (requiresKnownRegion && regions.indexOf(stateVal) < 0) {
+						errors.state = 'region';
 						ok = false;
 					}
 					continue;
@@ -738,7 +927,7 @@
 							}
 						}
 						if (!cityOk) {
-							errors.city = 'list';
+						errors.city = 'city';
 							ok = false;
 						}
 					}
@@ -750,7 +939,7 @@
 						errors.postcode = 'required';
 						ok = false;
 					} else if (pc.length > maxZip) {
-						errors.postcode = 'length';
+						errors.postcode = 'postcode';
 						ok = false;
 					}
 					continue;
@@ -764,6 +953,70 @@
 		state.frontendStore.form.errors = state.frontendStore.form.errors || {};
 		state.frontendStore.form.errors.contact = ok ? {} : errors;
 		return ok;
+	}
+
+	function setStepInvalidState(state, stepId, isInvalid) {
+		if (!state || !state.frontendStore || !state.frontendStore.runtime || !stepId) {
+			return;
+		}
+		var map = state.frontendStore.runtime.invalid_steps && typeof state.frontendStore.runtime.invalid_steps === 'object'
+			? state.frontendStore.runtime.invalid_steps
+			: {};
+		if (isInvalid) {
+			map[stepId] = true;
+		} else if (Object.prototype.hasOwnProperty.call(map, stepId)) {
+			delete map[stepId];
+		}
+		state.frontendStore.runtime.invalid_steps = map;
+	}
+
+	function findFirstInvalidFieldElement($app) {
+		var selectorsList = [
+			'.mp-cc-input.is-invalid',
+			'.mp-cc-select.is-invalid',
+			'.mp-cc-conditions-step__confirm.is-error input[type="checkbox"]',
+			'.mp-cc-date-step__helper.is-error'
+		];
+		var i;
+		for (i = 0; i < selectorsList.length; i += 1) {
+			var $el = $app.find(selectorsList[i]).first();
+			if ($el.length) {
+				return $el;
+			}
+		}
+		return $();
+	}
+
+	function scrollToFirstInvalidField($app) {
+		var $el = findFirstInvalidFieldElement($app);
+		if (!$el.length) {
+			return;
+		}
+		var node = $el.get(0);
+		if (node && typeof node.scrollIntoView === 'function') {
+			node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		}
+		if (node && typeof node.focus === 'function' && !$el.is('.mp-cc-date-step__helper')) {
+			try {
+				node.focus({ preventScroll: true });
+			} catch (e) {
+				node.focus();
+			}
+		}
+	}
+
+	function logValidationFailure(state, stepId, errorsMap) {
+		var cleanStep = String(stepId || '');
+		var errs = errorsMap && typeof errorsMap === 'object' ? errorsMap : {};
+		var keys = Object.keys(errs);
+		if (!cleanStep || !keys.length) {
+			return;
+		}
+		postCheckout('validation_log', {
+			context_id: state.flowContextId,
+			step_id: cleanStep,
+			errors: errs
+		});
 	}
 
 	function getContactFieldError(state, fieldKey) {
@@ -787,9 +1040,13 @@
 		var errLast = getContactFieldError(state, 'billing_last_name');
 		var errFirst = getContactFieldError(state, 'billing_first_name');
 		var errPat = getContactFieldError(state, 'billing_patronymic');
+		var errGender = getContactFieldError(state, 'billing_gender');
+		var errBirth = getContactFieldError(state, 'billing_birthdate');
+		var errNotes = getContactFieldError(state, 'order_notes');
 		var errEmail = getContactFieldError(state, 'billing_email');
 		var errPhone = getContactFieldError(state, 'billing_phone_national');
-		var order = Array.isArray(block.field_order) ? block.field_order : ['last_name', 'first_name', 'patronymic', 'email', 'phone'];
+		var vm = getStepFourValidationMessages();
+		var order = Array.isArray(block.field_order) ? block.field_order : ['last_name', 'first_name', 'patronymic', 'gender', 'birthdate', 'email', 'phone', 'order_notes'];
 		var seen = {};
 		var ordered = [];
 		var oi;
@@ -801,7 +1058,9 @@
 			seen[k] = true;
 			ordered.push(k);
 		}
-		var fallbackOrder = ['last_name', 'first_name', 'patronymic', 'email', 'phone'];
+		var fallbackOrder = ['last_name', 'first_name', 'patronymic', 'gender', 'birthdate', 'email', 'phone', 'order_notes'];
+		var genderOptions = getGenderOptions();
+		var notesCfg = getOrderNotesSettings();
 		for (oi = 0; oi < fallbackOrder.length; oi++) {
 			if (!seen[fallbackOrder[oi]]) {
 				ordered.push(fallbackOrder[oi]);
@@ -816,8 +1075,9 @@
 		var invalidStyle = trimNonEmpty(stateStyles.invalid_style) || 'default';
 		var hintStyle = trimNonEmpty(stateStyles.hint_style) || 'default';
 		var focusStyle = trimNonEmpty(stateStyles.focus_style) || 'default';
+		var disabledStyle = trimNonEmpty(stateStyles.disabled_style) || 'default';
 		var html = '';
-		html += '<section class="mp-cc-contact mp-cc-contact--invalid-' + escapeHtml(invalidStyle) + ' mp-cc-contact--hint-' + escapeHtml(hintStyle) + ' mp-cc-contact--focus-' + escapeHtml(focusStyle) + '" aria-labelledby="mp-cc-contact-title">';
+		html += '<section class="mp-cc-contact mp-cc-contact--invalid-' + escapeHtml(invalidStyle) + ' mp-cc-contact--hint-' + escapeHtml(hintStyle) + ' mp-cc-contact--focus-' + escapeHtml(focusStyle) + ' mp-cc-contact--disabled-' + escapeHtml(disabledStyle) + '" aria-labelledby="mp-cc-contact-title">';
 		html += '<header class="mp-cc-contact__header">';
 		html += '<h3 class="mp-cc-contact__title" id="mp-cc-contact-title">' + escapeHtml(title) + '</h3>';
 		if (intro) {
@@ -841,7 +1101,7 @@
 		html += errLast ? ' aria-invalid="true"' : '';
 		html += '/>';
 		if (errLast) {
-			html += '<p class="mp-cc-field-error" id="mp-cc-contact-last-name-err" role="alert">' + escapeHtml(getUiText('step_4.contact_error_required', 'Заполните это поле.')) + '</p>';
+			html += '<p class="mp-cc-field-error" id="mp-cc-contact-last-name-err" role="alert">' + escapeHtml(trimNonEmpty(vm.required) || getUiText('step_4.contact_error_required', 'Заполните это поле.')) + '</p>';
 		}
 		html += '</div>';
 				continue;
@@ -857,7 +1117,7 @@
 		html += errFirst ? ' aria-invalid="true"' : '';
 		html += '/>';
 		if (errFirst) {
-			html += '<p class="mp-cc-field-error" id="mp-cc-contact-first-name-err" role="alert">' + escapeHtml(getUiText('step_4.contact_error_required', 'Заполните это поле.')) + '</p>';
+			html += '<p class="mp-cc-field-error" id="mp-cc-contact-first-name-err" role="alert">' + escapeHtml(trimNonEmpty(vm.required) || getUiText('step_4.contact_error_required', 'Заполните это поле.')) + '</p>';
 		}
 		html += '</div>';
 				continue;
@@ -876,9 +1136,47 @@
 		html += '/>';
 		html += '<p class="mp-cc-field-hint" id="mp-cc-contact-patronymic-hint">' + escapeHtml(getContactHint('patronymic')) + '</p>';
 		if (errPat) {
-			html += '<p class="mp-cc-field-error" id="mp-cc-contact-patronymic-err" role="alert">' + escapeHtml(getUiText('step_4.contact_error_required', 'Заполните это поле.')) + '</p>';
+			html += '<p class="mp-cc-field-error" id="mp-cc-contact-patronymic-err" role="alert">' + escapeHtml(trimNonEmpty(vm.required) || getUiText('step_4.contact_error_required', 'Заполните это поле.')) + '</p>';
 		}
 		html += '</div>';
+				continue;
+			}
+			if (field === 'gender') {
+				html += '<div class="mp-cc-contact__field mp-cc-contact__field--span-1">';
+				html += '<label class="mp-cc-field-label" for="mp-cc-contact-gender">' + escapeHtml(getContactLabel('gender')) + '</label>';
+				html += '<select id="mp-cc-contact-gender" class="mp-cc-select' + (errGender ? ' is-invalid' : '') + '" data-contact-field="billing_gender"';
+				html += isContactFieldRequired('gender') ? ' aria-required="true"' : '';
+				html += errGender ? ' aria-invalid="true"' : '';
+				html += '>';
+				html += '<option value="">' + escapeHtml(genderOptions.placeholder) + '</option>';
+				html += '<option value="male"' + (String(contact.billing_gender || '') === 'male' ? ' selected' : '') + '>' + escapeHtml(genderOptions.male) + '</option>';
+				html += '<option value="female"' + (String(contact.billing_gender || '') === 'female' ? ' selected' : '') + '>' + escapeHtml(genderOptions.female) + '</option>';
+				html += '</select>';
+				if (trimNonEmpty(getContactHint('gender'))) {
+					html += '<p class="mp-cc-field-hint">' + escapeHtml(getContactHint('gender')) + '</p>';
+				}
+				if (errGender) {
+					html += '<p class="mp-cc-field-error" id="mp-cc-contact-gender-err" role="alert">' + escapeHtml(trimNonEmpty(vm.required) || getUiText('step_4.contact_error_required', 'Заполните это поле.')) + '</p>';
+				}
+				html += '</div>';
+				continue;
+			}
+			if (field === 'birthdate') {
+				html += '<div class="mp-cc-contact__field mp-cc-contact__field--span-1">';
+				html += '<label class="mp-cc-field-label" for="mp-cc-contact-birthdate">' + escapeHtml(getContactLabel('birthdate')) + '</label>';
+				html += '<input type="date" class="mp-cc-input' + (errBirth ? ' is-invalid' : '') + '" id="mp-cc-contact-birthdate" name="billing_birthdate" autocomplete="bday" ';
+				html += 'value="' + escapeHtml(String(contact.billing_birthdate || '')) + '" ';
+				html += 'data-contact-field="billing_birthdate"' + (isContactFieldRequired('birthdate') ? ' aria-required="true"' : '');
+				var pBirth = getContactPlaceholder('birthdate');
+				if (pBirth) { html += ' placeholder="' + escapeHtml(pBirth) + '"'; }
+				html += ' max="' + escapeHtml((new Date()).toISOString().slice(0, 10)) + '"';
+				html += errBirth ? ' aria-invalid="true"' : '';
+				html += '/>';
+				html += '<p class="mp-cc-field-hint" id="mp-cc-contact-birthdate-hint">' + escapeHtml(getContactHint('birthdate')) + '</p>';
+				if (errBirth) {
+					html += '<p class="mp-cc-field-error" id="mp-cc-contact-birthdate-err" role="alert">' + escapeHtml(getBirthdateErrorText(errBirth)) + '</p>';
+				}
+				html += '</div>';
 				continue;
 			}
 			if (field === 'email') {
@@ -894,7 +1192,7 @@
 		html += '/>';
 		html += '<p class="mp-cc-field-hint" id="mp-cc-contact-email-hint">' + escapeHtml(getContactHint('email')) + '</p>';
 		if (errEmail) {
-			html += '<p class="mp-cc-field-error" id="mp-cc-contact-email-err" role="alert">' + escapeHtml(errEmail === 'format' ? getUiText('step_4.contact_error_email', 'Введите корректный email.') : getUiText('step_4.contact_error_required', 'Заполните это поле.')) + '</p>';
+			html += '<p class="mp-cc-field-error" id="mp-cc-contact-email-err" role="alert">' + escapeHtml(errEmail === 'format' ? (trimNonEmpty(vm.email_invalid) || getUiText('step_4.contact_error_email', 'Введите корректный email.')) : (trimNonEmpty(vm.required) || getUiText('step_4.contact_error_required', 'Заполните это поле.'))) + '</p>';
 		}
 		html += '</div>';
 				continue;
@@ -935,7 +1233,10 @@
 		html += '</div>';
 		html += '<p class="mp-cc-field-hint" id="mp-cc-contact-phone-hint">' + escapeHtml(getContactHint('phone')) + '</p>';
 		if (errPhone) {
-			html += '<p class="mp-cc-field-error" id="mp-cc-contact-phone-err" role="alert">' + escapeHtml(getUiText('step_4.contact_error_phone', 'Введите номер полностью.')) + '</p>';
+			var phoneMsg = errPhone === 'required'
+				? (trimNonEmpty(vm.phone_required) || getUiText('step_4.contact_error_phone_required', 'Укажите номер телефона.'))
+				: (trimNonEmpty(vm.phone_format) || getUiText('step_4.contact_error_phone', 'Введите номер полностью.'));
+			html += '<p class="mp-cc-field-error" id="mp-cc-contact-phone-err" role="alert">' + escapeHtml(phoneMsg) + '</p>';
 		}
 		html += '</div>';
 			}
@@ -1010,7 +1311,7 @@
 				}
 				html += '</select>';
 				if (err) {
-					html += '<p class="mp-cc-field-error" id="mp-cc-address-country-err" role="alert">' + escapeHtml(getUiText('step_4.address_error_required', 'Заполните это поле.')) + '</p>';
+					html += '<p class="mp-cc-field-error" id="mp-cc-address-country-err" role="alert">' + escapeHtml(trimNonEmpty(vm.address_required) || getUiText('step_4.address_error_required', 'Заполните это поле.')) + '</p>';
 				}
 				html += '</div>';
 				continue;
@@ -1031,7 +1332,10 @@
 				}
 				html += '</select>';
 				if (err) {
-					html += '<p class="mp-cc-field-error" id="mp-cc-address-region-err" role="alert">' + escapeHtml(getUiText('step_4.address_error_required', 'Заполните это поле.')) + '</p>';
+					var regionMsg = err === 'region'
+						? (trimNonEmpty(vm.address_region) || getUiText('step_4.address_error_region', 'Выберите корректный регион.'))
+						: (trimNonEmpty(vm.address_required) || getUiText('step_4.address_error_required', 'Заполните это поле.'));
+					html += '<p class="mp-cc-field-error" id="mp-cc-address-region-err" role="alert">' + escapeHtml(regionMsg) + '</p>';
 				}
 				html += '</div>';
 				continue;
@@ -1060,7 +1364,9 @@
 					html += '/>';
 				}
 				if (err) {
-					var cityMsg = err === 'list' ? getUiText('step_4.address_error_city', 'Выберите населённый пункт из списка.') : getUiText('step_4.address_error_required', 'Заполните это поле.');
+					var cityMsg = err === 'city'
+						? (trimNonEmpty(vm.address_city) || getUiText('step_4.address_error_city', 'Выберите населённый пункт из списка.'))
+						: (trimNonEmpty(vm.address_required) || getUiText('step_4.address_error_required', 'Заполните это поле.'));
 					html += '<p class="mp-cc-field-error" id="mp-cc-address-city-err" role="alert">' + escapeHtml(cityMsg) + '</p>';
 				}
 				html += '</div>';
@@ -1075,7 +1381,7 @@
 				html += err ? ' aria-invalid="true"' : '';
 				html += '/>';
 				if (err) {
-					html += '<p class="mp-cc-field-error" id="mp-cc-address-line1-err" role="alert">' + escapeHtml(getUiText('step_4.address_error_required', 'Заполните это поле.')) + '</p>';
+					html += '<p class="mp-cc-field-error" id="mp-cc-address-line1-err" role="alert">' + escapeHtml(trimNonEmpty(vm.address_required) || getUiText('step_4.address_error_required', 'Заполните это поле.')) + '</p>';
 				}
 				html += '</div>';
 				continue;
@@ -1091,7 +1397,9 @@
 				continue;
 			}
 			if (key === 'postcode') {
-				var pcMsg = err === 'length' ? getUiText('step_4.address_error_postcode', 'Слишком длинный индекс.') : getUiText('step_4.address_error_required', 'Заполните это поле.');
+				var pcMsg = err === 'postcode'
+					? (trimNonEmpty(vm.address_postcode) || getUiText('step_4.address_error_postcode', 'Слишком длинный индекс.'))
+					: (trimNonEmpty(vm.address_required) || getUiText('step_4.address_error_required', 'Заполните это поле.'));
 				html += '<div class="mp-cc-address__field mp-cc-address__field--postcode">';
 				html += '<label class="mp-cc-field-label" for="mp-cc-address-postcode">' + escapeHtml(getAddressLabel('postcode')) + '</label>';
 				html += '<input type="text" class="mp-cc-input' + (err ? ' is-invalid' : '') + '" id="mp-cc-address-postcode" name="postcode" autocomplete="postal-code" inputmode="text" ';
@@ -1101,6 +1409,34 @@
 				html += '/>';
 				if (err) {
 					html += '<p class="mp-cc-field-error" id="mp-cc-address-postcode-err" role="alert">' + escapeHtml(pcMsg) + '</p>';
+				}
+				html += '</div>';
+				continue;
+			}
+			if (field === 'order_notes') {
+				var notesValue = String(contact.order_notes || '');
+				if (notesValue.length > notesCfg.maxLength) {
+					notesValue = notesValue.slice(0, notesCfg.maxLength);
+				}
+				var remain = notesCfg.maxLength - notesValue.length;
+				html += '<div class="mp-cc-contact__field mp-cc-contact__field--span-2">';
+				html += '<label class="mp-cc-field-label" for="mp-cc-contact-order-notes">' + escapeHtml(getContactLabel('order_notes')) + '</label>';
+				html += '<textarea class="mp-cc-input' + (errNotes ? ' is-invalid' : '') + '" id="mp-cc-contact-order-notes" name="order_notes" rows="4"';
+				html += ' data-contact-field="order_notes" maxlength="' + escapeHtml(String(notesCfg.maxLength)) + '"';
+				var pNotes = getContactPlaceholder('order_notes');
+				if (pNotes) { html += ' placeholder="' + escapeHtml(pNotes) + '"'; }
+				html += errNotes ? ' aria-invalid="true"' : '';
+				html += '>';
+				html += escapeHtml(notesValue);
+				html += '</textarea>';
+				if (trimNonEmpty(getContactHint('order_notes'))) {
+					html += '<p class="mp-cc-field-hint">' + escapeHtml(getContactHint('order_notes')) + '</p>';
+				}
+				if (notesCfg.showCounter) {
+					html += '<p class="mp-cc-field-hint" data-order-notes-counter="1">' + escapeHtml('Осталось символов: ' + String(remain)) + '</p>';
+				}
+				if (errNotes) {
+					html += '<p class="mp-cc-field-error" id="mp-cc-contact-order-notes-err" role="alert">' + escapeHtml(notesCfg.lengthErrorText) + '</p>';
 				}
 				html += '</div>';
 			}
@@ -1702,6 +2038,10 @@
 		var model = buildDateCalendarModel(state);
 		var style = getStepThreeCalendarStyle();
 		var weekdays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+		var formErrors = state.frontendStore && state.frontendStore.form && state.frontendStore.form.errors
+			? state.frontendStore.form.errors
+			: {};
+		var dateError = formErrors.date || '';
 		var html = '';
 		var i;
 
@@ -1757,7 +2097,11 @@
 		}
 		html += '</div>';
 		html += '</div>';
-		if (!model.hasAnyAvailable) {
+		if (dateError === 'required') {
+			html += '<p class="mp-cc-date-step__helper is-error" id="mp-cc-date-helper" role="alert">' + escapeHtml(getStepThreeErrorCopy('empty_date', 'Выберите дату, чтобы продолжить.')) + '</p>';
+		} else if (dateError === 'invalid') {
+			html += '<p class="mp-cc-date-step__helper is-error" id="mp-cc-date-helper" role="alert">' + escapeHtml(getStepThreeErrorCopy('invalid_date', 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.')) + '</p>';
+		} else if (!model.hasAnyAvailable) {
 			html += '<p class="mp-cc-date-step__helper" id="mp-cc-date-helper">' + escapeHtml(getStepThreeErrorCopy('invalid_date', 'Нет доступных дат. Выберите другой сценарий или свяжитесь с поддержкой.')) + '</p>';
 		} else {
 			html += '<p class="mp-cc-date-step__helper" id="mp-cc-date-helper">' + escapeHtml(model.helper) + '</p>';
@@ -2268,9 +2612,12 @@
 				if (code === 'conditions_unconfirmed') {
 					state.frontendStore.form.errors = state.frontendStore.form.errors || {};
 					state.frontendStore.form.errors.conditions_unconfirmed = true;
-					var msg = payload.message || getStepThreeErrorCopy('conditions_unconfirmed', 'Подтвердите ознакомление с условиями, чтобы продолжить.');
+					setStepInvalidState(state, 'conditions', true);
+					var vm = getStepFourValidationMessages();
+					var msg = payload.message || trimNonEmpty(vm.conditions_required) || getStepThreeErrorCopy('conditions_unconfirmed', 'Подтвердите ознакомление с условиями, чтобы продолжить.');
 					notify(msg, 'error');
 					render(state, $app);
+					scrollToFirstInvalidField($app);
 					document.dispatchEvent(
 						new CustomEvent('mp_cc_conditions_step_blocked', {
 							detail: { code: code, payload: payload }
@@ -2280,6 +2627,8 @@
 				}
 				if (xhr && xhr.status === 422) {
 					notify(payload.message || getUiText('common.error_generic', 'Произошла ошибка. Попробуйте ещё раз.'), 'error');
+				} else {
+					notify(getStepFourAjaxMessage('step_sync_failed', 'step_4.contact_ajax_step_sync_failed', 'Не удалось синхронизировать шаг. Обновите страницу.'), 'error');
 				}
 			});
 		});
@@ -2303,12 +2652,16 @@
 			if (state.currentStepId === 'contact_payment') {
 				ensureContactDefaults(state);
 				if (!validateContactPaymentStep(state)) {
+					setStepInvalidState(state, 'contact_payment', true);
+					logValidationFailure(state, 'contact_payment', state.frontendStore.form.errors ? state.frontendStore.form.errors.contact : {});
 					notify(getUiText('step_4.contact_error_required', 'Проверьте контактные данные.'), 'error');
 					render(state, $app);
+					scrollToFirstInvalidField($app);
 					return;
 				}
+				setStepInvalidState(state, 'contact_payment', false);
 				saveCurrentStepDraft(state).fail(function () {
-					notify(getUiText('common.error_generic', 'Не удалось сохранить данные.'), 'error');
+					notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
 				});
 			}
 			return;
@@ -2323,10 +2676,30 @@
 			var selectedDate = state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.date
 				? String(state.frontendStore.fulfillment.date.selected_date || '')
 				: '';
+			var parsedSelected = parseIsoDate(selectedDate);
 			if (!selectedDate) {
+				state.frontendStore.form.errors = state.frontendStore.form.errors || {};
+				state.frontendStore.form.errors.date = 'required';
+				setStepInvalidState(state, 'date', true);
+				logValidationFailure(state, 'date', { selected_date: 'required' });
 				notify(getStepThreeErrorCopy('empty_date', 'Выберите дату, чтобы продолжить.'), 'error');
+				render(state, $app);
+				scrollToFirstInvalidField($app);
 				return;
 			}
+			if (!parsedSelected) {
+				state.frontendStore.form.errors = state.frontendStore.form.errors || {};
+				state.frontendStore.form.errors.date = 'invalid';
+				setStepInvalidState(state, 'date', true);
+				logValidationFailure(state, 'date', { selected_date: 'invalid' });
+				notify(getStepThreeErrorCopy('invalid_date', 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.'), 'error');
+				render(state, $app);
+				scrollToFirstInvalidField($app);
+				return;
+			}
+			state.frontendStore.form.errors = state.frontendStore.form.errors || {};
+			state.frontendStore.form.errors.date = '';
+			setStepInvalidState(state, 'date', false);
 		}
 		if (state.currentStepId === 'conditions') {
 			var dateState = state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.date
@@ -2334,19 +2707,26 @@
 				: {};
 			if (!dateState.conditions_confirmed) {
 				state.frontendStore.form.errors.conditions_unconfirmed = true;
+				setStepInvalidState(state, 'conditions', true);
+				logValidationFailure(state, 'conditions', { conditions_confirmed: 'required' });
 				render(state, $app);
-				notify(getUiText('step_3.unconfirmed_error', 'Подтвердите ознакомление с условиями, чтобы продолжить.'), 'error');
+				var vm2 = getStepFourValidationMessages();
+				notify(trimNonEmpty(vm2.conditions_required) || getUiText('step_3.unconfirmed_error', 'Подтвердите ознакомление с условиями, чтобы продолжить.'), 'error');
+				scrollToFirstInvalidField($app);
 				return;
 			}
 			state.frontendStore.form.errors.conditions_unconfirmed = false;
+			setStepInvalidState(state, 'conditions', false);
 		}
 		requestForwardValidation(state.currentStepId).then(function (valid) {
 			if (!valid) {
 				setRuntimeFlag(state, 'blocked', true);
-				notify('Заполните обязательные поля текущего шага.', 'error');
+				var vm = getStepFourValidationMessages();
+				notify(trimNonEmpty(vm.step_blocked) || getUiText('step_4.contact_error_step_blocked', 'Заполните обязательные поля текущего шага.'), 'error');
 				return;
 			}
 			setRuntimeFlag(state, 'blocked', false);
+			setStepInvalidState(state, state.currentStepId, false);
 			setCurrentStep(state, $app, target.id);
 		});
 	}
@@ -2420,6 +2800,9 @@
 
 	function buildProgressHtml(state) {
 		var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
+		var invalidMap = state.frontendStore && state.frontendStore.runtime && state.frontendStore.runtime.invalid_steps
+			? state.frontendStore.runtime.invalid_steps
+			: {};
 		var html = '';
 		var i;
 
@@ -2435,6 +2818,9 @@
 			}
 			if (i < currentIndex) {
 				classes.push('is-complete');
+			}
+			if (invalidMap[step.id]) {
+				classes.push('is-invalid');
 			}
 
 			html += '<li class="' + classes.join(' ') + '">';
@@ -2843,10 +3229,12 @@
 			var fullName = [contact.billing_last_name, contact.billing_first_name, contact.billing_patronymic]
 				.filter(function (part) { return trimNonEmpty(part); })
 				.join(' ');
+			var gOpt = getGenderOptions();
+			var genderLabel = String(contact.billing_gender || '') === 'male' ? gOpt.male : (String(contact.billing_gender || '') === 'female' ? gOpt.female : '');
 			var contactAddress = [contact.country, contact.state, contact.city, contact.address_1, contact.address_2, contact.postcode]
 				.filter(function (part) { return trimNonEmpty(part); })
 				.join(', ');
-			var hasContactReview = trimNonEmpty(fullName) || trimNonEmpty(contact.billing_email) || trimNonEmpty(contact.billing_phone) || trimNonEmpty(contactAddress);
+			var hasContactReview = trimNonEmpty(fullName) || trimNonEmpty(genderLabel) || trimNonEmpty(contact.billing_birthdate) || trimNonEmpty(contact.billing_email) || trimNonEmpty(contact.billing_phone) || trimNonEmpty(contactAddress);
 			if (hasContactReview) {
 				html += '<div class="mp-cc-summary-card__scenario" data-final-review-contact="1">';
 				html += '<p class="mp-cc-summary-card__scenario-title"><strong>' + escapeHtml(getUiText('step_4.title', 'Контактные данные')) + '</strong></p>';
@@ -2858,6 +3246,12 @@
 				}
 				if (trimNonEmpty(contact.billing_phone)) {
 					html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(getUiText('step_4.contact_phone', 'Телефон')) + ':</strong> ' + escapeHtml(String(contact.billing_phone)) + '</p>';
+				}
+				if (trimNonEmpty(genderLabel)) {
+					html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(getUiText('step_4.contact_gender', 'Пол')) + ':</strong> ' + escapeHtml(genderLabel) + '</p>';
+				}
+				if (trimNonEmpty(contact.billing_birthdate)) {
+					html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(getUiText('step_4.contact_birthdate', 'Дата рождения')) + ':</strong> ' + escapeHtml(formatIsoDateForUi(String(contact.billing_birthdate))) + '</p>';
 				}
 				if (trimNonEmpty(contactAddress)) {
 					html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(getUiText('step_4.address_block_title', 'Адрес')) + ':</strong> ' + escapeHtml(contactAddress) + '</p>';
@@ -3145,6 +3539,9 @@
 				dateBox.calendar_month = monthKeyFromDate(parsed);
 			}
 			state.frontendStore.fulfillment.date = dateBox;
+			state.frontendStore.form.errors = state.frontendStore.form.errors || {};
+			state.frontendStore.form.errors.date = '';
+			setStepInvalidState(state, 'date', false);
 			render(state, $app);
 			postCheckout('session_set_answers', {
 				step_id: 'date',
@@ -3245,6 +3642,7 @@
 			dateBox.conditions_confirmed = isChecked;
 			state.frontendStore.fulfillment.date = dateBox;
 			state.frontendStore.form.errors.conditions_unconfirmed = false;
+			setStepInvalidState(state, 'conditions', false);
 			render(state, $app);
 			postCheckout('session_set_answers', {
 				step_id: 'conditions',
@@ -3261,19 +3659,33 @@
 				return;
 			}
 			var contact = state.frontendStore.form.contact || {};
-			contact[key] = $(this).val();
+			var val = $(this).val();
+			if (key === 'order_notes') {
+				var settings = getOrderNotesSettings();
+				val = String(val || '');
+				if (val.length > settings.maxLength) {
+					val = val.slice(0, settings.maxLength);
+					$(this).val(val);
+				}
+			}
+			contact[key] = val;
 			state.frontendStore.form.contact = contact;
 			if (state.frontendStore.form.errors && state.frontendStore.form.errors.contact) {
 				delete state.frontendStore.form.errors.contact[key];
 			}
 			contact.billing_phone = buildFullPhoneE164(contact);
+			if (key === 'order_notes') {
+				var cfgNotes = getOrderNotesSettings();
+				var remain = Math.max(0, cfgNotes.maxLength - String(val || '').length);
+				$app.find('[data-order-notes-counter="1"]').text('Осталось символов: ' + String(remain));
+			}
 			scheduleCurrentStepDraftSave(state, function () {
-				notify(getUiText('common.error_generic', 'Не удалось сохранить данные.'), 'error');
+				notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
 			});
 		}).on('blur', function () {
 			ensureContactDefaults(state);
 			saveCurrentStepDraft(state).fail(function () {
-				notify(getUiText('common.error_generic', 'Не удалось сохранить данные.'), 'error');
+				notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
 			});
 		});
 
@@ -3296,12 +3708,12 @@
 				delete state.frontendStore.form.errors.contact.billing_phone_national;
 			}
 			scheduleCurrentStepDraftSave(state, function () {
-				notify(getUiText('common.error_generic', 'Не удалось сохранить данные.'), 'error');
+				notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
 			});
 		}).on('blur', function () {
 			ensureContactDefaults(state);
 			saveCurrentStepDraft(state).fail(function () {
-				notify(getUiText('common.error_generic', 'Не удалось сохранить данные.'), 'error');
+				notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
 			});
 		});
 
@@ -3323,7 +3735,7 @@
 			}
 			render(state, $app);
 			saveCurrentStepDraft(state).fail(function () {
-				notify(getUiText('common.error_generic', 'Не удалось сохранить данные.'), 'error');
+				notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
 			});
 		});
 
@@ -3341,7 +3753,7 @@
 			}
 			render(state, $app);
 			saveCurrentStepDraft(state).fail(function () {
-				notify(getUiText('common.error_generic', 'Не удалось сохранить данные.'), 'error');
+				notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
 			});
 		});
 
@@ -3357,7 +3769,7 @@
 			}
 			render(state, $app);
 			saveCurrentStepDraft(state).fail(function () {
-				notify(getUiText('common.error_generic', 'Не удалось сохранить данные.'), 'error');
+				notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
 			});
 		});
 
@@ -3371,7 +3783,7 @@
 			}
 			render(state, $app);
 			saveCurrentStepDraft(state).fail(function () {
-				notify(getUiText('common.error_generic', 'Не удалось сохранить данные.'), 'error');
+				notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
 			});
 		});
 	}
@@ -3602,7 +4014,7 @@
 		render(state, $app);
 
 		syncStoreWithBackend(state, $app).fail(function () {
-			notify('Не удалось восстановить состояние checkout.', 'error');
+			notify(getStepFourAjaxMessage('step_sync_failed', 'step_4.contact_ajax_step_sync_failed', 'Не удалось синхронизировать шаг. Обновите страницу.'), 'error');
 		});
 
 		document.addEventListener('mp_cc_scenario_changed', function (event) {
@@ -3618,7 +4030,7 @@
 						return syncStoreWithBackend(state, $app);
 					}).fail(function (xhr) {
 						var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
-						notify(payload.message || 'Не удалось переключить сценарий.', 'error');
+						notify(payload.message || getStepFourAjaxMessage('scenario_sync_failed', 'step_4.contact_ajax_scenario_sync_failed', 'Не удалось сохранить выбор сценария.'), 'error');
 						document.dispatchEvent(
 							new CustomEvent('mp_cc_scenario_error', {
 								detail: { scenario: nextScenario, payload: payload }

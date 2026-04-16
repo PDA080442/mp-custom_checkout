@@ -153,6 +153,8 @@ final class OrderMetaHooks {
 
 		$custom_meta_map = array(
 			'_mp_cc_billing_patronymic'   => 'billing_patronymic',
+			'_mp_cc_gender'               => 'billing_gender',
+			'_mp_cc_billing_birthdate'    => 'billing_birthdate',
 			'_mp_cc_phone_country_iso'    => 'phone_country_iso',
 			'_mp_cc_phone_dial_code'      => 'phone_dial_code',
 			'_mp_cc_billing_phone_local'  => 'billing_phone_national',
@@ -176,6 +178,16 @@ final class OrderMetaHooks {
 				$order->delete_meta_data( $meta_key );
 			} else {
 				$order->update_meta_data( $meta_key, $value );
+			}
+		}
+
+		if ( array_key_exists( 'order_notes', $contact ) ) {
+			$note_value = sanitize_textarea_field( (string) $contact['order_notes'] );
+			$order->set_customer_note( $note_value );
+			if ( '' === $note_value ) {
+				$order->delete_meta_data( '_mp_cc_order_notes' );
+			} else {
+				$order->update_meta_data( '_mp_cc_order_notes', $note_value );
 			}
 		}
 	}

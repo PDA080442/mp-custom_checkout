@@ -303,8 +303,17 @@ final class EmailHooks {
 			return;
 		}
 		$lines = self::build_contact_lines_for_output( $order );
+		$gender = trim( (string) $order->get_meta( '_mp_cc_gender', true ) );
+		if ( 'male' === $gender ) {
+			$lines[] = __( 'Пол', 'mp-custom-checkout' ) . ': ' . __( 'Мужчина', 'mp-custom-checkout' );
+		} elseif ( 'female' === $gender ) {
+			$lines[] = __( 'Пол', 'mp-custom-checkout' ) . ': ' . __( 'Женщина', 'mp-custom-checkout' );
+		}
+		$order_note = trim( (string) $order->get_meta( '_mp_cc_order_notes', true ) );
 		if ( empty( $lines ) ) {
-			return;
+			if ( '' === $order_note ) {
+				return;
+			}
 		}
 
 		echo '<div class="mp-cc-order-contact-meta"><p><strong>' . esc_html__( 'Контактные данные', 'mp-custom-checkout' ) . '</strong></p><ul>';
@@ -312,6 +321,9 @@ final class EmailHooks {
 			echo '<li>' . esc_html( $line ) . '</li>';
 		}
 		echo '</ul></div>';
+		if ( '' !== $order_note ) {
+			echo '<div class="mp-cc-order-contact-meta"><p><strong>' . esc_html__( 'Примечание к заказу', 'mp-custom-checkout' ) . '</strong></p><p>' . nl2br( esc_html( $order_note ), false ) . '</p></div>';
+		}
 	}
 
 	/**
@@ -503,6 +515,12 @@ final class EmailHooks {
 
 		$email = trim( (string) $order->get_billing_email() );
 		$phone = trim( (string) $order->get_billing_phone() );
+		$birthdate_raw = trim( (string) $order->get_meta( '_mp_cc_billing_birthdate', true ) );
+		$birthdate = $birthdate_raw;
+		$birth_dt = \DateTimeImmutable::createFromFormat( 'Y-m-d', $birthdate_raw, wp_timezone() );
+		if ( $birth_dt instanceof \DateTimeImmutable ) {
+			$birthdate = $birth_dt->format( 'd.m.Y' );
+		}
 
 		$address_parts = array_filter(
 			array(
@@ -528,6 +546,9 @@ final class EmailHooks {
 		}
 		if ( '' !== $phone ) {
 			$lines[] = __( 'Телефон', 'mp-custom-checkout' ) . ': ' . $phone;
+		}
+		if ( '' !== $birthdate ) {
+			$lines[] = __( 'Дата рождения', 'mp-custom-checkout' ) . ': ' . $birthdate;
 		}
 		if ( '' !== $address ) {
 			$lines[] = __( 'Адрес', 'mp-custom-checkout' ) . ': ' . $address;

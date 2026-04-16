@@ -176,6 +176,37 @@ final class CheckoutAjaxHooks {
 			);
 		}
 
+		if ( 'validation_log' === $sub_action ) {
+			$step_id = isset( $_POST['step_id'] ) ? sanitize_key( wp_unslash( $_POST['step_id'] ) ) : '';
+			$errors  = isset( $_POST['errors'] ) && is_array( $_POST['errors'] )
+				? wp_unslash( $_POST['errors'] )
+				: array();
+			$clean_errors = array();
+			foreach ( $errors as $field => $reason ) {
+				$key = sanitize_key( (string) $field );
+				if ( '' === $key ) {
+					continue;
+				}
+				$clean_errors[ $key ] = sanitize_key( (string) $reason );
+			}
+			do_action(
+				'mp_custom_checkout_log',
+				'warning',
+				'[validation] step_failed',
+				array(
+					'step_id'    => $step_id,
+					'errors'     => $clean_errors,
+					'context_id' => isset( $_POST['context_id'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['context_id'] ) ) : '',
+				)
+			);
+			wp_send_json_success(
+				array(
+					'sub_action' => $sub_action,
+					'logged'     => true,
+				)
+			);
+		}
+
 		if ( 'update_quantity' === $sub_action ) {
 			self::handle_update_quantity();
 		}
@@ -200,7 +231,7 @@ final class CheckoutAjaxHooks {
 	private static function is_session_sub_action( string $sub_action ): bool {
 		return in_array(
 			$sub_action,
-			array( 'session_set_step', 'session_set_answers', 'session_set_scenario', 'session_get_state', 'session_abandon', 'update_quantity', 'remove_item' ),
+			array( 'session_set_step', 'session_set_answers', 'session_set_scenario', 'session_get_state', 'session_abandon', 'update_quantity', 'remove_item', 'validation_log' ),
 			true
 		);
 	}
