@@ -500,6 +500,52 @@ final class SafeSettingsResolver {
 				);
 				continue;
 			}
+			if ( OptionKeys::SECTION_SERVICE === $section_key ) {
+				$tree[ $section_key ] = array(
+					'testing_mode_toggle' => true,
+					'testing_scenarios'   => array(
+						'default_sandbox' => 'pickup_happy_path',
+						'step_scenarios'  => array(
+							'step_1' => 'cart_review',
+							'step_2' => 'date_available',
+							'step_3' => 'conditions_pickup',
+							'step_4' => 'payment_success',
+						),
+					),
+					'test_utilities'      => array(
+						'fulfillment' => array(
+							'pickup'               => true,
+							'krasnoyarsk_delivery' => true,
+							'other_city_delivery'  => true,
+						),
+						'discounts'   => array(
+							'coupon_success'    => true,
+							'coupon_rejected'   => true,
+							'gift_card_success' => true,
+							'gift_card_rejected'=> true,
+						),
+						'validation_payment' => array(
+							'show_validation_errors' => true,
+							'show_payment_loading'   => true,
+							'show_payment_error'     => true,
+							'show_payment_success'   => true,
+						),
+					),
+					'health_checks'       => array(
+						'enabled' => true,
+					),
+				);
+				continue;
+			}
+			if ( OptionKeys::SECTION_LOGS === $section_key ) {
+				$tree[ $section_key ] = array(
+					'export_enabled'        => true,
+					'clear_enabled'         => true,
+					'critical_only_default' => false,
+					'max_records_ui'        => 200,
+				);
+				continue;
+			}
 
 			$tree[ $section_key ] = array();
 		}
