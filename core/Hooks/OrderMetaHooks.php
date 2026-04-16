@@ -180,6 +180,16 @@ final class OrderMetaHooks {
 				$order->update_meta_data( $meta_key, $value );
 			}
 		}
+
+		if ( array_key_exists( 'order_notes', $contact ) ) {
+			$note_value = sanitize_textarea_field( (string) $contact['order_notes'] );
+			$order->set_customer_note( $note_value );
+			if ( '' === $note_value ) {
+				$order->delete_meta_data( '_mp_cc_order_notes' );
+			} else {
+				$order->update_meta_data( '_mp_cc_order_notes', $note_value );
+			}
+		}
 	}
 
 	/**
