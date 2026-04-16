@@ -212,6 +212,147 @@ final class SafeSettingsResolver {
 				);
 				continue;
 			}
+			if ( OptionKeys::SECTION_STEP_4 === $section_key ) {
+				$tree[ $section_key ] = array(
+					'contact_block' => array(
+						'title'               => 'Контактные данные',
+						'intro'               => 'Укажите данные для связи и оформления заказа.',
+						'patronymic_required' => false,
+						'field_order'         => array( 'last_name', 'first_name', 'patronymic', 'email', 'phone' ),
+						'field_visibility'    => array(
+							'last_name'  => true,
+							'first_name' => true,
+							'patronymic' => true,
+							'email'      => true,
+							'phone'      => true,
+						),
+						'field_required'      => array(
+							'last_name'  => true,
+							'first_name' => true,
+							'patronymic' => false,
+							'email'      => true,
+							'phone'      => true,
+						),
+						'placeholders'        => array(
+							'last_name'  => '',
+							'first_name' => '',
+							'patronymic' => '',
+							'email'      => '',
+							'phone'      => '',
+						),
+						'labels'              => array(
+							'last_name'    => 'Фамилия',
+							'first_name'   => 'Имя',
+							'patronymic'   => 'Отчество',
+							'email'        => 'Email',
+							'phone'        => 'Телефон',
+							'country_code' => 'Код страны',
+						),
+						'hints'               => array(
+							'email'      => 'На этот адрес отправим подтверждение заказа.',
+							'phone'      => 'Введите номер без кода страны — он выбран слева.',
+							'patronymic' => 'Укажите при наличии.',
+						),
+						'phone_country_codes' => array(
+							array(
+								'dial'             => '+7',
+								'iso'              => 'RU',
+								'national_digits'  => 10,
+							),
+							array(
+								'dial'             => '+7',
+								'iso'              => 'KZ',
+								'national_digits'  => 10,
+							),
+							array(
+								'dial'             => '+375',
+								'iso'              => 'BY',
+								'national_digits'  => 9,
+							),
+						),
+						'default_phone_country_iso' => 'RU',
+						'layout'              => array(
+							'desktop_columns' => 3,
+							'tablet_columns'  => 2,
+							'mobile_columns'  => 1,
+							'grid_gap'        => '0.75rem 1rem',
+						),
+						'field_state_styles'  => array(
+							'invalid_style' => 'default',
+							'hint_style'    => 'default',
+							'focus_style'   => 'default',
+						),
+					),
+					'address_block' => array(
+						'title'               => 'Адрес доставки',
+						'intro'               => 'Укажите адрес, чтобы мы могли доставить заказ.',
+						'default_country'     => 'RU',
+						'subfields_order'     => array( 'country', 'state', 'city', 'address_1', 'address_2', 'postcode' ),
+						'subfields_visible'   => array(
+							'country'    => true,
+							'state'      => true,
+							'city'       => true,
+							'address_1'  => true,
+							'address_2'  => true,
+							'postcode'   => true,
+						),
+						'postcode_max_length' => 16,
+						'labels'              => array(
+							'country'   => 'Страна',
+							'state'     => 'Регион',
+							'city'      => 'Населённый пункт',
+							'address_1' => 'Улица, дом',
+							'address_2' => 'Квартира, офис',
+							'postcode'  => 'Почтовый индекс',
+						),
+					),
+					'address_geo' => array(
+						'RU' => array(
+							'label'   => 'Россия',
+							'regions' => array(
+								'KRA' => array(
+									'label'        => 'Красноярский край',
+									'settlements'  => array( 'Красноярск', 'Норильск', 'Ачинск' ),
+								),
+								'MOW' => array(
+									'label'        => 'Москва',
+									'settlements'  => array( 'Москва' ),
+								),
+								'SPE' => array(
+									'label'        => 'Санкт-Петербург',
+									'settlements'  => array( 'Санкт-Петербург' ),
+								),
+							),
+						),
+						'KZ' => array(
+							'label'   => 'Казахстан',
+							'regions' => array(
+								'ALA' => array(
+									'label'        => 'Алматы',
+									'settlements'  => array( 'Алматы' ),
+								),
+								'AST' => array(
+									'label'        => 'Астана',
+									'settlements'  => array( 'Астана' ),
+								),
+							),
+						),
+						'BY' => array(
+							'label'   => 'Беларусь',
+							'regions' => array(
+								'MINSK' => array(
+									'label'        => 'Минская область',
+									'settlements'  => array( 'Минск', 'Борисов' ),
+								),
+							),
+						),
+					),
+					'geo_preview' => array(
+						'enabled' => true,
+					),
+				);
+				continue;
+			}
 			if ( OptionKeys::SECTION_PICKUP === $section_key ) {
 				$tree[ $section_key ] = array(
 					'enable_point_selection' => false,
