@@ -886,6 +886,27 @@
 		return normalized;
 	}
 
+	function getSelectedGatewayTitle(state) {
+		var selected = trimNonEmpty(state && state.frontendStore && state.frontendStore.payment ? state.frontendStore.payment.gateway : '');
+		if (!selected) {
+			return '';
+		}
+		var gateways = getAvailablePaymentGateways();
+		for (var i = 0; i < gateways.length; i += 1) {
+			if (String(gateways[i].id) === selected) {
+				return String(gateways[i].title || selected);
+			}
+		}
+		return selected;
+	}
+
+	function resetPrePaymentConfirm(state) {
+		if (!state || !state.frontendStore || !state.frontendStore.runtime) {
+			return;
+		}
+		state.frontendStore.runtime.prePaymentConfirm = false;
+	}
+
 	function maybeSendGatewayRenderDiagnostics(state, issues) {
 		var cfg = getStepFourConfig();
 		var pb = cfg.payment_block && typeof cfg.payment_block === 'object' ? cfg.payment_block : {};
@@ -2586,7 +2607,8 @@ function buildGiftCardBlockHtml(state) {
 				blocked: false,
 				dirty: false,
 				lastSyncAt: Date.now(),
-				summaryHydrated: false
+				summaryHydrated: false,
+				prePaymentConfirm: false
 			},
 			meta: {
 				contextId: flow.context_id || '',
@@ -2945,6 +2967,9 @@ function buildGiftCardBlockHtml(state) {
 				}
 				state.currentStepId = targetStepId;
 				state.frontendStore.steps.current = targetStepId;
+				if (targetStepId !== 'contact_payment') {
+					resetPrePaymentConfirm(state);
+				}
 				state.maxReachedIndex = Math.max(state.maxReachedIndex, targetIndex);
 				setRuntimeFlag(state, 'blocked', false);
 				render(state, $app);
@@ -2995,6 +3020,7 @@ function buildGiftCardBlockHtml(state) {
 			return;
 		}
 		var target = state.visibleSteps[currentIndex - 1];
+		resetPrePaymentConfirm(state);
 		setCurrentStep(state, $app, target.id);
 	}
 
@@ -3018,6 +3044,22 @@ function buildGiftCardBlockHtml(state) {
 				saveCurrentStepDraft(state).fail(function () {
 					notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
 				});
+				state.frontendStore.runtime = state.frontendStore.runtime || {};
+				if (!state.frontendStore.runtime.prePaymentConfirm) {
+					state.frontendStore.runtime.prePaymentConfirm = true;
+					notify(getUiText('order_review.pre_payment_state', 'Проверьте финальный review перед запуском оплаты.'), 'info');
+					render(state, $app);
+					return;
+				}
+				document.dispatchEvent(
+					new CustomEvent('mp_cc_pre_payment_confirmed', {
+						detail: {
+							context_id: state.flowContextId,
+							payment_gateway: state.frontendStore && state.frontendStore.payment ? state.frontendStore.payment.gateway : ''
+						}
+					})
+				);
+				notify(getUiText('order_review.payment_redirect', 'Финальная проверка пройдена. Можно запускать оплату.'), 'info');
 			}
 			return;
 		}
@@ -3082,6 +3124,7 @@ function buildGiftCardBlockHtml(state) {
 			}
 			setRuntimeFlag(state, 'blocked', false);
 			setStepInvalidState(state, state.currentStepId, false);
+			resetPrePaymentConfirm(state);
 			setCurrentStep(state, $app, target.id);
 		});
 	}
@@ -3531,17 +3574,28 @@ function buildGiftCardBlockHtml(state) {
 		var nextLabel = getUiText('common.next', 'Next');
 		var payLabel = getUiText('common.pay', 'Proceed to payment');
 		var confirmLabel = getUiText('common.confirm', 'Confirm');
+		var reviewLabel = getUiText('order_review.pre_payment_cta', 'Проверить перед оплатой');
 		var currentStepId = state.currentStepId || '';
 		var nextText = nextLabel;
+		var isPreReviewPending = false;
 		if (isLast && currentStepId === 'contact_payment') {
-			nextText = state.frontendStore && state.frontendStore.payment && state.frontendStore.payment.gateway ? confirmLabel : payLabel;
+			var preConfirm = !!(state.frontendStore && state.frontendStore.runtime && state.frontendStore.runtime.prePaymentConfirm);
+			if (!preConfirm) {
+				nextText = reviewLabel;
+				isPreReviewPending = true;
+			} else {
+				nextText = state.frontendStore && state.frontendStore.payment && state.frontendStore.payment.gateway ? confirmLabel : payLabel;
+			}
 		}
 		var html = '';
 
 		html += '<nav class="mp-cc-nav" aria-label="Step navigation">';
 		html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--back" data-nav="back"' + (isFirst || isLoading ? ' disabled' : '') + '>' + escapeHtml(backLabel) + '</button>';
-		html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--next" data-nav="next"' + (isLoading || isCartEmpty ? ' disabled' : '') + '>' + escapeHtml(nextText) + '</button>';
+		html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--next' + (isPreReviewPending ? ' mp-cc-nav__btn--review' : '') + '" data-nav="next"' + (isLoading || isCartEmpty ? ' disabled' : '') + '>' + escapeHtml(nextText) + '</button>';
 		html += '</nav>';
+		if (isPreReviewPending) {
+			html += '<p class="mp-cc-nav__review-mode" role="status" aria-live="polite">' + escapeHtml(getUiText('order_review.pre_payment_mode', 'Режим проверки: перед оплатой подтвердите данные на экране справа.')) + '</p>';
+		}
 		if (isDirty) {
 			html += '<p class="mp-cc-nav__dirty" role="status" aria-live="polite">' + escapeHtml('Unsaved changes') + '</p>';
 		}
@@ -3569,6 +3623,11 @@ function buildGiftCardBlockHtml(state) {
 		var couponLines = Array.isArray(cartSummary.coupon_lines) ? cartSummary.coupon_lines : [];
 		var giftCardCodes = Array.isArray(cartSummary.applied_gift_cards) ? cartSummary.applied_gift_cards : [];
 		var giftCardTotal = String(cartSummary.gift_card_total || '');
+		var shippingText = String(cartSummary.shipping || '');
+		var taxText = String(cartSummary.tax || '');
+		var gatewayTitle = getSelectedGatewayTitle(state);
+		var cartItems = state.frontendStore && state.frontendStore.cart && Array.isArray(state.frontendStore.cart.items) ? state.frontendStore.cart.items : [];
+		var prePaymentConfirm = !!(runtime.prePaymentConfirm);
 		var pickupPoint = state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.scenarioData
 			? (state.frontendStore.fulfillment.scenarioData.pickup_point || null)
 			: null;
@@ -3593,6 +3652,14 @@ function buildGiftCardBlockHtml(state) {
 			html += '</div>';
 		}
 		if (state.currentStepId === 'contact_payment') {
+			html += '<div class="mp-cc-summary-card__scenario mp-cc-summary-card__scenario--final-review" data-final-review-block="1">';
+			html += '<p class="mp-cc-summary-card__scenario-title"><strong>' + escapeHtml(getUiText('order_review.final_review_title', 'Финальный review перед оплатой')) + '</strong></p>';
+			if (prePaymentConfirm) {
+				html += '<p class="mp-cc-summary-card__scenario-meta mp-cc-summary-card__scenario-meta--ok">' + escapeHtml(getUiText('order_review.pre_payment_ready', 'Проверка завершена, можно запускать оплату.')) + '</p>';
+			} else {
+				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(getUiText('order_review.pre_payment_hint', 'Проверьте данные и нажмите кнопку подтверждения ещё раз.')) + '</p>';
+			}
+			html += '</div>';
 			var contact = state.frontendStore && state.frontendStore.form ? (state.frontendStore.form.contact || {}) : {};
 			var fullName = [contact.billing_last_name, contact.billing_first_name, contact.billing_patronymic]
 				.filter(function (part) { return trimNonEmpty(part); })
@@ -3636,6 +3703,42 @@ function buildGiftCardBlockHtml(state) {
 				if (giftCardCodes.length) {
 					html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml('Подарочная карта ' + giftCardCodes.join(', ')) + ': ' + escapeHtml(giftCardTotal || '—') + '</p>';
 				}
+				html += '</div>';
+			}
+			if (cartItems.length) {
+				html += '<div class="mp-cc-summary-card__scenario" data-final-review-cart="1">';
+				html += '<p class="mp-cc-summary-card__scenario-title"><strong>' + escapeHtml(getUiText('order_review.items', 'Состав заказа')) + '</strong></p>';
+				for (var ci = 0; ci < cartItems.length; ci += 1) {
+					var item = cartItems[ci] || {};
+					var rowTitle = String(item.name || getUiText('step_1.title', 'Товар'));
+					var rowQty = Number(item.quantity || 0);
+					var rowSubtotal = String(item.line_subtotal || '');
+					html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(rowTitle) + ' × ' + escapeHtml(String(rowQty)) + (rowSubtotal ? ' — ' + escapeHtml(rowSubtotal) : '') + '</p>';
+				}
+				html += '</div>';
+			}
+			html += '<div class="mp-cc-summary-card__scenario" data-final-review-financials="1">';
+			html += '<p class="mp-cc-summary-card__scenario-title"><strong>' + escapeHtml(getUiText('order_review.financial', 'Итоги')) + '</strong></p>';
+			if (trimNonEmpty(subtotalText)) {
+				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(getUiText('step_1.subtotal', 'Подытог')) + ': ' + escapeHtml(subtotalText) + '</p>';
+			}
+			if (trimNonEmpty(cartSummary.discount)) {
+				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(getUiText('order_review.discount', 'Скидка')) + ': ' + escapeHtml(String(cartSummary.discount)) + '</p>';
+			}
+			if (trimNonEmpty(shippingText)) {
+				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(getUiText('order_review.shipping', 'Доставка')) + ': ' + escapeHtml(shippingText) + '</p>';
+			}
+			if (trimNonEmpty(taxText)) {
+				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(getUiText('order_review.tax', 'Налоги')) + ': ' + escapeHtml(taxText) + '</p>';
+			}
+			if (trimNonEmpty(totalText)) {
+				html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(getUiText('order_review.total', 'Итого')) + ':</strong> ' + escapeHtml(totalText) + '</p>';
+			}
+			html += '</div>';
+			if (trimNonEmpty(gatewayTitle)) {
+				html += '<div class="mp-cc-summary-card__scenario" data-final-review-gateway="1">';
+				html += '<p class="mp-cc-summary-card__scenario-title"><strong>' + escapeHtml(getUiText('step_4.payment_title', 'Способ оплаты')) + '</strong></p>';
+				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(gatewayTitle) + '</p>';
 				html += '</div>';
 			}
 		}
@@ -4050,6 +4153,7 @@ function buildGiftCardBlockHtml(state) {
 				}
 			}
 			contact[key] = val;
+			resetPrePaymentConfirm(state);
 			state.frontendStore.form.contact = contact;
 			if (state.frontendStore.form.errors && state.frontendStore.form.errors.contact) {
 				delete state.frontendStore.form.errors.contact[key];
@@ -4106,6 +4210,7 @@ function buildGiftCardBlockHtml(state) {
 			state.frontendStore.payment = state.frontendStore.payment || { gateway: '', state: 'idle' };
 			state.frontendStore.payment.gateway = gateway;
 			state.frontendStore.payment.state = 'syncing';
+			resetPrePaymentConfirm(state);
 			state.frontendStore.form.contact = state.frontendStore.form.contact || {};
 			state.frontendStore.form.contact.payment_gateway = gateway;
 			state.frontendStore.form.contact.gateway = gateway;

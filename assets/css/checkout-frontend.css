@@ -1064,6 +1064,15 @@
 	background: #2a2a2a;
 }
 
+.mp-cc-nav__btn--review {
+	background: #1d4ed8;
+	border-color: #1d4ed8;
+}
+
+.mp-cc-nav__btn--review:hover:not([disabled]) {
+	background: #1e40af;
+}
+
 .mp-cc-nav__btn[disabled] {
 	opacity: 0.55;
 	cursor: not-allowed;
@@ -1074,6 +1083,13 @@
 	margin: 0.5rem 0 0;
 	font-size: 0.875rem;
 	color: #8b5e00;
+}
+
+.mp-cc-nav__review-mode {
+	margin: 0.5rem 0 0;
+	font-size: 0.84rem;
+	font-weight: 600;
+	color: #1e40af;
 }
 
 .mp-cc-checkout__app.is-nav-lock {
@@ -1175,6 +1191,18 @@
 	color: var(--mp-cc-color-text-muted);
 }
 
+.mp-cc-summary-card__scenario--final-review {
+	background: color-mix(in srgb, var(--mp-cc-color-accent) 8%, #fff);
+	border: 1px solid color-mix(in srgb, var(--mp-cc-color-accent) 20%, var(--mp-cc-color-border));
+	border-radius: var(--mp-cc-radius-sm);
+	padding: 0.6rem 0.7rem;
+}
+
+.mp-cc-summary-card__scenario-meta--ok {
+	color: #15803d;
+	font-weight: 600;
+}
+
 .mp-cc-summary-card__conditions {
 	margin-top: 0.65rem;
 	padding-top: 0.65rem;
@@ -1223,6 +1251,11 @@
 
 	#mp-cc-checkout.mp-cc-step1-hide-media-mobile .mp-cc-cart-item__media {
 		display: none;
+	}
+
+	.mp-cc-summary-card__scenario-title,
+	.mp-cc-summary-card__scenario-meta {
+		font-size: 0.82rem;
 	}
 }
 

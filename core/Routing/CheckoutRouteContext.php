@@ -91,6 +91,8 @@ final class CheckoutRouteContext {
 			'summary'  => array(
 				'items_count' => 0,
 				'subtotal'    => '',
+				'shipping'    => '',
+				'tax'         => '',
 				'total'       => '',
 				'discount'    => '',
 				'applied_coupons' => array(),
@@ -162,6 +164,9 @@ final class CheckoutRouteContext {
 
 		$result['summary']['items_count'] = (int) $cart->get_cart_contents_count();
 		$result['summary']['subtotal']    = (string) $cart->get_cart_subtotal();
+		$shipping_total                   = (float) $cart->get_shipping_total() + (float) $cart->get_shipping_tax();
+		$result['summary']['shipping']    = $shipping_total > 0 ? (string) wc_price( $shipping_total ) : (string) wc_price( 0 );
+		$result['summary']['tax']         = (string) wc_price( (float) $cart->get_total_tax() );
 		$result['summary']['total']       = (string) wc_price( (float) $cart->get_total( 'edit' ) );
 		$result['summary']['discount']    = (string) wc_price( (float) $cart->get_discount_total() );
 		$result['summary']['applied_coupons'] = array_values( $cart->get_applied_coupons() );
