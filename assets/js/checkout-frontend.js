@@ -807,8 +807,11 @@
 		var meta = findPhoneCountryMeta(codes, contact.phone_country_iso);
 		var digits = String(contact.billing_phone_national || '').replace(/\D/g, '');
 		var need = meta.national_digits || 10;
-		if (isContactFieldVisible('phone') && isContactFieldRequired('phone') && digits.length !== need) {
-			errors.billing_phone_national = 'incomplete';
+		if (isContactFieldVisible('phone') && isContactFieldRequired('phone') && !digits.length) {
+			errors.billing_phone_national = 'required';
+			ok = false;
+		} else if (isContactFieldVisible('phone') && isContactFieldRequired('phone') && digits.length !== need) {
+			errors.billing_phone_national = 'format';
 			ok = false;
 		}
 		var addrVis = contact.__address_visibility;
@@ -839,7 +842,13 @@
 					continue;
 				}
 				if (ak === 'state') {
-					if (!trimNonEmpty(contact.state)) {
+					var stateVal = trimNonEmpty(contact.state);
+					var regions = getRegionsForCountry(geo, contact.country);
+					var requiresKnownRegion = regions.length > 0;
+					if (!stateVal) {
+						errors.state = 'required';
+						ok = false;
+					} else if (requiresKnownRegion && regions.indexOf(stateVal) < 0) {
 						errors.state = 'required';
 						ok = false;
 					}
@@ -886,6 +895,70 @@
 		state.frontendStore.form.errors = state.frontendStore.form.errors || {};
 		state.frontendStore.form.errors.contact = ok ? {} : errors;
 		return ok;
+	}
+
+	function setStepInvalidState(state, stepId, isInvalid) {
+		if (!state || !state.frontendStore || !state.frontendStore.runtime || !stepId) {
+			return;
+		}
+		var map = state.frontendStore.runtime.invalid_steps && typeof state.frontendStore.runtime.invalid_steps === 'object'
+			? state.frontendStore.runtime.invalid_steps
+			: {};
+		if (isInvalid) {
+			map[stepId] = true;
+		} else if (Object.prototype.hasOwnProperty.call(map, stepId)) {
+			delete map[stepId];
+		}
+		state.frontendStore.runtime.invalid_steps = map;
+	}
+
+	function findFirstInvalidFieldElement($app) {
+		var selectorsList = [
+			'.mp-cc-input.is-invalid',
+			'.mp-cc-select.is-invalid',
+			'.mp-cc-conditions-step__confirm.is-error input[type="checkbox"]',
+			'.mp-cc-date-step__helper.is-error'
+		];
+		var i;
+		for (i = 0; i < selectorsList.length; i += 1) {
+			var $el = $app.find(selectorsList[i]).first();
+			if ($el.length) {
+				return $el;
+			}
+		}
+		return $();
+	}
+
+	function scrollToFirstInvalidField($app) {
+		var $el = findFirstInvalidFieldElement($app);
+		if (!$el.length) {
+			return;
+		}
+		var node = $el.get(0);
+		if (node && typeof node.scrollIntoView === 'function') {
+			node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		}
+		if (node && typeof node.focus === 'function' && !$el.is('.mp-cc-date-step__helper')) {
+			try {
+				node.focus({ preventScroll: true });
+			} catch (e) {
+				node.focus();
+			}
+		}
+	}
+
+	function logValidationFailure(state, stepId, errorsMap) {
+		var cleanStep = String(stepId || '');
+		var errs = errorsMap && typeof errorsMap === 'object' ? errorsMap : {};
+		var keys = Object.keys(errs);
+		if (!cleanStep || !keys.length) {
+			return;
+		}
+		postCheckout('validation_log', {
+			context_id: state.flowContextId,
+			step_id: cleanStep,
+			errors: errs
+		});
 	}
 
 	function getContactFieldError(state, fieldKey) {
@@ -1100,7 +1173,10 @@
 		html += '</div>';
 		html += '<p class="mp-cc-field-hint" id="mp-cc-contact-phone-hint">' + escapeHtml(getContactHint('phone')) + '</p>';
 		if (errPhone) {
-			html += '<p class="mp-cc-field-error" id="mp-cc-contact-phone-err" role="alert">' + escapeHtml(getUiText('step_4.contact_error_phone', 'Введите номер полностью.')) + '</p>';
+			var phoneMsg = errPhone === 'required'
+				? getUiText('step_4.contact_error_required', 'Заполните это поле.')
+				: getUiText('step_4.contact_error_phone', 'Введите номер полностью.');
+			html += '<p class="mp-cc-field-error" id="mp-cc-contact-phone-err" role="alert">' + escapeHtml(phoneMsg) + '</p>';
 		}
 		html += '</div>';
 			}
@@ -1895,6 +1971,10 @@
 		var model = buildDateCalendarModel(state);
 		var style = getStepThreeCalendarStyle();
 		var weekdays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+		var formErrors = state.frontendStore && state.frontendStore.form && state.frontendStore.form.errors
+			? state.frontendStore.form.errors
+			: {};
+		var dateError = formErrors.date || '';
 		var html = '';
 		var i;
 
@@ -1950,7 +2030,11 @@
 		}
 		html += '</div>';
 		html += '</div>';
-		if (!model.hasAnyAvailable) {
+		if (dateError === 'required') {
+			html += '<p class="mp-cc-date-step__helper is-error" id="mp-cc-date-helper" role="alert">' + escapeHtml(getStepThreeErrorCopy('empty_date', 'Выберите дату, чтобы продолжить.')) + '</p>';
+		} else if (dateError === 'invalid') {
+			html += '<p class="mp-cc-date-step__helper is-error" id="mp-cc-date-helper" role="alert">' + escapeHtml(getStepThreeErrorCopy('invalid_date', 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.')) + '</p>';
+		} else if (!model.hasAnyAvailable) {
 			html += '<p class="mp-cc-date-step__helper" id="mp-cc-date-helper">' + escapeHtml(getStepThreeErrorCopy('invalid_date', 'Нет доступных дат. Выберите другой сценарий или свяжитесь с поддержкой.')) + '</p>';
 		} else {
 			html += '<p class="mp-cc-date-step__helper" id="mp-cc-date-helper">' + escapeHtml(model.helper) + '</p>';
@@ -2461,9 +2545,11 @@
 				if (code === 'conditions_unconfirmed') {
 					state.frontendStore.form.errors = state.frontendStore.form.errors || {};
 					state.frontendStore.form.errors.conditions_unconfirmed = true;
+					setStepInvalidState(state, 'conditions', true);
 					var msg = payload.message || getStepThreeErrorCopy('conditions_unconfirmed', 'Подтвердите ознакомление с условиями, чтобы продолжить.');
 					notify(msg, 'error');
 					render(state, $app);
+					scrollToFirstInvalidField($app);
 					document.dispatchEvent(
 						new CustomEvent('mp_cc_conditions_step_blocked', {
 							detail: { code: code, payload: payload }
@@ -2496,10 +2582,14 @@
 			if (state.currentStepId === 'contact_payment') {
 				ensureContactDefaults(state);
 				if (!validateContactPaymentStep(state)) {
+					setStepInvalidState(state, 'contact_payment', true);
+					logValidationFailure(state, 'contact_payment', state.frontendStore.form.errors ? state.frontendStore.form.errors.contact : {});
 					notify(getUiText('step_4.contact_error_required', 'Проверьте контактные данные.'), 'error');
 					render(state, $app);
+					scrollToFirstInvalidField($app);
 					return;
 				}
+				setStepInvalidState(state, 'contact_payment', false);
 				saveCurrentStepDraft(state).fail(function () {
 					notify(getUiText('common.error_generic', 'Не удалось сохранить данные.'), 'error');
 				});
@@ -2516,10 +2606,30 @@
 			var selectedDate = state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.date
 				? String(state.frontendStore.fulfillment.date.selected_date || '')
 				: '';
+			var parsedSelected = parseIsoDate(selectedDate);
 			if (!selectedDate) {
+				state.frontendStore.form.errors = state.frontendStore.form.errors || {};
+				state.frontendStore.form.errors.date = 'required';
+				setStepInvalidState(state, 'date', true);
+				logValidationFailure(state, 'date', { selected_date: 'required' });
 				notify(getStepThreeErrorCopy('empty_date', 'Выберите дату, чтобы продолжить.'), 'error');
+				render(state, $app);
+				scrollToFirstInvalidField($app);
 				return;
 			}
+			if (!parsedSelected) {
+				state.frontendStore.form.errors = state.frontendStore.form.errors || {};
+				state.frontendStore.form.errors.date = 'invalid';
+				setStepInvalidState(state, 'date', true);
+				logValidationFailure(state, 'date', { selected_date: 'invalid' });
+				notify(getStepThreeErrorCopy('invalid_date', 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.'), 'error');
+				render(state, $app);
+				scrollToFirstInvalidField($app);
+				return;
+			}
+			state.frontendStore.form.errors = state.frontendStore.form.errors || {};
+			state.frontendStore.form.errors.date = '';
+			setStepInvalidState(state, 'date', false);
 		}
 		if (state.currentStepId === 'conditions') {
 			var dateState = state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.date
@@ -2527,11 +2637,15 @@
 				: {};
 			if (!dateState.conditions_confirmed) {
 				state.frontendStore.form.errors.conditions_unconfirmed = true;
+				setStepInvalidState(state, 'conditions', true);
+				logValidationFailure(state, 'conditions', { conditions_confirmed: 'required' });
 				render(state, $app);
 				notify(getUiText('step_3.unconfirmed_error', 'Подтвердите ознакомление с условиями, чтобы продолжить.'), 'error');
+				scrollToFirstInvalidField($app);
 				return;
 			}
 			state.frontendStore.form.errors.conditions_unconfirmed = false;
+			setStepInvalidState(state, 'conditions', false);
 		}
 		requestForwardValidation(state.currentStepId).then(function (valid) {
 			if (!valid) {
@@ -2540,6 +2654,7 @@
 				return;
 			}
 			setRuntimeFlag(state, 'blocked', false);
+			setStepInvalidState(state, state.currentStepId, false);
 			setCurrentStep(state, $app, target.id);
 		});
 	}
@@ -2613,6 +2728,9 @@
 
 	function buildProgressHtml(state) {
 		var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
+		var invalidMap = state.frontendStore && state.frontendStore.runtime && state.frontendStore.runtime.invalid_steps
+			? state.frontendStore.runtime.invalid_steps
+			: {};
 		var html = '';
 		var i;
 
@@ -2628,6 +2746,9 @@
 			}
 			if (i < currentIndex) {
 				classes.push('is-complete');
+			}
+			if (invalidMap[step.id]) {
+				classes.push('is-invalid');
 			}
 
 			html += '<li class="' + classes.join(' ') + '">';
@@ -3346,6 +3467,9 @@
 				dateBox.calendar_month = monthKeyFromDate(parsed);
 			}
 			state.frontendStore.fulfillment.date = dateBox;
+			state.frontendStore.form.errors = state.frontendStore.form.errors || {};
+			state.frontendStore.form.errors.date = '';
+			setStepInvalidState(state, 'date', false);
 			render(state, $app);
 			postCheckout('session_set_answers', {
 				step_id: 'date',
@@ -3446,6 +3570,7 @@
 			dateBox.conditions_confirmed = isChecked;
 			state.frontendStore.fulfillment.date = dateBox;
 			state.frontendStore.form.errors.conditions_unconfirmed = false;
+			setStepInvalidState(state, 'conditions', false);
 			render(state, $app);
 			postCheckout('session_set_answers', {
 				step_id: 'conditions',

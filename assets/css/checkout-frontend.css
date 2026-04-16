@@ -128,6 +128,12 @@
 	animation: mp-cc-step-complete-pop 260ms ease;
 }
 
+.mp-cc-progress__item.is-invalid .mp-cc-progress__btn {
+	border-color: var(--mp-cc-color-error);
+	color: var(--mp-cc-color-error);
+	background: var(--mp-cc-color-background);
+}
+
 .mp-cc-progress__btn[disabled] {
 	opacity: 0.5;
 	cursor: not-allowed;
@@ -437,6 +443,10 @@
 	margin: 0;
 	font-size: 0.84rem;
 	color: var(--mp-cc-color-text-muted);
+}
+
+.mp-cc-date-step__helper.is-error {
+	color: var(--mp-cc-color-error);
 }
 
 .mp-cc-conditions-step {
