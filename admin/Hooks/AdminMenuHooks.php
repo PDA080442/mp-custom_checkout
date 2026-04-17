@@ -326,6 +326,12 @@ final class AdminMenuHooks {
 			return;
 		}
 		$section_value = isset( $settings[ $tab_id ] ) ? $settings[ $tab_id ] : array();
+		$section_value = is_array( $section_value ) ? $section_value : array();
+		$defaults_tree   = SafeSettingsResolver::get_defaults_tree();
+		$defaults_for_tab = isset( $defaults_tree[ $tab_id ] ) && is_array( $defaults_tree[ $tab_id ] ) ? $defaults_tree[ $tab_id ] : array();
+		if ( ! empty( $defaults_for_tab ) ) {
+			$section_value = array_replace_recursive( $defaults_for_tab, $section_value );
+		}
 		$title = isset( AdminSectionsRegistry::sections()[ $tab_id ]['label'] ) ? (string) AdminSectionsRegistry::sections()[ $tab_id ]['label'] : $tab_id;
 		$description = isset( $tabs[ $tab_id ]['description'] ) ? (string) $tabs[ $tab_id ]['description'] : '';
 		$onboarding = isset( $tabs[ $tab_id ]['onboarding'] ) ? (string) $tabs[ $tab_id ]['onboarding'] : '';

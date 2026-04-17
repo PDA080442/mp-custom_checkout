@@ -165,7 +165,7 @@
 				order: Array.isArray(address.subfields_order) ? address.subfields_order : ['country', 'state', 'city', 'address_1', 'address_2', 'postcode'],
 				visible: address.subfields_visible && typeof address.subfields_visible === 'object' ? address.subfields_visible : {}
 			},
-			discountLayout: source.discount_layout && typeof source.discount_layout === 'object' ? source.discount_layout : { placement: 'step_4', separate_step_enabled: false, order: ['coupon', 'gift_card'] },
+			discountLayout: source.discount_layout && typeof source.discount_layout === 'object' ? source.discount_layout : { placement: 'step_4', separate_step_enabled: false, order: ['coupon'] },
 			discountStyles: source.discount_block_styles && typeof source.discount_block_styles === 'object' ? source.discount_block_styles : { state_empty: 'default', state_success: 'success', state_error: 'error', focus_style: 'default' },
 			payment: payment && typeof payment === 'object' ? payment : {
 				title: 'Способ оплаты',
@@ -787,18 +787,12 @@
 		html += '</div>';
 		html += '<div class="mp-cc-admin-preview__date-grid">';
 		html += '<article>';
-		html += '<strong>' + escapeHtml(String(cfg.coupon.title || 'Промокод')) + '</strong>';
-		html += '<p>' + escapeHtml(String(cfg.coupon.intro || '')) + '</p>';
-		html += '<p>Label: ' + escapeHtml(String(cfg.coupon.input_label || 'Код купона')) + '</p>';
-		html += '<p>Placeholder: ' + escapeHtml(String(cfg.coupon.placeholder || '')) + '</p>';
-		html += '<p><em>States:</em> empty="' + escapeHtml(String(cfg.coupon.empty_message || '')) + '", success="' + escapeHtml(String(cfg.coupon.success_message || '')) + '", error="' + escapeHtml(String(cfg.coupon.error_message || '')) + '"</p>';
-		html += '</article>';
-		html += '<article>';
-		html += '<strong>' + escapeHtml(String(cfg.giftCard.title || 'Подарочная карта')) + '</strong>';
-		html += '<p>' + escapeHtml(String(cfg.giftCard.intro || '')) + '</p>';
-		html += '<p>Label: ' + escapeHtml(String(cfg.giftCard.input_label || 'Код подарочной карты')) + '</p>';
-		html += '<p>Placeholder: ' + escapeHtml(String(cfg.giftCard.placeholder || '')) + '</p>';
-		html += '<p><em>States:</em> empty="' + escapeHtml(String(cfg.giftCard.empty_message || '')) + '", success="' + escapeHtml(String(cfg.giftCard.success_message || '')) + '", error="' + escapeHtml(String(cfg.giftCard.error_message || '')) + '"</p>';
+		html += '<strong>' + escapeHtml(String(cfg.coupon.title || cfg.giftCard.title || 'Подарочная карта')) + '</strong>';
+		html += '<p>' + escapeHtml(String(cfg.coupon.intro || cfg.giftCard.intro || '')) + '</p>';
+		html += '<p>Label: ' + escapeHtml(String(cfg.coupon.input_label || cfg.giftCard.input_label || 'Код подарочной карты')) + '</p>';
+		html += '<p>Placeholder: ' + escapeHtml(String(cfg.coupon.placeholder || cfg.giftCard.placeholder || '')) + '</p>';
+		html += '<p><em>States:</em> empty="' + escapeHtml(String(cfg.coupon.empty_message || cfg.giftCard.empty_message || '')) + '", success="' + escapeHtml(String(cfg.coupon.success_message || cfg.giftCard.success_message || '')) + '", error="' + escapeHtml(String(cfg.coupon.error_message || cfg.giftCard.error_message || '')) + '"</p>';
+		html += '<p><em>Одно поле на шаге 4:</em> тексты из <code>coupon_block</code>, при пустых полях подставляются из <code>gift_card_block</code>.</p>';
 		html += '</article>';
 		html += '</div>';
 		html += '<div class="mp-cc-admin-preview__date-grid">';
@@ -983,7 +977,7 @@
 		cfg.payment.diagnostics = cfg.payment.diagnostics && typeof cfg.payment.diagnostics === 'object' ? cfg.payment.diagnostics : {};
 		cfg.payment.diagnostics.enabled = Boolean(readFormValue(py + '[diagnostics][enabled]', cfg.payment.diagnostics.enabled !== false));
 		var cp = 'mp_custom_checkout_settings[step_4][coupon_block]';
-		cfg.coupon.title = readFormValue(cp + '[title]', cfg.coupon.title || 'Промокод');
+		cfg.coupon.title = readFormValue(cp + '[title]', cfg.coupon.title || 'Подарочная карта');
 		cfg.coupon.intro = readFormValue(cp + '[intro]', cfg.coupon.intro || '');
 		cfg.coupon.input_label = readFormValue(cp + '[input_label]', cfg.coupon.input_label || 'Код купона');
 		cfg.coupon.placeholder = readFormValue(cp + '[placeholder]', cfg.coupon.placeholder || '');

@@ -8,6 +8,7 @@
 namespace MP\CustomCheckout\Checkout\Routing;
 
 use MP\CustomCheckout\DependencyFailureGuard;
+use MP\CustomCheckout\Integrations\WooCommerce\GiftCardIntegration;
 use MP\CustomCheckout\Hooks\CheckoutRouteHooks;
 use MP\CustomCheckout\Routing\CheckoutScenarioRules;
 use MP\CustomCheckout\Routing\CheckoutStepManager;
@@ -182,7 +183,23 @@ final class CheckoutSessionService {
 	}
 
 	public static function clear_on_abandoned_flow(): void {
+		self::clear_pw_gift_cards_and_recalc();
 		self::clear();
+	}
+
+	/**
+	 * Снимает Pimwick PW Gift Cards с корзины (сессия WooCommerce), иначе при новом заходе в checkout остаются «призрачные» списания.
+	 */
+	private static function clear_pw_gift_cards_and_recalc(): void {
+		if ( ! function_exists( 'WC' ) ) {
+			return;
+		}
+		if ( function_exists( 'wc_load_cart' ) ) {
+			wc_load_cart();
+		}
+		$integration = new GiftCardIntegration();
+		$integration->clear_all_applied_gift_cards();
+		do_action( 'mp_custom_checkout_cart_discounts_cleared_on_abandon' );
 	}
 
 	public static function maybe_clear_on_order_cancel(): void {
@@ -400,5 +417,27 @@ final class CheckoutSessionService {
 			return 'discounts';
 		}
 		return $step_id;
+	}
+
+	/**
+	 * Синхронизирует answers.discounts с фактическим состоянием корзины (купоны и PW gift cards в сессии).
+	 */
+	public static function sync_discounts_from_cart(): void {
+		if ( ! function_exists( 'WC' ) || ! WC()->cart instanceof \WC_Cart ) {
+			return;
+		}
+		$flow = self::get_flow();
+		if ( empty( $flow ) || ! isset( $flow['context_id'] ) ) {
+			return;
+		}
+		$discounts = array(
+			'coupons'   => array_values( WC()->cart->get_applied_coupons() ),
+			'gift_card' => array(),
+		);
+		$integration = new GiftCardIntegration();
+		if ( $integration->is_pw_gift_cards_available() ) {
+			$discounts['gift_card'] = array_values( $integration->get_applied_gift_cards() );
+		}
+		self::set_step_answers( 'discounts', $discounts );
 	}
 }

@@ -1829,13 +1829,38 @@
 .mp-cc-coupon__chip {
 	display: inline-flex;
 	align-items: center;
-	gap: 0.35rem;
+	gap: 0.25rem;
 	border: 1px solid var(--mp-cc-color-border);
 	background: #fff;
 	border-radius: 999px;
-	padding: 0.2rem 0.5rem;
+	padding: 0.2rem 0.35rem 0.2rem 0.5rem;
 	font-size: 0.78rem;
+	cursor: default;
+}
+
+.mp-cc-coupon__chip-remove {
+	border: none;
+	background: transparent;
 	cursor: pointer;
+	padding: 0 0.15rem;
+	line-height: 1;
+	font-size: 1rem;
+	color: var(--mp-cc-color-text-muted, #666);
+}
+
+.mp-cc-coupon__chip-remove:hover,
+.mp-cc-coupon__chip-remove:focus-visible {
+	color: var(--mp-cc-color-accent, #111);
+}
+
+.mp-cc-coupon__applied--gift {
+	margin-top: 0.35rem;
+}
+
+.mp-cc-discount-tools[data-discount-on-cart="1"] {
+	margin-top: 1rem;
+	padding-top: 0.75rem;
+	border-top: 1px solid var(--mp-cc-color-border);
 }
 
 .mp-cc-contact__phone-row {

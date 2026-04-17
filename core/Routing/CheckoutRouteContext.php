@@ -9,7 +9,9 @@ namespace MP\CustomCheckout\Routing;
 
 use MP\CustomCheckout\Checkout\Routing\CheckoutPermalinkCompatibility;
 use MP\CustomCheckout\Checkout\Routing\CheckoutSessionService;
+use MP\CustomCheckout\Integrations\WooCommerce\GiftCardIntegration;
 use MP\CustomCheckout\Settings\FeatureFlagResolver;
+use MP\CustomCheckout\Settings\ScenarioStepRegistry;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -167,9 +169,52 @@ final class CheckoutRouteContext {
 		$result['summary']['items_count'] = (int) $cart->get_cart_contents_count();
 		$result['summary']['subtotal']    = (string) $cart->get_cart_subtotal();
 		$shipping_total                   = (float) $cart->get_shipping_total() + (float) $cart->get_shipping_tax();
-		$result['summary']['shipping']    = $shipping_total > 0 ? (string) wc_price( $shipping_total ) : (string) wc_price( 0 );
-		$result['summary']['tax']         = (string) wc_price( (float) $cart->get_total_tax() );
-		$result['summary']['total']       = (string) wc_price( (float) $cart->get_total( 'edit' ) );
+		$flow_for_totals      = CheckoutSessionService::get_public_state();
+		$current_step_id      = isset( $flow_for_totals['current_step'] ) ? sanitize_key( (string) $flow_for_totals['current_step'] ) : '';
+		$scenario_for_shipping = isset( $flow_for_totals['scenario'] ) ? CheckoutScenarioRules::sanitize_scenario( (string) $flow_for_totals['scenario'] ) : '';
+		$steps_pre_payment     = array(
+			ScenarioStepRegistry::STEP_CART,
+			ScenarioStepRegistry::STEP_DATE,
+			ScenarioStepRegistry::STEP_CONDITIONS,
+		);
+		$suppress_shipping_in_summary = false;
+		if ( $cart->needs_shipping() ) {
+			if ( ScenarioStepRegistry::SCENARIO_PICKUP === $scenario_for_shipping ) {
+				$suppress_shipping_in_summary = true;
+			} elseif ( '' !== $current_step_id && in_array( $current_step_id, $steps_pre_payment, true ) ) {
+				$suppress_shipping_in_summary = true;
+			}
+		}
+		if ( $suppress_shipping_in_summary && $shipping_total > 0 ) {
+			$shipping_total = 0.0;
+		}
+		$result['summary']['shipping_total'] = $shipping_total;
+		$result['summary']['shipping']    = $shipping_total > 0 ? (string) wc_price( $shipping_total ) : '';
+		if ( $suppress_shipping_in_summary ) {
+			$result['summary']['shipping_deferred'] = true;
+		}
+		$result['summary']['fee_lines']   = array();
+		foreach ( $cart->get_fees() as $fee ) {
+			$fee_total = isset( $fee->total ) ? (float) $fee->total : 0.0;
+			if ( $fee_total <= 0 ) {
+				continue;
+			}
+			$name = isset( $fee->name ) ? (string) $fee->name : '';
+			$result['summary']['fee_lines'][] = array(
+				'label'  => '' !== $name ? $name : __( 'Сбор', 'mp-custom-checkout' ),
+				'amount' => (string) wc_price( $fee_total ),
+			);
+		}
+		$total_tax_display = (float) $cart->get_total_tax();
+		$total_edit        = (float) $cart->get_total( 'edit' );
+		if ( $suppress_shipping_in_summary ) {
+			$ship_tax = (float) $cart->get_shipping_tax();
+			$ship_amt = (float) $cart->get_shipping_total();
+			$total_tax_display = max( 0.0, $total_tax_display - $ship_tax );
+			$total_edit        = max( 0.0, $total_edit - $ship_tax - $ship_amt );
+		}
+		$result['summary']['tax']   = (string) wc_price( $total_tax_display );
+		$result['summary']['total'] = (string) wc_price( $total_edit );
 		$result['summary']['discount']    = (string) wc_price( (float) $cart->get_discount_total() );
 		$result['summary']['applied_coupons'] = array_values( $cart->get_applied_coupons() );
 		foreach ( $result['summary']['applied_coupons'] as $coupon_code ) {
@@ -180,27 +225,39 @@ final class CheckoutRouteContext {
 			);
 		}
 		$gift_card_total = 0.0;
-		foreach ( $cart->get_fees() as $fee ) {
-			$name = isset( $fee->name ) ? (string) $fee->name : '';
-			$total = isset( $fee->total ) ? (float) $fee->total : 0.0;
-			if ( $total >= 0 ) {
-				continue;
-			}
-			$lc_name = function_exists( 'mb_strtolower' ) ? mb_strtolower( $name ) : strtolower( $name );
-			if ( false === strpos( $lc_name, 'gift' ) && false === strpos( $lc_name, 'подар' ) && false === strpos( $lc_name, 'pw' ) ) {
-				continue;
-			}
-			$gift_card_total += abs( $total );
+		// Pimwick PW Gift Cards: уменьшает $cart->total в woocommerce_after_calculate_totals, без отрицательных fee.
+		if ( property_exists( $cart, 'pwgc_total_gift_cards_redeemed' ) && (float) $cart->pwgc_total_gift_cards_redeemed > 0 ) {
+			$gift_card_total = (float) $cart->pwgc_total_gift_cards_redeemed;
 			$result['summary']['gift_card_lines'][] = array(
-				'label'  => $name,
-				'amount' => (string) wc_price( abs( $total ) ),
+				'label'  => __( 'Подарочная карта', 'mp-custom-checkout' ),
+				'amount' => (string) wc_price( $gift_card_total ),
 			);
+		} else {
+			foreach ( $cart->get_fees() as $fee ) {
+				$name  = isset( $fee->name ) ? (string) $fee->name : '';
+				$total = isset( $fee->total ) ? (float) $fee->total : 0.0;
+				if ( $total >= 0 ) {
+					continue;
+				}
+				$gift_card_total += abs( $total );
+				$result['summary']['gift_card_lines'][] = array(
+					'label'  => '' !== $name ? $name : __( 'Скидка', 'mp-custom-checkout' ),
+					'amount' => (string) wc_price( abs( $total ) ),
+				);
+			}
 		}
 		$result['summary']['gift_card_total'] = (string) wc_price( $gift_card_total );
-		$flow = CheckoutSessionService::get_public_state();
+		$flow    = $flow_for_totals;
 		$answers = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : array();
 		$session_discounts = isset( $answers['discounts'] ) && is_array( $answers['discounts'] ) ? $answers['discounts'] : array();
-		if ( isset( $session_discounts['gift_card'] ) && is_array( $session_discounts['gift_card'] ) ) {
+		$integration = new GiftCardIntegration();
+		if ( $integration->is_pw_gift_cards_available() ) {
+			$pw_cards = $integration->get_applied_gift_cards();
+			if ( ! empty( $pw_cards ) ) {
+				$result['summary']['applied_gift_cards'] = $pw_cards;
+			}
+		}
+		if ( empty( $result['summary']['applied_gift_cards'] ) && isset( $session_discounts['gift_card'] ) && is_array( $session_discounts['gift_card'] ) ) {
 			$result['summary']['applied_gift_cards'] = array_values( array_map( 'strval', $session_discounts['gift_card'] ) );
 		}
 		$catalog_url                      = function_exists( 'wc_get_page_permalink' ) ? wc_get_page_permalink( 'shop' ) : '';
