@@ -8,9 +8,13 @@
 
 defined( 'ABSPATH' ) || exit;
 
-$mp_cc_checkout_context = isset( $mp_cc_checkout_context ) && is_array( $mp_cc_checkout_context )
-	? $mp_cc_checkout_context
-	: array();
+// Контроллер передаёт массив в include; если по какой-то причине переменная не в области видимости — берём из $GLOBALS (иначе data-mp-cc-context и initialContext пустые).
+if ( ! isset( $mp_cc_checkout_context ) || ! is_array( $mp_cc_checkout_context ) ) {
+	$mp_cc_checkout_context = isset( $GLOBALS['mp_cc_checkout_context'] ) && is_array( $GLOBALS['mp_cc_checkout_context'] )
+		? $GLOBALS['mp_cc_checkout_context']
+		: array();
+}
+$GLOBALS['mp_cc_checkout_context'] = $mp_cc_checkout_context;
 
 get_header();
 ?>
@@ -35,6 +39,7 @@ get_header();
 		</div>
 		<section id="mp-cc-success-container" class="mp-cc-region mp-cc-region--success" role="region" aria-live="polite" aria-label="<?php echo esc_attr__( 'Checkout success screen', 'mp-custom-checkout' ); ?>" hidden></section>
 	</div>
+	<script type="application/json" id="mp-cc-bootstrap-context"><?php echo wp_json_encode( $mp_cc_checkout_context, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE ); ?></script>
 </main>
 
 <?php

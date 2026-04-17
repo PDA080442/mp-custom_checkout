@@ -46,7 +46,7 @@ final class CheckoutNoJsFallbackHooks {
 			echo '<p>' . esc_html__( 'WooCommerce недоступен.', 'mp-custom-checkout' ) . '</p>';
 			return;
 		}
-		if ( ! function_exists( 'WC' ) || ! function_exists( 'wc_get_template' ) ) {
+		if ( ! function_exists( 'WC' ) ) {
 			echo '<p>' . esc_html__( 'Checkout временно недоступен.', 'mp-custom-checkout' ) . '</p>';
 			return;
 		}
@@ -57,11 +57,29 @@ final class CheckoutNoJsFallbackHooks {
 			echo '<p><a href="' . esc_url( $shop_url ) . '">' . esc_html__( 'Перейти в магазин', 'mp-custom-checkout' ) . '</a></p>';
 			return;
 		}
-		$checkout = WC()->checkout();
-		if ( ! $checkout instanceof \WC_Checkout ) {
-			echo '<p>' . esc_html__( 'Не удалось подготовить форму checkout.', 'mp-custom-checkout' ) . '</p>';
-			return;
+
+		/*
+		 * Не выводим wc_get_template( 'checkout/form-checkout.php' ) здесь: даже при включённом JS
+		 * полный нативный чекаут оказывается в DOM внутри <noscript> и даёт «все поля сразу» / лишний шум для a11y.
+		 * Классическое оформление без JS — на стандартной странице checkout WC (URL из БД, без фильтра mp-checkout).
+		 */
+		$native_url = self::get_native_woocommerce_checkout_permalink();
+		echo '<p>' . esc_html__( 'Для оформления без JavaScript откройте стандартную страницу оформления заказа WooCommerce.', 'mp-custom-checkout' ) . '</p>';
+		echo '<p><a class="mp-cc-nojs__wc-link" href="' . esc_url( $native_url ) . '">' . esc_html__( 'Перейти к классическому checkout', 'mp-custom-checkout' ) . '</a></p>';
+	}
+
+	/**
+	 * Прямой permalink страницы checkout из настроек WC (обходит filter_woocommerce_checkout_url → /mp-checkout/).
+	 */
+	private static function get_native_woocommerce_checkout_permalink(): string {
+		if ( ! function_exists( 'wc_get_page_id' ) ) {
+			return home_url( '/' );
 		}
-		wc_get_template( 'checkout/form-checkout.php', array( 'checkout' => $checkout ) );
+		$page_id = (int) wc_get_page_id( 'checkout' );
+		if ( $page_id <= 0 ) {
+			return function_exists( 'wc_get_cart_url' ) ? wc_get_cart_url() : home_url( '/' );
+		}
+		$permalink = get_permalink( $page_id );
+		return is_string( $permalink ) && '' !== $permalink ? $permalink : home_url( '/' );
 	}
 }
