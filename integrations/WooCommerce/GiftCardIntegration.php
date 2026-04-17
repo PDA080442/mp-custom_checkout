@@ -40,6 +40,18 @@ final class GiftCardIntegration {
 			return new \WP_Error( 'mp_cc_pw_unavailable', __( 'Интеграция PW Gift Cards недоступна.', 'mp-custom-checkout' ) );
 		}
 
+		// Бесплатная версия PW: списание идёт через сессию, а не через «cart API» объекта PW_Gift_Cards.
+		global $pw_gift_cards_redeeming;
+		if ( isset( $pw_gift_cards_redeeming ) && is_object( $pw_gift_cards_redeeming ) && method_exists( $pw_gift_cards_redeeming, 'add_gift_card_to_session' ) ) {
+			$session_result = $pw_gift_cards_redeeming->add_gift_card_to_session( $gift_code );
+			if ( true === $session_result ) {
+				return true;
+			}
+			if ( is_string( $session_result ) && '' !== $session_result ) {
+				return new \WP_Error( 'mp_cc_pw_apply_failed', $session_result );
+			}
+		}
+
 		$service = $this->resolve_pw_service();
 		if ( ! $service ) {
 			return new \WP_Error( 'mp_cc_pw_service_unavailable', __( 'Не удалось получить сервис PW Gift Cards.', 'mp-custom-checkout' ) );
@@ -71,6 +83,11 @@ final class GiftCardIntegration {
 		if ( ! $this->is_pw_gift_cards_available() ) {
 			return array();
 		}
+		$from_session = $this->get_applied_gift_cards_from_pw_session();
+		if ( ! empty( $from_session ) ) {
+			return $from_session;
+		}
+
 		$service = $this->resolve_pw_service();
 		$cart_api = $service ? $this->resolve_cart_api( $service ) : null;
 		if ( ! $cart_api ) {
@@ -87,6 +104,75 @@ final class GiftCardIntegration {
 			}
 		}
 		return array();
+	}
+
+	/**
+	 * @return array<int, string>
+	 */
+	private function get_applied_gift_cards_from_pw_session(): array {
+		if ( ! function_exists( 'WC' ) || ! WC()->session ) {
+			return array();
+		}
+		$session_key = defined( 'PWGC_SESSION_KEY' ) ? PWGC_SESSION_KEY : 'pw-gift-card-data';
+		$session_data = (array) WC()->session->get( $session_key );
+		if ( ! isset( $session_data['gift_cards'] ) || ! is_array( $session_data['gift_cards'] ) ) {
+			return array();
+		}
+		return array_values( array_filter( array_map( 'strval', array_keys( $session_data['gift_cards'] ) ) ) );
+	}
+
+	/**
+	 * Снять подарочную карту с корзины (PW WooCommerce Gift Cards).
+	 *
+	 * @return true|\WP_Error
+	 */
+	public function remove_gift_card( string $code ) {
+		$gift_code = trim( (string) $code );
+		if ( '' === $gift_code ) {
+			return new \WP_Error( 'mp_cc_gift_card_empty', __( 'Не указан код подарочной карты.', 'mp-custom-checkout' ) );
+		}
+		if ( ! $this->is_pw_gift_cards_available() ) {
+			return new \WP_Error( 'mp_cc_pw_unavailable', __( 'Интеграция PW Gift Cards недоступна.', 'mp-custom-checkout' ) );
+		}
+
+		global $pw_gift_cards_redeeming;
+		if ( isset( $pw_gift_cards_redeeming ) && is_object( $pw_gift_cards_redeeming ) && method_exists( $pw_gift_cards_redeeming, 'remove_gift_card_from_session' ) ) {
+			$pw_gift_cards_redeeming->remove_gift_card_from_session( $gift_code );
+			if ( function_exists( 'WC' ) && WC()->cart instanceof \WC_Cart ) {
+				WC()->cart->calculate_totals();
+			}
+			return true;
+		}
+
+		$filtered = apply_filters( 'mp_custom_checkout_remove_pw_gift_card', null, $gift_code );
+		if ( is_wp_error( $filtered ) ) {
+			return $filtered;
+		}
+		if ( true === $filtered ) {
+			return true;
+		}
+
+		return new \WP_Error( 'mp_cc_pw_remove_unavailable', __( 'Не удалось снять подарочную карту.', 'mp-custom-checkout' ) );
+	}
+
+	/**
+	 * Удаляет все применённые подарочные карты из сессии PW и пересчитывает корзину.
+	 * Нужно при выходе из checkout, чтобы при следующем заходе не «висели» старые коды и скрытые списания.
+	 */
+	public function clear_all_applied_gift_cards(): void {
+		if ( ! function_exists( 'WC' ) || ! WC()->session ) {
+			return;
+		}
+		$session_key  = defined( 'PWGC_SESSION_KEY' ) ? PWGC_SESSION_KEY : 'pw-gift-card-data';
+		$session_data = (array) WC()->session->get( $session_key );
+		if ( isset( $session_data['gift_cards'] ) ) {
+			unset( $session_data['gift_cards'] );
+		}
+		WC()->session->set( $session_key, $session_data );
+
+		if ( function_exists( 'WC' ) && WC()->cart instanceof \WC_Cart ) {
+			WC()->cart->calculate_totals();
+		}
 	}
 
 	/**

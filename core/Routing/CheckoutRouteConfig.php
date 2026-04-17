@@ -7,6 +7,7 @@
 
 namespace MP\CustomCheckout\Routing;
 
+use MP\CustomCheckout\Checkout\Routing\CheckoutPermalinkCompatibility;
 use MP\CustomCheckout\Hooks\CheckoutRouteHooks;
 use MP\CustomCheckout\Settings\SafeSettingsResolver;
 

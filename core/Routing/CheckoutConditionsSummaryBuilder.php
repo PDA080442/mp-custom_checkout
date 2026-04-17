@@ -36,7 +36,7 @@ final class CheckoutConditionsSummaryBuilder {
 		$intro_map = isset( $cc['intro_by_scenario'] ) && is_array( $cc['intro_by_scenario'] ) ? $cc['intro_by_scenario'] : array();
 		$intro     = isset( $intro_map[ $scenario ] ) ? trim( (string) $intro_map[ $scenario ] ) : '';
 		if ( '' === $intro ) {
-			$intro = self::label( 'conditions_intro', 'Перед продолжением проверьте правила для выбранного способа получения.' );
+			$intro = self::label( 'conditions_intro', 'Условия для выбранного способа получения.' );
 		}
 		if ( '' !== $intro ) {
 			$lines[] = $intro;

@@ -26,6 +26,9 @@ final class CheckoutEntryAjaxHooks {
 		if ( ! DependencyFailureGuard::is_woocommerce_integration_ready() ) {
 			wp_send_json_error( array( 'message' => __( 'WooCommerce недоступен.', 'mp-custom-checkout' ) ), 503 );
 		}
+		if ( function_exists( 'wc_load_cart' ) ) {
+			wc_load_cart();
+		}
 		if ( ! CheckoutEntryService::validate_ajax_nonce() ) {
 			wp_send_json_error( array( 'code' => 'invalid_nonce', 'message' => __( 'Неверный запрос.', 'mp-custom-checkout' ) ), 403 );
 		}

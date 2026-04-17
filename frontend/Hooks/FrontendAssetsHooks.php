@@ -38,14 +38,20 @@ final class FrontendAssetsHooks {
 		$script_path = MP_CUSTOM_CHECKOUT_PATH . 'assets/js/checkout-frontend.js';
 		$version    = self::asset_version( $style_path, $script_path );
 
+		self::maybe_enqueue_woocommerce_base_styles();
+
 		wp_enqueue_style( self::HANDLE_STYLE, MP_CUSTOM_CHECKOUT_URL . 'assets/css/checkout-frontend.css', array(), $version );
 		wp_add_inline_style( self::HANDLE_STYLE, self::build_design_tokens_css() );
 
 		wp_enqueue_script( self::HANDLE_SCRIPT, MP_CUSTOM_CHECKOUT_URL . 'assets/js/checkout-frontend.js', self::script_dependencies(), $version, true );
+		$initial_context = isset( $GLOBALS['mp_cc_checkout_context'] ) && is_array( $GLOBALS['mp_cc_checkout_context'] )
+			? $GLOBALS['mp_cc_checkout_context']
+			: array();
 		wp_localize_script(
 			self::HANDLE_SCRIPT,
 			'mpCcCheckout',
 			array(
+				'initialContext' => $initial_context,
 				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
 				'nonce'   => wp_create_nonce( 'mp_cc_checkout' ),
 				'flags'   => FeatureFlagResolver::frontend_payload(),
@@ -75,6 +81,17 @@ final class FrontendAssetsHooks {
 		do_action( 'mp_custom_checkout_enqueue_frontend_assets' );
 	}
 
+	/**
+	 * Базовые стили WooCommerce (сетка/формы), чтобы тема не «ломала» типографику и отступы рядом с checkout.
+	 */
+	private static function maybe_enqueue_woocommerce_base_styles(): void {
+		foreach ( array( 'woocommerce-general', 'woocommerce-layout', 'woocommerce-smallscreen' ) as $handle ) {
+			if ( wp_style_is( $handle, 'registered' ) ) {
+				wp_enqueue_style( $handle );
+			}
+		}
+	}
+
 	private static function asset_version( string $style_path, string $script_path ): string {
 		$style_mtime  = is_readable( $style_path ) ? (int) filemtime( $style_path ) : 0;
 		$script_mtime = is_readable( $script_path ) ? (int) filemtime( $script_path ) : 0;
@@ -84,10 +101,9 @@ final class FrontendAssetsHooks {
 
 	private static function script_dependencies(): array {
 		$deps = array( 'jquery' );
-		foreach ( array( 'wc-cart-fragments', 'wc-checkout' ) as $handle ) {
-			if ( wp_script_is( $handle, 'registered' ) ) {
-				$deps[] = $handle;
-			}
+		// wc-checkout ожидает нативную форму checkout на странице и может мешать SPA; фрагменты корзины оставляем для синка с темой/sticky.
+		if ( wp_script_is( 'wc-cart-fragments', 'registered' ) ) {
+			$deps[] = 'wc-cart-fragments';
 		}
 		return $deps;
 	}
