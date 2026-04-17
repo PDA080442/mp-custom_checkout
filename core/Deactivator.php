@@ -21,5 +21,6 @@ final class Deactivator {
 		if ( ! defined( 'MP_CUSTOM_CHECKOUT_VERSION' ) ) {
 			return;
 		}
+		delete_option( \MP\CustomCheckout\Activator::OPTION_NEEDS_REWRITE_FLUSH );
 	}
 }

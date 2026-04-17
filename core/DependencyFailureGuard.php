@@ -21,11 +21,40 @@ final class DependencyFailureGuard {
 
 	/**
 	 * Регистрация проверок и уведомлений.
+	 *
+	 * При активации плагина файл подключается после {@see 'plugins_loaded'} — обычные add_action на этот хук
+	 * в том же запросе не выполнятся. Если хук уже прошёл, запускаем цепочку сразу.
 	 */
 	public static function boot(): void {
-		add_action( 'plugins_loaded', array( __CLASS__, 'on_plugins_loaded' ), 5 );
-		add_action( 'woocommerce_loaded', array( __CLASS__, 'on_woocommerce_loaded' ), 5 );
-		add_action( 'woocommerce_init', array( __CLASS__, 'on_woocommerce_init' ), 20 );
+		if ( did_action( 'plugins_loaded' ) ) {
+			self::sync_after_plugins_loaded();
+		} else {
+			add_action( 'plugins_loaded', array( __CLASS__, 'sync_after_plugins_loaded' ), 5 );
+		}
+	}
+
+	/**
+	 * После plugins_loaded: проверка WC и привязка хуков WooCommerce (или немедленный запуск, если хуки уже прошли).
+	 */
+	public static function sync_after_plugins_loaded(): void {
+		self::on_plugins_loaded();
+		self::bind_woocommerce_stage_hooks();
+	}
+
+	/**
+	 * Хуки этапов WooCommerce: если событие уже произошло (позднее подключение плагина), вызываем обработчик сразу.
+	 */
+	private static function bind_woocommerce_stage_hooks(): void {
+		if ( did_action( 'woocommerce_loaded' ) ) {
+			self::on_woocommerce_loaded();
+		} else {
+			add_action( 'woocommerce_loaded', array( __CLASS__, 'on_woocommerce_loaded' ), 5 );
+		}
+		if ( did_action( 'woocommerce_init' ) ) {
+			self::on_woocommerce_init();
+		} else {
+			add_action( 'woocommerce_init', array( __CLASS__, 'on_woocommerce_init' ), 20 );
+		}
 	}
 
 	/**

@@ -424,7 +424,7 @@ final class SafeSettingsResolver {
 					'discount_layout' => array(
 						'placement'             => 'step_4',
 						'separate_step_enabled' => false,
-						'order'                 => array( 'coupon', 'gift_card' ),
+						'order'                 => array( 'coupon' ),
 					),
 					'discount_block_styles' => array(
 						'state_empty'   => 'default',
@@ -433,24 +433,24 @@ final class SafeSettingsResolver {
 						'focus_style'   => 'default',
 					),
 					'coupon_block' => array(
-						'title'           => 'Промокод',
-						'intro'           => 'Введите код купона, если он у вас есть.',
-						'input_label'     => 'Код купона',
-						'placeholder'     => 'Например, SPRING10',
+						'title'           => 'Подарочная карта',
+						'intro'           => 'Введите код подарочной карты.',
+						'input_label'     => 'Номер подарочной карты',
+						'placeholder'     => 'Например, GIFT-123',
 						'apply_label'     => 'Применить',
-						'empty_message'   => 'Введите код купона.',
-						'success_message' => 'Промокод применён.',
-						'error_message'   => 'Не удалось применить промокод.',
+						'empty_message'   => 'Введите код.',
+						'success_message' => 'Код применён.',
+						'error_message'   => 'Не удалось применить код.',
 					),
 					'gift_card_block' => array(
-						'title'       => 'Подарочная карта',
-						'intro'       => 'Введите код подарочной карты.',
-						'input_label' => 'Код подарочной карты',
-						'placeholder' => 'Например, GIFT-123',
-						'apply_label' => 'Применить',
-						'empty_message'   => 'Введите код подарочной карты.',
-						'success_message' => 'Подарочная карта применена.',
-						'error_message'   => 'Не удалось применить подарочную карту.',
+						'title'           => '',
+						'intro'           => '',
+						'input_label'     => '',
+						'placeholder'     => '',
+						'apply_label'     => '',
+						'empty_message'   => '',
+						'success_message' => '',
+						'error_message'   => '',
 					),
 					'payment_block' => array(
 						'title' => 'Способ оплаты',
@@ -534,6 +534,70 @@ final class SafeSettingsResolver {
 					'health_checks'       => array(
 						'enabled' => true,
 					),
+				);
+				continue;
+			}
+			if ( OptionKeys::SECTION_PAYMENT === $section_key ) {
+				$tree[ $section_key ] = array(
+					'admin_note' => __( 'Способы оплаты и их доступность настраиваются в WooCommerce → Настройки → Платежи. Здесь — подсказки и текстовые акценты для блока оплаты.', 'mp-custom-checkout' ),
+					'place_order' => array(
+						'confirm_copy' => __( 'Проверьте данные и подтвердите оплату.', 'mp-custom-checkout' ),
+					),
+				);
+				continue;
+			}
+			if ( OptionKeys::SECTION_STYLES === $section_key ) {
+				$tree[ $section_key ] = array(
+					'layout' => array(
+						'global_density' => 'comfortable',
+						'sidebar_behavior' => 'sticky',
+					),
+					'note' => __( 'Глобальные CSS-переменные задаются в служебном разделе (design_tokens). Стили шагов — в настройках шагов 1–4.', 'mp-custom-checkout' ),
+				);
+				continue;
+			}
+			if ( OptionKeys::SECTION_FIELDS === $section_key ) {
+				$tree[ $section_key ] = array(
+					'registry_overrides' => array(
+						'enabled' => false,
+					),
+					'note' => __( 'Основная конфигурация полей находится на шаге 4. Здесь можно зафиксировать точечные переопределения для сущностных блоков.', 'mp-custom-checkout' ),
+				);
+				continue;
+			}
+			if ( OptionKeys::SECTION_DELIVERY === $section_key ) {
+				$tree[ $section_key ] = array(
+					'wc_integration' => array(
+						'respect_chosen_shipping_methods' => true,
+					),
+					'note' => __( 'Сценарии доставки (город / другой регион) задаются в реестре шагов. Тарифы WooCommerce — в зонах доставки.', 'mp-custom-checkout' ),
+				);
+				continue;
+			}
+			if ( OptionKeys::SECTION_GIFT_CARD === $section_key ) {
+				$tree[ $section_key ] = array(
+					'integration' => array(
+						'respect_pw_session' => true,
+					),
+					'note' => __( 'Тексты и лейблы блока подарочной карты настраиваются на шаге 4 (контакты и оплата).', 'mp-custom-checkout' ),
+				);
+				continue;
+			}
+			if ( OptionKeys::SECTION_COUPONS === $section_key ) {
+				$tree[ $section_key ] = array(
+					'behavior' => array(
+						'allow_coupon_with_gift_card' => true,
+					),
+					'note' => __( 'Поведение купонов также зависит от настроек WooCommerce и совместимости с подарочными картами.', 'mp-custom-checkout' ),
+				);
+				continue;
+			}
+			if ( OptionKeys::SECTION_PREVIEW === $section_key ) {
+				$tree[ $section_key ] = array(
+					'admin' => array(
+						'show_live_preview' => true,
+					),
+					'note' => __( 'Параметры превью в админке. Проверяйте сценарии после изменения реестра шагов.', 'mp-custom-checkout' ),
 				);
 				continue;
 			}

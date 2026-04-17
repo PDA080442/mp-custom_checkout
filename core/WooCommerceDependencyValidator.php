@@ -62,12 +62,43 @@ final class WooCommerceDependencyValidator {
 	}
 
 	/**
+	 * Совпадает с {@see \WC::is_request()} для типа {@code frontend}: только в этом случае
+	 * в {@see \WC::init()} вызывается {@see wc_load_cart()} и поднимаются session + cart.
+	 * В обычном wp-admin и при REST без фронта WooCommerce намеренно не инициализирует их.
+	 */
+	private static function is_wc_loading_cart_and_session_this_request(): bool {
+		if ( defined( 'DOING_CRON' ) && DOING_CRON ) {
+			return false;
+		}
+
+		$wc = function_exists( 'WC' ) ? WC() : null;
+		if ( ! $wc ) {
+			return false;
+		}
+
+		$like_frontend = ( ! is_admin() || ( defined( 'DOING_AJAX' ) && DOING_AJAX ) );
+		if ( ! $like_frontend ) {
+			return false;
+		}
+
+		if ( method_exists( $wc, 'is_rest_api_request' ) && $wc->is_rest_api_request() ) {
+			return false;
+		}
+
+		return true;
+	}
+
+	/**
 	 * Проверка cart и session API (после полной инициализации WooCommerce на запросе).
 	 * Вызывать не раньше хука {@see 'woocommerce_init'}.
 	 */
 	public static function is_cart_and_session_ready(): bool {
 		if ( ! function_exists( 'WC' ) || ! WC() ) {
 			return false;
+		}
+
+		if ( ! self::is_wc_loading_cart_and_session_this_request() ) {
+			return true;
 		}
 
 		$cart = WC()->cart;

@@ -7,6 +7,7 @@
 
 namespace MP\CustomCheckout\Routing;
 
+use MP\CustomCheckout\Checkout\Routing\CheckoutEntryService;
 use MP\CustomCheckout\DependencyFailureGuard;
 use MP\CustomCheckout\Settings\SafeSettingsResolver;
 
@@ -52,11 +53,17 @@ final class CheckoutEntryGuard {
 		}
 
 		if ( self::requires_sticky_cart_entry() && ! self::has_entry_session_flag() ) {
+			// Кнопка WooCommerce «Оформить заказ» и прямой URL не проходят через AJAX sticky-корзины.
+			if ( function_exists( 'WC' ) && WC()->session ) {
+				CheckoutEntryService::grant_entry_eligibility();
+			}
 			if ( apply_filters( 'mp_custom_checkout_bypass_entry_gate', false ) ) {
 				return true;
 			}
-			self::$last_failure_code = 'entry_not_allowed';
-			return false;
+			if ( ! self::has_entry_session_flag() ) {
+				self::$last_failure_code = 'entry_not_allowed';
+				return false;
+			}
 		}
 
 		return true;
