@@ -7,10 +7,12 @@
 	var selectors = {
 		root: '#mp-cc-checkout',
 		app: '#mp-cc-checkout-app',
+		parcel: '#mp-cc-parcel-header',
 		progress: '#mp-cc-progress-container',
 		actions: '#mp-cc-navigation-actions',
 		summary: '#mp-cc-summary-sidebar',
-		notifications: '#mp-cc-notifications'
+		notifications: '#mp-cc-notifications',
+		exit: '#mp-cc-exit-checkout'
 	};
 	var flagNames = {
 		multiStepFlow: 'multi_step_flow',
@@ -3467,6 +3469,32 @@
 		return html;
 	}
 
+	function buildParcelHeaderHtml(state) {
+		var cart = state && state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart : {};
+		var summary = cart.summary && typeof cart.summary === 'object' ? cart.summary : {};
+		var items = Array.isArray(cart.items) ? cart.items : [];
+		if (!items.length) {
+			return '';
+		}
+		var first = items[0] && typeof items[0] === 'object' ? items[0] : {};
+		var count = Number(summary.items_count || items.length || 0);
+		var countLabel = count + ' ' + getUiText('step_1.positions_count', 'позиций');
+		var title = trimNonEmpty(first.name) || getUiText('step_1.title', 'Товар');
+		var qty = Number(first.quantity || 0);
+		var qtyLabel = qty > 0 ? String(qty) + ' шт' : '';
+		var html = '';
+		html += '<article class="mp-cc-parcel-head">';
+		html += '<span class="mp-cc-parcel-head__badge">' + escapeHtml(countLabel) + '</span>';
+		html += '<div class="mp-cc-parcel-head__body">';
+		html += '<h3 class="mp-cc-parcel-head__title">' + escapeHtml(title) + '</h3>';
+		if (qtyLabel) {
+			html += '<p class="mp-cc-parcel-head__meta">' + escapeHtml(qtyLabel) + '</p>';
+		}
+		html += '</div>';
+		html += '</article>';
+		return html;
+	}
+
 	function buildStepPanelHtml(state) {
 		var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
 		var step = currentIndex >= 0 ? state.visibleSteps[currentIndex] : null;
@@ -3484,7 +3512,7 @@
 		}
 		var html = '';
 
-		html += '<section class="mp-cc-step-panel" data-step-panel="' + escapeHtml(step ? step.id : '') + '">';
+		html += '<section class="mp-cc-step-panel mp-cc-step-screen" data-step-panel="' + escapeHtml(step ? step.id : '') + '">';
 		html += '<header class="mp-cc-step-panel__header">';
 		html += '<p class="mp-cc-step-panel__meta">Step ' + (currentIndex + 1) + ' / ' + state.visibleSteps.length + '</p>';
 		html += '<h2 class="mp-cc-step-panel__title" id="mp-cc-step-heading" tabindex="-1">' + escapeHtml(label) + '</h2>';
@@ -4108,13 +4136,15 @@
 
 	function render(state, $app) {
 		window.__mpCcCheckoutContextId = state && state.flowContextId ? String(state.flowContextId) : '';
+		var $parcel = $(selectors.parcel);
 		var $progress = $(selectors.progress);
 		var $actions = $(selectors.actions);
 		var $summary = $(selectors.summary);
-		state.__renderCache = state.__renderCache || { stepHtml: '', summaryHtml: '', progressHtml: '', actionsHtml: '' };
+		state.__renderCache = state.__renderCache || { parcelHtml: '', stepHtml: '', summaryHtml: '', progressHtml: '', actionsHtml: '' };
 
 		if (!state.visibleSteps.length) {
 			$app.html('<p class="mp-cc-empty">No steps available.</p>');
+			$parcel.empty();
 			$progress.empty();
 			$actions.empty();
 			$summary.empty();
@@ -4124,8 +4154,15 @@
 		ensureContactDefaults(state);
 		ensureDiscountDefaults(state);
 
+		var nextParcelHtml = '';
 		var nextStepHtml = '';
 		var nextSummaryHtml = '';
+		try {
+			nextParcelHtml = buildParcelHeaderHtml(state);
+		} catch (parcelErr) {
+			reportClientError('render_parcel_failed', parcelErr && parcelErr.message ? parcelErr.message : 'parcel_render_failed', parcelErr && parcelErr.stack ? parcelErr.stack : '', 'render');
+			nextParcelHtml = '';
+		}
 		try {
 			nextStepHtml = buildStepPanelHtml(state);
 		} catch (stepErr) {
@@ -4140,6 +4177,7 @@
 		}
 		var nextProgressHtml = '';
 		var nextActionsHtml = '';
+		var isParcelChanged = state.__renderCache.parcelHtml !== nextParcelHtml;
 		var isStepChanged = state.__renderCache.stepHtml !== nextStepHtml;
 		var isSummaryChanged = state.__renderCache.summaryHtml !== nextSummaryHtml;
 		var isProgressChanged = false;
@@ -4159,6 +4197,10 @@
 			}
 			isProgressChanged = state.__renderCache.progressHtml !== nextProgressHtml;
 			isActionsChanged = state.__renderCache.actionsHtml !== nextActionsHtml;
+		}
+		if (isParcelChanged) {
+			$parcel.html(nextParcelHtml);
+			state.__renderCache.parcelHtml = nextParcelHtml;
 		}
 		if (isStepChanged) {
 			$app.html(nextStepHtml);
@@ -4185,7 +4227,7 @@
 			state.__renderCache.progressHtml = '';
 			state.__renderCache.actionsHtml = '';
 		}
-		if (isStepChanged || isSummaryChanged || isProgressChanged || isActionsChanged) {
+		if (isParcelChanged || isStepChanged || isSummaryChanged || isProgressChanged || isActionsChanged) {
 			bindHandlers(state, $app, $progress, $actions);
 		}
 		if (isStepChanged) {
@@ -4203,6 +4245,16 @@
 	}
 
 	function bindHandlers(state, $app, $progress, $actions) {
+		$(selectors.exit).off('click').on('click', function () {
+			var summary = state.frontendStore && state.frontendStore.cart ? (state.frontendStore.cart.summary || {}) : {};
+			var fallback = trimNonEmpty(summary.catalog_url) || '/';
+			if (window.history && window.history.length > 1) {
+				window.history.back();
+				return;
+			}
+			window.location.href = fallback;
+		});
+
 		if (!isFlagEnabled(state, flagNames.multiStepFlow, true)) {
 			return;
 		}

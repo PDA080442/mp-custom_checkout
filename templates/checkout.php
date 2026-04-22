@@ -21,6 +21,13 @@ get_header();
 
 <main id="mp-cc-checkout" class="mp-cc-checkout" data-mp-cc-context="<?php echo esc_attr( wp_json_encode( $mp_cc_checkout_context ) ); ?>">
 	<div class="mp-cc-checkout__inner" role="region" aria-label="<?php echo esc_attr__( 'Checkout shell', 'mp-custom-checkout' ); ?>">
+		<header class="mp-cc-v2-shell-head" role="banner" aria-label="<?php echo esc_attr__( 'Checkout header', 'mp-custom-checkout' ); ?>">
+			<div class="mp-cc-v2-shell-head__title-wrap">
+				<h1 class="mp-cc-v2-shell-head__title"><?php esc_html_e( 'Оформление заказа', 'mp-custom-checkout' ); ?></h1>
+			</div>
+			<button type="button" class="mp-cc-v2-shell-head__exit" id="mp-cc-exit-checkout" aria-label="<?php echo esc_attr__( 'Закрыть оформление', 'mp-custom-checkout' ); ?>" data-exit-checkout="1">×</button>
+		</header>
+		<section id="mp-cc-parcel-header" class="mp-cc-region mp-cc-region--parcel" aria-live="polite" aria-label="<?php echo esc_attr__( 'Order parcel header', 'mp-custom-checkout' ); ?>"></section>
 		<section id="mp-cc-notifications" class="mp-cc-region mp-cc-region--notifications" role="status" aria-live="polite" aria-atomic="true"></section>
 		<div class="mp-cc-layout" role="group" aria-label="<?php echo esc_attr__( 'Checkout layout', 'mp-custom-checkout' ); ?>">
 			<div class="mp-cc-layout__main">
