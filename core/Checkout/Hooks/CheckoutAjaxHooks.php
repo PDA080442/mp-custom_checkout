@@ -141,7 +141,16 @@ final class CheckoutAjaxHooks {
 		}
 		if ( 'session_get_state' === $sub_action ) {
 			CheckoutSessionService::sync_discounts_from_cart();
-			wp_send_json_success( array( 'sub_action' => $sub_action, 'flow' => self::build_flow_payload(), 'cart' => CheckoutRouteContext::get_cart_data() ) );
+			wp_send_json_success(
+				array_merge(
+					array(
+						'sub_action' => $sub_action,
+						'flow'       => self::build_flow_payload(),
+						'cart'       => CheckoutRouteContext::get_cart_data(),
+					),
+					self::get_payment_fields_for_context()
+				)
+			);
 		}
 		if ( 'set_payment_gateway' === $sub_action ) {
 			self::handle_set_payment_gateway();
@@ -304,7 +313,115 @@ final class CheckoutAjaxHooks {
 		$contact['payment_gateway'] = $gateway;
 		$contact['gateway']     = $gateway;
 		CheckoutSessionService::set_step_answers( 'contact_payment', $contact );
-		wp_send_json_success( array( 'sub_action' => 'set_payment_gateway', 'payment_gateway' => $gateway, 'flow' => self::build_flow_payload(), 'cart' => CheckoutRouteContext::get_cart_data() ) );
+		$fields_payload = self::build_payment_fields_payload_from_session();
+		wp_send_json_success(
+			array_merge(
+				array(
+					'sub_action'        => 'set_payment_gateway',
+					'payment_gateway'   => $gateway,
+					'flow'              => self::build_flow_payload(),
+					'cart'              => CheckoutRouteContext::get_cart_data(),
+				),
+				$fields_payload
+			)
+		);
+	}
+
+	/**
+	 * HTML полей оплаты WooCommerce для текущего выбранного шлюза (синхронизация chosen_payment_method из flow).
+	 *
+	 * @return array{payment_fields_html:string,payment_fields_gateway:string}
+	 */
+	public static function get_payment_fields_for_context(): array {
+		if ( ! function_exists( 'WC' ) || ! WC() ) {
+			return array(
+				'payment_fields_html'    => '',
+				'payment_fields_gateway' => '',
+			);
+		}
+		self::sync_chosen_payment_method_from_flow();
+		return self::build_payment_fields_payload_from_session();
+	}
+
+	private static function sync_chosen_payment_method_from_flow(): void {
+		if ( ! function_exists( 'WC' ) || ! WC() || ! WC()->session ) {
+			return;
+		}
+		$flow = CheckoutSessionService::get_flow();
+		if ( ! is_array( $flow ) ) {
+			return;
+		}
+		$answers = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : array();
+		$contact = isset( $answers['contact_billing'] ) && is_array( $answers['contact_billing'] ) ? $answers['contact_billing'] : array();
+		$gw      = isset( $contact['payment_gateway'] ) ? sanitize_key( (string) $contact['payment_gateway'] ) : '';
+		if ( '' === $gw && isset( $contact['gateway'] ) ) {
+			$gw = sanitize_key( (string) $contact['gateway'] );
+		}
+		if ( '' !== $gw ) {
+			WC()->session->set( 'chosen_payment_method', $gw );
+		}
+	}
+
+	/**
+	 * @return array{payment_fields_html:string,payment_fields_gateway:string}
+	 */
+	private static function build_payment_fields_payload_from_session(): array {
+		if ( ! function_exists( 'WC' ) || ! WC() || ! WC()->session ) {
+			return array(
+				'payment_fields_html'    => '',
+				'payment_fields_gateway' => '',
+			);
+		}
+		$gateway_id = sanitize_key( (string) WC()->session->get( 'chosen_payment_method' ) );
+		if ( '' === $gateway_id ) {
+			return array(
+				'payment_fields_html'    => '',
+				'payment_fields_gateway' => '',
+			);
+		}
+		$pm = WC()->payment_gateways();
+		if ( ! $pm instanceof \WC_Payment_Gateways ) {
+			return array(
+				'payment_fields_html'    => '',
+				'payment_fields_gateway' => $gateway_id,
+			);
+		}
+		$available = $pm->get_available_payment_gateways();
+		if ( ! isset( $available[ $gateway_id ] ) || ! $available[ $gateway_id ] instanceof \WC_Payment_Gateway ) {
+			return array(
+				'payment_fields_html'    => '',
+				'payment_fields_gateway' => $gateway_id,
+			);
+		}
+		$html = self::capture_gateway_payment_fields_html( $available[ $gateway_id ] );
+		return array(
+			'payment_fields_html'    => $html,
+			'payment_fields_gateway' => $gateway_id,
+		);
+	}
+
+	private static function capture_gateway_payment_fields_html( \WC_Payment_Gateway $gateway ): string {
+		try {
+			ob_start();
+			$gateway->payment_fields();
+			return (string) ob_get_clean();
+		} catch ( \Throwable $e ) {
+			while ( ob_get_level() > 0 ) {
+				ob_end_clean();
+			}
+			do_action(
+				'mp_custom_checkout_log',
+				'warning',
+				'[payment_fields] capture_failed',
+				array(
+					'source'      => 'ajax',
+					'event_type'  => 'payment_fields',
+					'gateway_id'  => method_exists( $gateway, 'get_id' ) ? $gateway->get_id() : '',
+					'message'     => $e->getMessage(),
+				)
+			);
+			return '';
+		}
 	}
 
 	private static function handle_submit_payment(): void {

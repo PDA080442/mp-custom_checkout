@@ -153,7 +153,7 @@
 		var source = window.mpCcAdmin && window.mpCcAdmin.stepFourConfig ? window.mpCcAdmin.stepFourConfig : {};
 		var contact = source.contact_block || {};
 		var address = source.address_block || {};
-		var payment = source.payment_block || {};
+		var payment = source.payment_block && typeof source.payment_block === 'object' ? source.payment_block : {};
 		return {
 			previewEnabled: true,
 			contact: {
@@ -178,10 +178,13 @@
 			},
 			discountLayout: source.discount_layout && typeof source.discount_layout === 'object' ? source.discount_layout : { placement: 'step_4', separate_step_enabled: false, order: ['coupon'] },
 			discountStyles: source.discount_block_styles && typeof source.discount_block_styles === 'object' ? source.discount_block_styles : { state_empty: 'default', state_success: 'success', state_error: 'error', focus_style: 'default' },
-			payment: payment && typeof payment === 'object' ? payment : {
+			payment: $.extend(true, {
 				title: 'Способ оплаты',
 				intro: 'Выберите удобный способ оплаты.',
 				gateway_order: [],
+				card_surface: 'visual',
+				auto_classic_on_empty_gateway_fields: true,
+				decorative_card_fields: true,
 				card_style: 'default',
 				card_active_style: 'accent',
 				radio_style: 'default',
@@ -191,9 +194,32 @@
 				error_message: 'Выберите способ оплаты.',
 				messages: { loading: '', success: '', error: '' },
 				layout: { desktop_columns: 2, tablet_columns: 2, mobile_columns: 1, grid_gap: '0.6rem 0.75rem' },
-				diagnostics: { enabled: true }
-			},
-			coupon: source.coupon_block && typeof source.coupon_block === 'object' ? source.coupon_block : {},
+				diagnostics: { enabled: true },
+				summary_mini_review: {
+					enabled: true,
+					title: '',
+					intro: '',
+					method_label: '',
+					id_label: '',
+					state_loading: '',
+					state_success: '',
+					state_error: '',
+					show_gateway_id: false,
+					show_gateway_description: true
+				}
+			}, payment),
+			coupon: $.extend(true, {
+				title: 'Промокод',
+				intro: '',
+				input_label: 'Код купона',
+				placeholder: '',
+				apply_label: 'Применить',
+				empty_message: '',
+				success_message: '',
+				error_message: '',
+				allow_remove_applied: true,
+				summary_section_title: ''
+			}, source.coupon_block && typeof source.coupon_block === 'object' ? source.coupon_block : {}),
 			giftCard: source.gift_card_block && typeof source.gift_card_block === 'object' ? source.gift_card_block : {},
 			geoPreview: source.geo_preview && source.geo_preview.enabled !== false,
 			geo: source.address_geo && typeof source.address_geo === 'object' ? source.address_geo : {}
@@ -1187,10 +1213,32 @@
 		html += '<div class="mp-cc-admin-preview__date-rules">';
 		html += '<p><strong>Coupon placement:</strong> ' + escapeHtml(String(cfg.discountLayout.placement || 'step_4')) + ', separate-step ready=' + escapeHtml(cfg.discountLayout.separate_step_enabled ? 'yes' : 'no') + '</p>';
 		html += '<p><strong>Discount styles:</strong> empty=' + escapeHtml(String(cfg.discountStyles.state_empty || 'default')) + ', success=' + escapeHtml(String(cfg.discountStyles.state_success || 'success')) + ', error=' + escapeHtml(String(cfg.discountStyles.state_error || 'error')) + '</p>';
-		html += '<p><strong>Payment block:</strong> title="' + escapeHtml(String(cfg.payment.title || 'Способ оплаты')) + '", style=' + escapeHtml(String(cfg.payment.card_style || 'default')) + ', description=' + escapeHtml(cfg.payment.show_description === false ? 'off' : 'on') + '</p>';
+		html += '<p><strong>Payment block:</strong> title="' + escapeHtml(String(cfg.payment.title || 'Способ оплаты')) + '", surface=' + escapeHtml(String(cfg.payment.card_surface || 'visual')) + ', auto_classic_if_empty=' + escapeHtml(cfg.payment.auto_classic_on_empty_gateway_fields === false ? 'off' : 'on') + ', decorative=' + escapeHtml(cfg.payment.decorative_card_fields === false ? 'off' : 'on') + ', style=' + escapeHtml(String(cfg.payment.card_style || 'default')) + ', description=' + escapeHtml(cfg.payment.show_description === false ? 'off' : 'on') + '</p>';
 		html += '<p><strong>Payment states:</strong> loading="' + escapeHtml(String((cfg.payment.messages && cfg.payment.messages.loading) || '—')) + '", success="' + escapeHtml(String((cfg.payment.messages && cfg.payment.messages.success) || '—')) + '", error="' + escapeHtml(String((cfg.payment.messages && cfg.payment.messages.error) || '—')) + '"</p>';
 		html += '<p><strong>Payment diagnostics:</strong> ' + escapeHtml(cfg.payment.diagnostics && cfg.payment.diagnostics.enabled === false ? 'off' : 'on') + '</p>';
+		var smrCfg = cfg.payment.summary_mini_review && typeof cfg.payment.summary_mini_review === 'object' ? cfg.payment.summary_mini_review : {};
+		html += '<p><strong>Summary mini-review:</strong> enabled=' + escapeHtml(smrCfg.enabled === false ? 'off' : 'on') + ', show_gateway_id=' + escapeHtml(smrCfg.show_gateway_id ? 'on' : 'off') + ', show_description=' + escapeHtml(smrCfg.show_gateway_description === false ? 'off' : 'on') + '</p>';
 		html += '</div>';
+		html += '<div class="mp-cc-admin-preview__date-grid mp-cc-admin-step4-sidebar-mock">';
+		html += '<article class="mp-cc-admin-sidebar-mock">';
+		html += '<strong>Превью: правая колонка (промо + итоги + оплата)</strong>';
+		html += '<p>coupon <code>allow_remove_applied</code>=' + escapeHtml(cfg.coupon.allow_remove_applied === false ? 'off' : 'on') + ', <code>summary_section_title</code>=' + escapeHtml(trimNonEmptyAdmin(cfg.coupon.summary_section_title) || '—') + '</p>';
+		html += '<div class="mp-cc-admin-sidebar-mock__card">';
+		html += '<p class="mp-cc-admin-sidebar-mock__pret">' + escapeHtml(trimNonEmptyAdmin(cfg.coupon.summary_section_title) || 'Промокоды и скидки') + '</p>';
+		html += '<div class="mp-cc-admin-sidebar-mock__chiprow"><span class="mp-cc-admin-sidebar-mock__chip">PROMO10: −500 ₽</span><span class="mp-cc-admin-sidebar-mock__x">×</span></div>';
+		html += '<div class="mp-cc-admin-sidebar-mock__chiprow"><span class="mp-cc-admin-sidebar-mock__chip">Подарочная карта: −200 ₽</span></div>';
+		html += '<p class="mp-cc-admin-sidebar-mock__pret">Итоги</p>';
+		html += '<p class="mp-cc-admin-sidebar-mock__row">Подытог: <strong>3 670 ₽</strong></p>';
+		html += '<p class="mp-cc-admin-sidebar-mock__row">Итого: <strong>2 970 ₽</strong></p>';
+		html += '<div class="mp-cc-admin-sidebar-mock__mini">';
+		html += '<p class="mp-cc-admin-sidebar-mock__mint">' + escapeHtml(trimNonEmptyAdmin(smrCfg.title) || 'Способ оплаты') + '</p>';
+		html += '<p class="mp-cc-admin-sidebar-mock__minm">' + escapeHtml(trimNonEmptyAdmin(smrCfg.intro) || 'Выбранный метод проведения платежа.') + '</p>';
+		html += '<p class="mp-cc-admin-sidebar-mock__minl"><span>Метод</span> <strong>Банковская карта</strong></p>';
+		if (smrCfg.show_gateway_id) {
+			html += '<p class="mp-cc-admin-sidebar-mock__minl mp-cc-admin-sidebar-mock__minl--muted"><span>Код</span> <code>card_gateway</code></p>';
+		}
+		html += '<p class="mp-cc-admin-sidebar-mock__minst">' + escapeHtml(trimNonEmptyAdmin(smrCfg.state_loading) || 'Сохраняем выбор…') + '</p>';
+		html += '</div></div></article></div>';
 		html += '<div class="mp-cc-admin-preview__date-grid">';
 		html += '<article>';
 		html += '<strong>' + escapeHtml(String(cfg.coupon.title || cfg.giftCard.title || 'Подарочная карта')) + '</strong>';
@@ -1201,6 +1249,22 @@
 		html += '<p><em>Одно поле на шаге 4:</em> тексты из <code>coupon_block</code>, при пустых полях подставляются из <code>gift_card_block</code>.</p>';
 		html += '</article>';
 		html += '</div>';
+		html += '<div class="mp-cc-admin-preview__date-grid">';
+		html += '<article class="mp-cc-admin-gift-peer-preview">';
+		html += '<strong>Превью: подарочная карта рядом с оплатой</strong>';
+		html += '<p>Карточный UI: <code>gift_card_block.peer_next_to_payment</code>=' + escapeHtml(cfg.giftCard.peer_next_to_payment === false ? 'off' : 'on') + ', <code>allow_remove_applied</code>=' + escapeHtml(cfg.giftCard.allow_remove_applied === false ? 'off' : 'on') + '</p>';
+		var gTitle = trimNonEmptyAdmin(cfg.giftCard.card_title) || trimNonEmptyAdmin(cfg.giftCard.title) || 'Подарочная карта';
+		var gSub = trimNonEmptyAdmin(cfg.giftCard.card_subtitle) || trimNonEmptyAdmin(cfg.giftCard.intro) || 'Введите код подарочной карты.';
+		html += '<div class="mp-cc-admin-gift-peer-preview__mock" aria-hidden="true">';
+		html += '<div class="mp-cc-admin-gift-peer-preview__shell"><span class="mp-cc-admin-gift-peer-preview__badge">Подарок</span>';
+		html += '<p class="mp-cc-admin-gift-peer-preview__t">' + escapeHtml(gTitle) + '</p>';
+		html += '<p class="mp-cc-admin-gift-peer-preview__s">' + escapeHtml(gSub) + '</p></div>';
+		html += '<div class="mp-cc-admin-gift-peer-preview__inlay">';
+		html += '<span class="mp-cc-admin-gift-peer-preview__ph"></span>';
+		html += '<span class="mp-cc-admin-gift-peer-preview__btn">' + escapeHtml(trimNonEmptyAdmin(cfg.giftCard.apply_label) || 'Применить') + '</span>';
+		html += '</div></div>';
+		html += '<p class="mp-cc-admin-preview__muted"><code>card_title</code> / <code>card_subtitle</code> / <code>unavailable_message</code> — опционально; пустые значения берутся из основных полей блока.</p>';
+		html += '</article></div>';
 		html += '<div class="mp-cc-admin-preview__date-grid">';
 		html += '<article>';
 		html += '<strong>Payment preview: loading</strong>';
@@ -1235,23 +1299,25 @@
 	}
 
 	function readFormValue(name, fallback) {
+		var $checkbox = $('[name="' + name + '"]').filter('[type="checkbox"]');
+		if ($checkbox.length) {
+			return $checkbox.is(':checked');
+		}
 		var $field = $('[name="' + name + '"]').first();
 		if (!$field.length) {
 			return fallback;
-		}
-		if ($field.is(':checkbox')) {
-			return $field.is(':checked');
 		}
 		return String($field.val() || '');
 	}
 
 	function writeFormValue(name, value) {
-		var $field = $('[name="' + name + '"]').first();
-		if (!$field.length) {
+		var $checkbox = $('[name="' + name + '"]').filter('[type="checkbox"]');
+		if ($checkbox.length) {
+			$checkbox.prop('checked', Boolean(value));
 			return;
 		}
-		if ($field.is(':checkbox')) {
-			$field.prop('checked', Boolean(value));
+		var $field = $('[name="' + name + '"]').first();
+		if (!$field.length) {
 			return;
 		}
 		$field.val(String(value == null ? '' : value));
@@ -1373,6 +1439,9 @@
 		var py = 'mp_custom_checkout_settings[step_4][payment_block]';
 		cfg.payment.title = readFormValue(py + '[title]', cfg.payment.title || 'Способ оплаты');
 		cfg.payment.intro = readFormValue(py + '[intro]', cfg.payment.intro || 'Выберите удобный способ оплаты.');
+		cfg.payment.card_surface = readFormValue(py + '[card_surface]', cfg.payment.card_surface || 'visual');
+		cfg.payment.auto_classic_on_empty_gateway_fields = Boolean(readFormValue(py + '[auto_classic_on_empty_gateway_fields]', cfg.payment.auto_classic_on_empty_gateway_fields !== false));
+		cfg.payment.decorative_card_fields = Boolean(readFormValue(py + '[decorative_card_fields]', cfg.payment.decorative_card_fields !== false));
 		cfg.payment.card_style = readFormValue(py + '[card_style]', cfg.payment.card_style || 'default');
 		cfg.payment.show_description = Boolean(readFormValue(py + '[show_description]', cfg.payment.show_description !== false));
 		cfg.payment.required = Boolean(readFormValue(py + '[required]', cfg.payment.required !== false));
@@ -1394,6 +1463,18 @@
 		cfg.payment.messages.error = readFormValue(py + '[messages][error]', cfg.payment.messages.error || 'Не удалось переключить способ оплаты.');
 		cfg.payment.diagnostics = cfg.payment.diagnostics && typeof cfg.payment.diagnostics === 'object' ? cfg.payment.diagnostics : {};
 		cfg.payment.diagnostics.enabled = Boolean(readFormValue(py + '[diagnostics][enabled]', cfg.payment.diagnostics.enabled !== false));
+		var mrPath = py + '[summary_mini_review]';
+		cfg.payment.summary_mini_review = cfg.payment.summary_mini_review && typeof cfg.payment.summary_mini_review === 'object' ? cfg.payment.summary_mini_review : {};
+		cfg.payment.summary_mini_review.enabled = Boolean(readFormValue(mrPath + '[enabled]', cfg.payment.summary_mini_review.enabled !== false));
+		cfg.payment.summary_mini_review.title = readFormValue(mrPath + '[title]', cfg.payment.summary_mini_review.title || '');
+		cfg.payment.summary_mini_review.intro = readFormValue(mrPath + '[intro]', cfg.payment.summary_mini_review.intro || '');
+		cfg.payment.summary_mini_review.method_label = readFormValue(mrPath + '[method_label]', cfg.payment.summary_mini_review.method_label || '');
+		cfg.payment.summary_mini_review.id_label = readFormValue(mrPath + '[id_label]', cfg.payment.summary_mini_review.id_label || '');
+		cfg.payment.summary_mini_review.state_loading = readFormValue(mrPath + '[state_loading]', cfg.payment.summary_mini_review.state_loading || '');
+		cfg.payment.summary_mini_review.state_success = readFormValue(mrPath + '[state_success]', cfg.payment.summary_mini_review.state_success || '');
+		cfg.payment.summary_mini_review.state_error = readFormValue(mrPath + '[state_error]', cfg.payment.summary_mini_review.state_error || '');
+		cfg.payment.summary_mini_review.show_gateway_id = Boolean(readFormValue(mrPath + '[show_gateway_id]', cfg.payment.summary_mini_review.show_gateway_id === true));
+		cfg.payment.summary_mini_review.show_gateway_description = Boolean(readFormValue(mrPath + '[show_gateway_description]', cfg.payment.summary_mini_review.show_gateway_description !== false));
 		var cp = 'mp_custom_checkout_settings[step_4][coupon_block]';
 		cfg.coupon.title = readFormValue(cp + '[title]', cfg.coupon.title || 'Подарочная карта');
 		cfg.coupon.intro = readFormValue(cp + '[intro]', cfg.coupon.intro || '');
@@ -1403,6 +1484,8 @@
 		cfg.coupon.empty_message = readFormValue(cp + '[empty_message]', cfg.coupon.empty_message || '');
 		cfg.coupon.success_message = readFormValue(cp + '[success_message]', cfg.coupon.success_message || '');
 		cfg.coupon.error_message = readFormValue(cp + '[error_message]', cfg.coupon.error_message || '');
+		cfg.coupon.allow_remove_applied = Boolean(readFormValue(cp + '[allow_remove_applied]', cfg.coupon.allow_remove_applied !== false));
+		cfg.coupon.summary_section_title = readFormValue(cp + '[summary_section_title]', cfg.coupon.summary_section_title || '');
 		var gc = 'mp_custom_checkout_settings[step_4][gift_card_block]';
 		cfg.giftCard.title = readFormValue(gc + '[title]', cfg.giftCard.title || 'Подарочная карта');
 		cfg.giftCard.intro = readFormValue(gc + '[intro]', cfg.giftCard.intro || '');
@@ -1412,6 +1495,11 @@
 		cfg.giftCard.empty_message = readFormValue(gc + '[empty_message]', cfg.giftCard.empty_message || '');
 		cfg.giftCard.success_message = readFormValue(gc + '[success_message]', cfg.giftCard.success_message || '');
 		cfg.giftCard.error_message = readFormValue(gc + '[error_message]', cfg.giftCard.error_message || '');
+		cfg.giftCard.peer_next_to_payment = Boolean(readFormValue(gc + '[peer_next_to_payment]', cfg.giftCard.peer_next_to_payment !== false));
+		cfg.giftCard.allow_remove_applied = Boolean(readFormValue(gc + '[allow_remove_applied]', cfg.giftCard.allow_remove_applied !== false));
+		cfg.giftCard.card_title = readFormValue(gc + '[card_title]', cfg.giftCard.card_title || '');
+		cfg.giftCard.card_subtitle = readFormValue(gc + '[card_subtitle]', cfg.giftCard.card_subtitle || '');
+		cfg.giftCard.unavailable_message = readFormValue(gc + '[unavailable_message]', cfg.giftCard.unavailable_message || '');
 		return cfg;
 	}
 
