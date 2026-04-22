@@ -38,4 +38,6 @@
 - Confirm baseline docs are актуальны:
   - `docs/v2-scope-baseline.md`
   - `docs/v2-conflict-matrix.md`
+  - `docs/v2-delivery-governance.md`
+  - `docs/v2-change-log.md`
 

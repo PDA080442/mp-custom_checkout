@@ -50,6 +50,8 @@ This document locks the approved v2 implementation baseline before active coding
 
 ## Traceability
 - `docs/v2-conflict-matrix.md` resolves legacy-vs-v2 conflicts.
+- `docs/v2-delivery-governance.md` defines must-have blocks, streams, DoD, QA lock and stage gates.
+- `docs/v2-change-log.md` is mandatory for post-baseline requirement changes.
 - `docs/checkout-rollout-flags-strategy.md` defines rollout stages.
 - `core/Settings/DefaultFeatureFlagsRegistry.php` defines `checkout_ui_v2`.
 - `core/Settings/FeatureFlagResolver.php` exports `checkout_ui_v2` to frontend runtime.
@@ -59,3 +61,5 @@ This document locks the approved v2 implementation baseline before active coding
 - [ ] rollout doc updated
 - [ ] conflict matrix present
 - [ ] baseline document present
+- [ ] governance doc present
+- [ ] change-log process initialized
