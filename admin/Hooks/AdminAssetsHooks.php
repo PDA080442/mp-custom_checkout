@@ -44,6 +44,7 @@ final class AdminAssetsHooks {
 				'scenarioUiConfig' => SafeSettingsResolver::get_section( 'step_2' ),
 				'stepThreeConfig' => SafeSettingsResolver::get_section( 'step_3' ),
 				'stepFourConfig' => SafeSettingsResolver::get_section( 'step_4' ),
+				'deliveryConfig' => SafeSettingsResolver::get_section( 'delivery' ),
 				'pickupConfig' => PickupPointRegistry::config(),
 				'labels' => SafeSettingsResolver::get_section( 'labels' ),
 			)

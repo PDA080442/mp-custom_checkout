@@ -58,7 +58,60 @@ final class AdminMenuHooks {
 	public static function sanitize_settings( $value ): array {
 		$incoming = is_array( $value ) ? $value : array();
 		$defaults = SafeSettingsResolver::get_defaults_tree();
-		return self::sanitize_by_shape( $incoming, $defaults, '' );
+		$sanitized = self::sanitize_by_shape( $incoming, $defaults, '' );
+		return self::normalize_delivery_settings( $sanitized );
+	}
+
+	/**
+	 * @param array<string, mixed> $settings
+	 * @return array<string, mixed>
+	 */
+	private static function normalize_delivery_settings( array $settings ): array {
+		if ( ! isset( $settings[ OptionKeys::SECTION_DELIVERY ] ) || ! is_array( $settings[ OptionKeys::SECTION_DELIVERY ] ) ) {
+			return $settings;
+		}
+		$delivery = $settings[ OptionKeys::SECTION_DELIVERY ];
+		$catalog  = isset( $delivery['shipping_catalog'] ) && is_array( $delivery['shipping_catalog'] ) ? $delivery['shipping_catalog'] : array();
+		$methods  = isset( $catalog['methods'] ) && is_array( $catalog['methods'] ) ? $catalog['methods'] : array();
+		foreach ( $methods as $method_id => $method ) {
+			if ( ! is_array( $method ) ) {
+				unset( $methods[ $method_id ] );
+				continue;
+			}
+			$method['price'] = isset( $method['price'] ) ? max( 0, (int) $method['price'] ) : 0;
+			$method['eta']   = isset( $method['eta'] ) ? sanitize_text_field( (string) $method['eta'] ) : '';
+			if ( isset( $method['tariffs'] ) && is_array( $method['tariffs'] ) ) {
+				foreach ( $method['tariffs'] as $tariff_id => $tariff ) {
+					if ( ! is_array( $tariff ) ) {
+						unset( $method['tariffs'][ $tariff_id ] );
+						continue;
+					}
+					$tariff['price'] = isset( $tariff['price'] ) ? max( 0, (int) $tariff['price'] ) : 0;
+					$tariff['eta']   = isset( $tariff['eta'] ) ? sanitize_text_field( (string) $tariff['eta'] ) : '';
+					$method['tariffs'][ $tariff_id ] = $tariff;
+				}
+			}
+			$methods[ $method_id ] = $method;
+		}
+		$sort = isset( $catalog['sort_order'] ) && is_array( $catalog['sort_order'] ) ? $catalog['sort_order'] : array();
+		$valid_sort = array();
+		foreach ( $sort as $candidate ) {
+			$id = sanitize_key( (string) $candidate );
+			if ( '' === $id || ! isset( $methods[ $id ] ) ) {
+				continue;
+			}
+			$valid_sort[] = $id;
+		}
+		foreach ( array_keys( $methods ) as $method_id ) {
+			if ( ! in_array( $method_id, $valid_sort, true ) ) {
+				$valid_sort[] = $method_id;
+			}
+		}
+		$catalog['methods'] = $methods;
+		$catalog['sort_order'] = $valid_sort;
+		$delivery['shipping_catalog'] = $catalog;
+		$settings[ OptionKeys::SECTION_DELIVERY ] = $delivery;
+		return $settings;
 	}
 
 	/**

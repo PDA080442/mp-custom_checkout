@@ -200,6 +200,20 @@
 		};
 	}
 
+	function getDeliveryConfigFromRuntime() {
+		var source = window.mpCcAdmin && window.mpCcAdmin.deliveryConfig ? window.mpCcAdmin.deliveryConfig : {};
+		var catalog = source.shipping_catalog && typeof source.shipping_catalog === 'object' ? source.shipping_catalog : {};
+		return {
+			shippingCatalog: {
+				sortOrder: Array.isArray(catalog.sort_order) ? catalog.sort_order : [],
+				methods: catalog.methods && typeof catalog.methods === 'object' ? catalog.methods : {},
+				errorCopy: catalog.error_copy && typeof catalog.error_copy === 'object' ? catalog.error_copy : {},
+				bulkUpdate: catalog.bulk_update && typeof catalog.bulk_update === 'object' ? catalog.bulk_update : { enabled: true, seasonal_delta_pct: 0, seasonal_delta_abs: 0, eta_suffix: '' },
+				preview: catalog.preview && typeof catalog.preview === 'object' ? catalog.preview : { enabled: true, mock_subtotal: 3670, mock_discount: 200, mock_tax: 160 }
+			}
+		};
+	}
+
 	function trimNonEmptyAdmin(value) {
 		var s = String(value || '').trim();
 		return s ? s : '';
@@ -757,6 +771,356 @@
 		return html;
 	}
 
+	function renderDeliveryConfigPreview(cfg) {
+		var cat = cfg.shippingCatalog || {};
+		var methods = cat.methods && typeof cat.methods === 'object' ? cat.methods : {};
+		var sort = Array.isArray(cat.sortOrder) ? cat.sortOrder : Object.keys(methods);
+		var mockSubtotal = Number((cat.preview && cat.preview.mock_subtotal) || 3670);
+		var mockDiscount = Number((cat.preview && cat.preview.mock_discount) || 200);
+		var mockTax = Number((cat.preview && cat.preview.mock_tax) || 160);
+		var html = '';
+		html += '<section class="mp-cc-admin-preview mp-cc-admin-preview--delivery" id="mp-cc-admin-delivery-preview">';
+		html += '<h2>Shipping Catalog Preview</h2>';
+		html += '<p>Sort order: <code>' + escapeHtml(sort.join(', ')) + '</code></p>';
+		html += '<div class="mp-cc-admin-preview__date-grid">';
+		for (var i = 0; i < sort.length; i += 1) {
+			var id = String(sort[i] || '');
+			var method = methods[id] && typeof methods[id] === 'object' ? methods[id] : null;
+			if (!method || method.active === false) {
+				continue;
+			}
+			var price = Number(method.price || 0);
+			var total = Math.max(0, mockSubtotal - mockDiscount + mockTax + price);
+			html += '<article>';
+			html += '<strong>' + escapeHtml(String(method.title || id)) + '</strong>';
+			html += '<p>id: <code>' + escapeHtml(id) + '</code></p>';
+			html += '<p>price: ' + escapeHtml(String(Math.round(price))) + ' ₽, eta: ' + escapeHtml(String(method.eta || '—')) + '</p>';
+			html += '<p>requires address: ' + escapeHtml(method.requires_address ? 'yes' : 'no') + '</p>';
+			var vis = Array.isArray(method.visibility_scenarios) ? method.visibility_scenarios : [];
+			html += '<p>visibility_scenarios: <code>' + escapeHtml(vis.length ? vis.join(', ') : '(пусто — метод доступен при любом сценарии)') + '</code></p>';
+			if (method.tariffs && typeof method.tariffs === 'object') {
+				var tks = Object.keys(method.tariffs);
+				var tj;
+				for (tj = 0; tj < tks.length; tj += 1) {
+					var tk = tks[tj];
+					var trw = method.tariffs[tk] && typeof method.tariffs[tk] === 'object' ? method.tariffs[tk] : {};
+					if (trw.active === false) {
+						continue;
+					}
+					html += '<p class="mp-cc-admin-preview__tariff-line"><code>' + escapeHtml(tk) + '</code> — ' + escapeHtml(String(trw.title || '')) + ', ' + escapeHtml(String(Math.round(Number(trw.price || 0)))) + ' ₽, eta ' + escapeHtml(String(trw.eta || '—')) + '</p>';
+				}
+			}
+			html += '<p><strong>Preview total:</strong> ' + escapeHtml(String(Math.round(total))) + ' ₽</p>';
+			html += '</article>';
+		}
+		html += '</div>';
+		html += '<div class="mp-cc-admin-preview__date-errors">';
+		html += '<p><strong>Error copy method:</strong> ' + escapeHtml(String((cat.errorCopy && cat.errorCopy.method_unavailable) || '—')) + '</p>';
+		html += '<p><strong>Error copy tariff:</strong> ' + escapeHtml(String((cat.errorCopy && cat.errorCopy.tariff_unavailable) || '—')) + '</p>';
+		html += '</div>';
+		html += '<p><button type="button" class="button button-secondary" data-mp-cc-delivery-bulk-apply="1">Применить bulk update к ценам/ETA в форме</button></p>';
+		html += '</section>';
+		return html;
+	}
+
+	function applyDeliveryBulkUpdate(liveCfg) {
+		var cat = liveCfg.shippingCatalog || {};
+		var methods = cat.methods && typeof cat.methods === 'object' ? cat.methods : {};
+		var bulk = cat.bulkUpdate || {};
+		var pct = Number(bulk.seasonal_delta_pct || 0);
+		var abs = Number(bulk.seasonal_delta_abs || 0);
+		var suffix = String(bulk.eta_suffix || '').trim();
+		var p = 'mp_custom_checkout_settings[delivery][shipping_catalog][methods]';
+		var methodIds = Object.keys(methods);
+		for (var i = 0; i < methodIds.length; i += 1) {
+			var id = methodIds[i];
+			var m = methods[id] || {};
+			if (m.active === false) {
+				continue;
+			}
+			var nextPrice = Number(m.price || 0);
+			if (pct) {
+				nextPrice = nextPrice + (nextPrice * pct / 100);
+			}
+			if (abs) {
+				nextPrice += abs;
+			}
+			nextPrice = Math.max(0, Math.round(nextPrice));
+			writeFormValue(p + '[' + id + '][price]', String(nextPrice));
+			if (suffix) {
+				var eta = String(m.eta || '');
+				var nextEta = eta.indexOf(suffix) > -1 ? eta : (eta ? eta + ' ' + suffix : suffix);
+				writeFormValue(p + '[' + id + '][eta]', nextEta);
+			}
+		}
+	}
+
+	function validateDeliveryConfigConsistency(cfg) {
+		var errors = [];
+		var allowedScenarios = { pickup: true, krasnoyarsk_delivery: true, other_city_delivery: true };
+		var cat = cfg.shippingCatalog || {};
+		var methods = cat.methods && typeof cat.methods === 'object' ? cat.methods : {};
+		var sort = Array.isArray(cat.sortOrder) ? cat.sortOrder : [];
+		for (var i = 0; i < sort.length; i += 1) {
+			if (!methods[sort[i]]) {
+				errors.push('sort_order содержит неизвестный метод: ' + sort[i]);
+			}
+		}
+		var methodIds = Object.keys(methods);
+		for (var m = 0; m < methodIds.length; m += 1) {
+			var id = methodIds[m];
+			var method = methods[id] || {};
+			if (method.active !== false && !String(method.title || '').trim()) {
+				errors.push('Пустое название у активного метода: ' + id);
+			}
+			if (Number(method.price || 0) < 0) {
+				errors.push('Отрицательная цена у метода: ' + id);
+			}
+			if (Array.isArray(method.visibility_scenarios)) {
+				for (var si = 0; si < method.visibility_scenarios.length; si += 1) {
+					var sc = String(method.visibility_scenarios[si] || '').trim();
+					if (!sc) {
+						continue;
+					}
+					if (!allowedScenarios[sc]) {
+						errors.push('Неизвестный сценарий в visibility_scenarios у метода «' + id + '»: ' + sc + ' (допустимо: pickup, krasnoyarsk_delivery, other_city_delivery)');
+					}
+				}
+			}
+			if (method.tariffs && typeof method.tariffs === 'object') {
+				var tariffKeys = Object.keys(method.tariffs);
+				var ti;
+				for (ti = 0; ti < tariffKeys.length; ti += 1) {
+					var tid = tariffKeys[ti];
+					var tr = method.tariffs[tid] && typeof method.tariffs[tid] === 'object' ? method.tariffs[tid] : {};
+					if (tr.active !== false && !String(tr.title || '').trim()) {
+						errors.push('Пустое название у активного тарифа «' + tid + '» (метод ' + id + ')');
+					}
+					if (Number(tr.price || 0) < 0) {
+						errors.push('Отрицательная цена у тарифа «' + tid + '» (метод ' + id + ')');
+					}
+				}
+			}
+		}
+		return errors;
+	}
+
+	var DELIVERY_STUDIO_CATALOG = 'mp_custom_checkout_settings[delivery][shipping_catalog]';
+
+	function deliveryStudioNotifyForm(name) {
+		var $f = $('[name="' + name + '"]').first();
+		if ($f.length) {
+			$f.trigger('input').trigger('change');
+		}
+	}
+
+	function readDeliverySortOrderArray() {
+		var raw = String(readFormValue(DELIVERY_STUDIO_CATALOG + '[sort_order]', '') || '');
+		var arr = raw.split(',').map(function (s) {
+			return String(s || '').trim();
+		}).filter(Boolean);
+		var base = getDeliveryConfigFromRuntime();
+		var live = readLiveDeliveryConfig(base);
+		var methods = live.shippingCatalog && live.shippingCatalog.methods ? live.shippingCatalog.methods : {};
+		var out = [];
+		var seen = {};
+		var i;
+		var id;
+		for (i = 0; i < arr.length; i += 1) {
+			id = arr[i];
+			if (methods[id] && !seen[id]) {
+				seen[id] = true;
+				out.push(id);
+			}
+		}
+		var keys = Object.keys(methods);
+		for (i = 0; i < keys.length; i += 1) {
+			id = keys[i];
+			if (!seen[id]) {
+				seen[id] = true;
+				out.push(id);
+			}
+		}
+		return out;
+	}
+
+	function writeDeliverySortOrderArray(order) {
+		writeFormValue(DELIVERY_STUDIO_CATALOG + '[sort_order]', order.join(', '));
+		deliveryStudioNotifyForm(DELIVERY_STUDIO_CATALOG + '[sort_order]');
+	}
+
+	function mountDeliveryStudioPanel() {
+		var section = detectActiveSettingsSection();
+		var $fields = $('.mp-cc-admin-shell__fields').first();
+		if (section !== 'delivery' || !$fields.length) {
+			$('#mp-cc-delivery-studio').remove();
+			return;
+		}
+		if (!$('[name^="mp_custom_checkout_settings[delivery]"]').length) {
+			return;
+		}
+		var base = getDeliveryConfigFromRuntime();
+		var live = readLiveDeliveryConfig(base);
+		var cat = live.shippingCatalog || {};
+		var methods = cat.methods && typeof cat.methods === 'object' ? cat.methods : {};
+		var displaySort = readDeliverySortOrderArray();
+		var html = '';
+		html += '<div id="mp-cc-delivery-studio" class="mp-cc-delivery-studio">';
+		html += '<header class="mp-cc-delivery-studio__head">';
+		html += '<h3 class="mp-cc-delivery-studio__title">Каталог доставки</h3>';
+		html += '<p class="mp-cc-delivery-studio__lead">Порядок способов синхронизируется с полем <code>sort_order</code>. Тарифы курьера и ПВЗ — с соответствующими полями формы. Дополнительные позиции используют резервные слоты <code>slot_1</code> / <code>slot_2</code> (так сохранение совместимо с деревом настроек).</p>';
+		html += '</header>';
+		html += '<section class="mp-cc-delivery-studio__block">';
+		html += '<h4>Порядок на витрине</h4>';
+		html += '<ol class="mp-cc-delivery-studio__sort-list">';
+		var i;
+		for (i = 0; i < displaySort.length; i += 1) {
+			var mid = String(displaySort[i] || '');
+			if (!mid || !methods[mid]) {
+				continue;
+			}
+			var mm = methods[mid];
+			var label = String(mm.title || mid);
+			var inactive = mm.active === false;
+			html += '<li class="mp-cc-delivery-studio__sort-item"' + (inactive ? ' data-inactive="1"' : '') + '>';
+			html += '<span class="mp-cc-delivery-studio__sort-label">' + escapeHtml(label) + ' <code>' + escapeHtml(mid) + '</code></span>';
+			html += '<span class="mp-cc-delivery-studio__sort-actions">';
+			html += '<button type="button" class="button button-small" data-mp-cc-delivery-sort-up="' + escapeHtml(mid) + '"' + (i === 0 ? ' disabled' : '') + '>↑</button>';
+			html += '<button type="button" class="button button-small" data-mp-cc-delivery-sort-down="' + escapeHtml(mid) + '"' + (i >= displaySort.length - 1 ? ' disabled' : '') + '>↓</button>';
+			html += '</span></li>';
+		}
+		html += '</ol></section>';
+		var tariffMethods = ['courier', 'pvz'];
+		for (var tm = 0; tm < tariffMethods.length; tm += 1) {
+			var methodId = tariffMethods[tm];
+			var method = methods[methodId];
+			if (!method || !method.tariffs || typeof method.tariffs !== 'object') {
+				continue;
+			}
+			html += '<section class="mp-cc-delivery-studio__block">';
+			html += '<h4>Тарифы: ' + escapeHtml(String(method.title || methodId)) + ' <code>' + escapeHtml(methodId) + '</code></h4>';
+			html += '<table class="mp-cc-delivery-studio__tariff-table"><thead><tr><th>ID</th><th>Название</th><th>Цена</th><th>ETA</th><th>Активен</th><th></th></tr></thead><tbody>';
+			var tariffIds = Object.keys(method.tariffs);
+			var ti2;
+			for (ti2 = 0; ti2 < tariffIds.length; ti2 += 1) {
+				var tariffId = tariffIds[ti2];
+				var tr = method.tariffs[tariffId] && typeof method.tariffs[tariffId] === 'object' ? method.tariffs[tariffId] : {};
+				var isSlot = tariffId === 'slot_1' || tariffId === 'slot_2';
+				var active = tr.active !== false;
+				html += '<tr>';
+				html += '<td><code>' + escapeHtml(tariffId) + '</code></td>';
+				html += '<td><input type="text" class="regular-text mp-cc-delivery-studio__input" data-mp-cc-tariff-field="title" data-method="' + escapeHtml(methodId) + '" data-tariff="' + escapeHtml(tariffId) + '" value="' + escapeHtml(String(tr.title || '')) + '" /></td>';
+				html += '<td><input type="number" min="0" step="1" class="small-text mp-cc-delivery-studio__input" data-mp-cc-tariff-field="price" data-method="' + escapeHtml(methodId) + '" data-tariff="' + escapeHtml(tariffId) + '" value="' + escapeHtml(String(Math.max(0, Math.round(Number(tr.price || 0))))) + '" /></td>';
+				html += '<td><input type="text" class="regular-text mp-cc-delivery-studio__input" data-mp-cc-tariff-field="eta" data-method="' + escapeHtml(methodId) + '" data-tariff="' + escapeHtml(tariffId) + '" value="' + escapeHtml(String(tr.eta || '')) + '" /></td>';
+				html += '<td><label class="mp-cc-delivery-studio__check"><input type="checkbox" data-mp-cc-tariff-field="active" data-method="' + escapeHtml(methodId) + '" data-tariff="' + escapeHtml(tariffId) + '"' + (active ? ' checked' : '') + ' /> да</label></td>';
+				html += '<td>';
+				if (isSlot) {
+					if (active) {
+						html += '<button type="button" class="button button-small" data-mp-cc-tariff-slot-off="' + escapeHtml(methodId) + '" data-tariff="' + escapeHtml(tariffId) + '">Очистить слот</button>';
+					} else {
+						html += '<button type="button" class="button button-small button-primary" data-mp-cc-tariff-slot-on="' + escapeHtml(methodId) + '" data-tariff="' + escapeHtml(tariffId) + '">Включить слот</button>';
+					}
+				} else {
+					html += '<span class="description">базовый</span>';
+				}
+				html += '</td></tr>';
+			}
+			html += '</tbody></table></section>';
+		}
+		html += '</div>';
+		var $existing = $('#mp-cc-delivery-studio');
+		if ($existing.length) {
+			$existing.replaceWith(html);
+		} else {
+			$fields.prepend(html);
+		}
+	}
+
+	var deliveryStudioInteractionsBound = false;
+
+	function bindDeliveryStudioInteractions() {
+		if (deliveryStudioInteractionsBound) {
+			return;
+		}
+		deliveryStudioInteractionsBound = true;
+		$(document).on('click', '[data-mp-cc-delivery-sort-up]', function () {
+			var mid = String($(this).attr('data-mp-cc-delivery-sort-up') || '');
+			var order = readDeliverySortOrderArray();
+			var idx = order.indexOf(mid);
+			if (idx <= 0) {
+				return;
+			}
+			var prev = order[idx - 1];
+			order[idx - 1] = mid;
+			order[idx] = prev;
+			writeDeliverySortOrderArray(order);
+			mountDeliveryStudioPanel();
+		});
+		$(document).on('click', '[data-mp-cc-delivery-sort-down]', function () {
+			var mid = String($(this).attr('data-mp-cc-delivery-sort-down') || '');
+			var order = readDeliverySortOrderArray();
+			var idx = order.indexOf(mid);
+			if (idx < 0 || idx >= order.length - 1) {
+				return;
+			}
+			var nxt = order[idx + 1];
+			order[idx + 1] = mid;
+			order[idx] = nxt;
+			writeDeliverySortOrderArray(order);
+			mountDeliveryStudioPanel();
+		});
+		$(document).on('input change', '#mp-cc-delivery-studio [data-mp-cc-tariff-field]', function () {
+			var $el = $(this);
+			var field = String($el.attr('data-mp-cc-tariff-field') || '');
+			var methodId = String($el.attr('data-method') || '');
+			var tariffId = String($el.attr('data-tariff') || '');
+			if (!field || !methodId || !tariffId) {
+				return;
+			}
+			var name = DELIVERY_STUDIO_CATALOG + '[methods][' + methodId + '][tariffs][' + tariffId + '][' + field + ']';
+			if (field === 'active') {
+				writeFormValue(name, $el.is(':checked'));
+			} else {
+				writeFormValue(name, $el.val());
+			}
+			deliveryStudioNotifyForm(name);
+		});
+		$(document).on('click', '[data-mp-cc-tariff-slot-on]', function () {
+			var methodId = String($(this).attr('data-mp-cc-tariff-slot-on') || '');
+			var tariffId = String($(this).attr('data-tariff') || '');
+			if (!methodId || !tariffId) {
+				return;
+			}
+			var basePath = DELIVERY_STUDIO_CATALOG + '[methods][' + methodId + '][tariffs][' + tariffId + ']';
+			writeFormValue(basePath + '[active]', true);
+			writeFormValue(basePath + '[title]', 'Доп. тариф');
+			writeFormValue(basePath + '[price]', '0');
+			writeFormValue(basePath + '[eta]', '');
+			deliveryStudioNotifyForm(basePath + '[active]');
+			mountDeliveryStudioPanel();
+		});
+		$(document).on('click', '[data-mp-cc-tariff-slot-off]', function () {
+			var methodId = String($(this).attr('data-mp-cc-tariff-slot-off') || '');
+			var tariffId = String($(this).attr('data-tariff') || '');
+			if (!methodId || !tariffId) {
+				return;
+			}
+			var basePath = DELIVERY_STUDIO_CATALOG + '[methods][' + methodId + '][tariffs][' + tariffId + ']';
+			writeFormValue(basePath + '[active]', false);
+			writeFormValue(basePath + '[title]', '');
+			writeFormValue(basePath + '[price]', '0');
+			writeFormValue(basePath + '[eta]', '');
+			deliveryStudioNotifyForm(basePath + '[active]');
+			mountDeliveryStudioPanel();
+		});
+	}
+
+	function refreshDeliveryAdminUi() {
+		enhanceDeliveryFields();
+		bindDeliveryStudioInteractions();
+		mountDeliveryStudioPanel();
+	}
+
 	function renderStepFourPreview(cfg, previewState) {
 		var order = Array.isArray(cfg.contact.fieldOrder) ? cfg.contact.fieldOrder : [];
 		var runtimeState = previewState && previewState.runtimeState ? String(previewState.runtimeState) : 'default';
@@ -879,6 +1243,18 @@
 			return $field.is(':checked');
 		}
 		return String($field.val() || '');
+	}
+
+	function writeFormValue(name, value) {
+		var $field = $('[name="' + name + '"]').first();
+		if (!$field.length) {
+			return;
+		}
+		if ($field.is(':checkbox')) {
+			$field.prop('checked', Boolean(value));
+			return;
+		}
+		$field.val(String(value == null ? '' : value));
 	}
 
 	function readLiveConfig(baseConfig) {
@@ -1036,6 +1412,55 @@
 		cfg.giftCard.empty_message = readFormValue(gc + '[empty_message]', cfg.giftCard.empty_message || '');
 		cfg.giftCard.success_message = readFormValue(gc + '[success_message]', cfg.giftCard.success_message || '');
 		cfg.giftCard.error_message = readFormValue(gc + '[error_message]', cfg.giftCard.error_message || '');
+		return cfg;
+	}
+
+	function readLiveDeliveryConfig(base) {
+		var cfg = $.extend(true, {}, base);
+		var p = 'mp_custom_checkout_settings[delivery][shipping_catalog]';
+		var methods = cfg.shippingCatalog.methods && typeof cfg.shippingCatalog.methods === 'object' ? cfg.shippingCatalog.methods : {};
+		var methodIds = Object.keys(methods);
+		for (var i = 0; i < methodIds.length; i += 1) {
+			var id = methodIds[i];
+			var mPath = p + '[methods][' + id + ']';
+			methods[id].title = readFormValue(mPath + '[title]', methods[id].title);
+			methods[id].price = Number(readFormValue(mPath + '[price]', methods[id].price));
+			methods[id].eta = readFormValue(mPath + '[eta]', methods[id].eta);
+			methods[id].description = readFormValue(mPath + '[description]', methods[id].description);
+			methods[id].active = Boolean(readFormValue(mPath + '[active]', methods[id].active));
+			methods[id].requires_address = Boolean(readFormValue(mPath + '[requires_address]', methods[id].requires_address));
+			var visFallback = Array.isArray(methods[id].visibility_scenarios) ? methods[id].visibility_scenarios.join(',') : '';
+			methods[id].visibility_scenarios = String(readFormValue(mPath + '[visibility_scenarios]', visFallback)).split(',').map(function (s) {
+				return String(s || '').trim();
+			}).filter(Boolean);
+			if (methods[id].tariffs && typeof methods[id].tariffs === 'object') {
+				var tIds = Object.keys(methods[id].tariffs);
+				var ti;
+				for (ti = 0; ti < tIds.length; ti += 1) {
+					var tid = tIds[ti];
+					var tPath = mPath + '[tariffs][' + tid + ']';
+					var tBase = methods[id].tariffs[tid] && typeof methods[id].tariffs[tid] === 'object' ? methods[id].tariffs[tid] : {};
+					methods[id].tariffs[tid] = {
+						title: readFormValue(tPath + '[title]', tBase.title),
+						price: Number(readFormValue(tPath + '[price]', tBase.price)),
+						eta: readFormValue(tPath + '[eta]', tBase.eta),
+						active: Boolean(readFormValue(tPath + '[active]', tBase.active))
+					};
+				}
+			}
+		}
+		cfg.shippingCatalog.methods = methods;
+		cfg.shippingCatalog.sortOrder = String(readFormValue(p + '[sort_order]', cfg.shippingCatalog.sortOrder.join(','))).split(',').map(function (s) {
+			return String(s || '').trim();
+		}).filter(Boolean);
+		cfg.shippingCatalog.bulkUpdate.seasonal_delta_pct = Number(readFormValue(p + '[bulk_update][seasonal_delta_pct]', cfg.shippingCatalog.bulkUpdate.seasonal_delta_pct));
+		cfg.shippingCatalog.bulkUpdate.seasonal_delta_abs = Number(readFormValue(p + '[bulk_update][seasonal_delta_abs]', cfg.shippingCatalog.bulkUpdate.seasonal_delta_abs));
+		cfg.shippingCatalog.bulkUpdate.eta_suffix = readFormValue(p + '[bulk_update][eta_suffix]', cfg.shippingCatalog.bulkUpdate.eta_suffix);
+		cfg.shippingCatalog.preview.mock_subtotal = Number(readFormValue(p + '[preview][mock_subtotal]', cfg.shippingCatalog.preview.mock_subtotal));
+		cfg.shippingCatalog.preview.mock_discount = Number(readFormValue(p + '[preview][mock_discount]', cfg.shippingCatalog.preview.mock_discount));
+		cfg.shippingCatalog.preview.mock_tax = Number(readFormValue(p + '[preview][mock_tax]', cfg.shippingCatalog.preview.mock_tax));
+		cfg.shippingCatalog.errorCopy.method_unavailable = readFormValue(p + '[error_copy][method_unavailable]', cfg.shippingCatalog.errorCopy.method_unavailable || '');
+		cfg.shippingCatalog.errorCopy.tariff_unavailable = readFormValue(p + '[error_copy][tariff_unavailable]', cfg.shippingCatalog.errorCopy.tariff_unavailable || '');
 		return cfg;
 	}
 
@@ -1215,6 +1640,14 @@
 		$rows.addClass('mp-cc-admin-step4-row');
 	}
 
+	function enhanceDeliveryFields() {
+		var $rows = $('input[name^="mp_custom_checkout_settings[delivery]"], select[name^="mp_custom_checkout_settings[delivery]"], textarea[name^="mp_custom_checkout_settings[delivery]"]').closest('tr');
+		if (!$rows.length) {
+			return;
+		}
+		$rows.addClass('mp-cc-admin-delivery-row');
+	}
+
 	function refreshStepThreeEmptyIndicators() {
 		var selectors = [
 			'input[name="mp_custom_checkout_settings[step_3][copy][title]"]',
@@ -1258,6 +1691,7 @@
 		var dateStepConfig = getDateStepConfigFromRuntime();
 		var officeHoursPreviewConfig = getOfficeHoursPreviewConfigFromRuntime();
 		var stepFourConfig = getStepFourConfigFromRuntime();
+		var deliveryConfig = getDeliveryConfigFromRuntime();
 		var defaults = getDefaults();
 		var settingsDefaults = getSettingsDefaults();
 		var previewStore = createPreviewStore({
@@ -1287,7 +1721,7 @@
 		enhanceStepFourFields();
 		refreshStepThreeEmptyIndicators();
 
-		var mountPreviews = function (nextConfig, nextScenarioConfig, nextDateConfig, nextOfficeConfig, nextStepFourConfig) {
+		var mountPreviews = function (nextConfig, nextScenarioConfig, nextDateConfig, nextOfficeConfig, nextStepFourConfig, nextDeliveryConfig) {
 			var previewState = previewStore.getState();
 			var activeStep = previewState.activeStep || 'step_1';
 			var progressStyle = previewState.progressStyle || 'digits';
@@ -1296,6 +1730,7 @@
 				html += renderPreview(nextConfig, previewState);
 			} else if (activeStep === 'step_2' && nextDateConfig.previewEnabled) {
 				html += renderDatePreview(nextDateConfig, previewState);
+				html += renderDeliveryConfigPreview(nextDeliveryConfig);
 			} else if (activeStep === 'step_3' && nextOfficeConfig.previewEnabled) {
 				html += renderOfficeHoursPreview(nextOfficeConfig);
 				if (nextScenarioConfig.previewEnabled) {
@@ -1342,12 +1777,13 @@
 			var nextDateConfig = readLiveDateStepConfig(dateStepConfig);
 			var nextOfficeCfg = readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig);
 			var nextStepFourCfg = readLiveStepFourConfig(stepFourConfig);
-			mountPreviews(nextConfig, nextScenarioConfig, nextDateConfig, nextOfficeCfg, nextStepFourCfg);
+			var nextDeliveryCfg = readLiveDeliveryConfig(deliveryConfig);
+			mountPreviews(nextConfig, nextScenarioConfig, nextDateConfig, nextOfficeCfg, nextStepFourCfg, nextDeliveryCfg);
 			previewStore.setState({ dirty: true });
 			updatePreviewWarning();
 		};
 		var rerenderDebounced = debounce(rerender, 120);
-		mountPreviews(config, scenarioConfig, dateStepConfig, officeHoursPreviewConfig, stepFourConfig);
+		mountPreviews(config, scenarioConfig, dateStepConfig, officeHoursPreviewConfig, stepFourConfig, deliveryConfig);
 		$('[data-mp-cc-progress-style-select="1"]').val('digits');
 		$('[data-mp-cc-scenario-select="1"]').val('pickup');
 		$('[data-mp-cc-device-select="1"]').val('desktop');
@@ -1369,9 +1805,12 @@
 		$(document).on('input change', '[name^="mp_custom_checkout_settings[step_4]"]', function () {
 			rerenderDebounced();
 		});
+		$(document).on('input change', '[name^="mp_custom_checkout_settings[delivery]"]', function () {
+			rerenderDebounced();
+		});
 		$(document).on('click', '[data-mp-cc-preview-reset]', function () {
 			previewStore.reset();
-			mountPreviews(config, scenarioConfig, dateStepConfig, officeHoursPreviewConfig, stepFourConfig);
+			mountPreviews(config, scenarioConfig, dateStepConfig, officeHoursPreviewConfig, stepFourConfig, deliveryConfig);
 			updatePreviewWarning();
 		});
 		$(document).on('click', '[data-mp-cc-preview-step]', function () {
@@ -1380,7 +1819,7 @@
 				return;
 			}
 			previewStore.setState({ activeStep: stepId, dirty: true });
-			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig), readLiveDeliveryConfig(deliveryConfig));
 			updatePreviewWarning();
 		});
 		$(document).on('click', '[data-mp-cc-progress-style]', function () {
@@ -1389,7 +1828,7 @@
 				return;
 			}
 			previewStore.setState({ progressStyle: style, dirty: true });
-			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig), readLiveDeliveryConfig(deliveryConfig));
 			updatePreviewWarning();
 		});
 		$(document).on('change', '[data-mp-cc-progress-style-select]', function () {
@@ -1398,7 +1837,7 @@
 				return;
 			}
 			previewStore.setState({ progressStyle: styleSelect, dirty: true });
-			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig), readLiveDeliveryConfig(deliveryConfig));
 			updatePreviewWarning();
 		});
 		$(document).on('click', '[data-mp-cc-scenario]', function () {
@@ -1407,7 +1846,7 @@
 				return;
 			}
 			previewStore.setState({ scenario: scenario, dirty: true });
-			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig), readLiveDeliveryConfig(deliveryConfig));
 			updatePreviewWarning();
 		});
 		$(document).on('change', '[data-mp-cc-scenario-select]', function () {
@@ -1416,7 +1855,7 @@
 				return;
 			}
 			previewStore.setState({ scenario: scenarioSelect, dirty: true });
-			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig), readLiveDeliveryConfig(deliveryConfig));
 			updatePreviewWarning();
 		});
 		$(document).on('click', '[data-mp-cc-device]', function () {
@@ -1425,7 +1864,7 @@
 				return;
 			}
 			previewStore.setState({ device: device, dirty: true });
-			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig), readLiveDeliveryConfig(deliveryConfig));
 			updatePreviewWarning();
 		});
 		$(document).on('change', '[data-mp-cc-device-select]', function () {
@@ -1434,7 +1873,7 @@
 				return;
 			}
 			previewStore.setState({ device: deviceSelect, dirty: true });
-			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig), readLiveDeliveryConfig(deliveryConfig));
 			updatePreviewWarning();
 		});
 		$(document).on('click', '[data-mp-cc-interaction]', function () {
@@ -1443,7 +1882,7 @@
 				return;
 			}
 			previewStore.setState({ interactionState: interaction, dirty: true });
-			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig), readLiveDeliveryConfig(deliveryConfig));
 			updatePreviewWarning();
 		});
 		$(document).on('change', '[data-mp-cc-interaction-select]', function () {
@@ -1452,7 +1891,7 @@
 				return;
 			}
 			previewStore.setState({ interactionState: interactionSelect, dirty: true });
-			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig), readLiveDeliveryConfig(deliveryConfig));
 			updatePreviewWarning();
 		});
 		$(document).on('click', '[data-mp-cc-runtime]', function () {
@@ -1461,7 +1900,7 @@
 				return;
 			}
 			previewStore.setState({ runtimeState: runtimeState, dirty: true });
-			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig), readLiveDeliveryConfig(deliveryConfig));
 			updatePreviewWarning();
 		});
 		$(document).on('change', '[data-mp-cc-runtime-select]', function () {
@@ -1470,14 +1909,14 @@
 				return;
 			}
 			previewStore.setState({ runtimeState: runtimeSelect, dirty: true });
-			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig), readLiveDeliveryConfig(deliveryConfig));
 			updatePreviewWarning();
 		});
 		$(document).on('change', '[data-mp-cc-sandbox-select]', function () {
 			var sandbox = String($(this).val() || '');
 			applySandboxScenario(previewStore, sandbox);
 			previewStore.setState({ dirty: true });
-			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig), readLiveDeliveryConfig(deliveryConfig));
 			updatePreviewWarning();
 		});
 		$(document).on('click', '[data-mp-cc-test-util]', function () {
@@ -1503,8 +1942,13 @@
 			} else if (util === 'validation_payment') {
 				previewStore.setState({ runtimeState: 'error', interactionState: 'focus', dirty: true });
 			}
-			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig), readLiveDeliveryConfig(deliveryConfig));
 			updatePreviewWarning();
+		});
+		$(document).on('click', '[data-mp-cc-delivery-bulk-apply]', function () {
+			var liveDelivery = readLiveDeliveryConfig(deliveryConfig);
+			applyDeliveryBulkUpdate(liveDelivery);
+			rerenderDebounced();
 		});
 		$(document).on('click', '[data-mp-cc-tab-reset]', function () {
 			var activeSection = detectActiveSettingsSection();
@@ -1522,9 +1966,28 @@
 			applyDefaultsToForm(defaultsMap);
 			rerender();
 		});
-		$(document).on('submit', 'form', function () {
+		$(document).on('submit', 'form', function (event) {
+			var activeSection = detectActiveSettingsSection();
+			if (activeSection === 'delivery') {
+				var deliveryErrors = validateDeliveryConfigConsistency(readLiveDeliveryConfig(deliveryConfig));
+				if (deliveryErrors.length) {
+					event.preventDefault();
+					window.alert('Проверьте конфигурацию доставки:\n- ' + deliveryErrors.join('\n- '));
+					return;
+				}
+			}
 			previewStore.setState({ dirty: false });
 			updatePreviewWarning();
+		});
+	});
+
+	$(function () {
+		if (!$('.mp-cc-admin-shell').length) {
+			return;
+		}
+		refreshDeliveryAdminUi();
+		$(document).on('click', '.mp-cc-admin-shell__tab', function () {
+			window.setTimeout(refreshDeliveryAdminUi, 0);
 		});
 	});
 })(jQuery);

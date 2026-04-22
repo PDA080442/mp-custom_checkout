@@ -178,6 +178,34 @@
 		}, source);
 	}
 
+	function getDeliveryConfig() {
+		var source = (window.mpCcCheckout && window.mpCcCheckout.deliveryConfig && typeof window.mpCcCheckout.deliveryConfig === 'object')
+			? window.mpCcCheckout.deliveryConfig
+			: {};
+		return $.extend(true, {
+			shipping_catalog: {
+				sort_order: [],
+				methods: {},
+				error_copy: {
+					method_unavailable: 'Выбранный метод доставки недоступен. Выберите другой вариант.',
+					tariff_unavailable: 'Выбранный тариф недоступен. Выберите другой тариф.'
+				},
+				bulk_update: {
+					enabled: true,
+					seasonal_delta_pct: 0,
+					seasonal_delta_abs: 0,
+					eta_suffix: ''
+				},
+				preview: {
+					enabled: true,
+					mock_subtotal: 3670,
+					mock_discount: 200,
+					mock_tax: 160
+				}
+			}
+		}, source);
+	}
+
 	function getStepThreeConfig() {
 		var source = (window.mpCcCheckout && window.mpCcCheckout.stepThreeConfig && typeof window.mpCcCheckout.stepThreeConfig === 'object')
 			? window.mpCcCheckout.stepThreeConfig
@@ -1211,9 +1239,54 @@
 	}
 
 	function getV2ShippingCatalog(state) {
-		var ui = getScenarioUiConfig();
-		var source = ui.shipping_catalog && typeof ui.shipping_catalog === 'object' ? ui.shipping_catalog : {};
-		var methods = Array.isArray(source.methods) ? source.methods : [];
+		var deliveryCfg = getDeliveryConfig();
+		var source = deliveryCfg.shipping_catalog && typeof deliveryCfg.shipping_catalog === 'object' ? deliveryCfg.shipping_catalog : {};
+		var mapMethods = source.methods && typeof source.methods === 'object' ? source.methods : {};
+		var sortOrder = Array.isArray(source.sort_order) ? source.sort_order : Object.keys(mapMethods);
+		var methods = [];
+		var currentScenario = normalizeScenarioId(state && state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenario || '') : '');
+		var i;
+		for (i = 0; i < sortOrder.length; i += 1) {
+			var methodId = String(sortOrder[i] || '');
+			var raw = mapMethods[methodId] && typeof mapMethods[methodId] === 'object' ? mapMethods[methodId] : null;
+			if (!raw || raw.active === false) {
+				continue;
+			}
+			var scenarios = Array.isArray(raw.visibility_scenarios) ? raw.visibility_scenarios : [];
+			if (scenarios.length && currentScenario && scenarios.indexOf(currentScenario) === -1) {
+				continue;
+			}
+			var normalized = {
+				id: methodId,
+				title: String(raw.title || methodId),
+				price: Number(raw.price || 0),
+				eta: String(raw.eta || ''),
+				description: String(raw.description || ''),
+				requires_address: raw.requires_address !== false
+			};
+			if (raw.tariffs && typeof raw.tariffs === 'object') {
+				var tariffs = [];
+				var tariffKeys = Object.keys(raw.tariffs);
+				var ti;
+				for (ti = 0; ti < tariffKeys.length; ti += 1) {
+					var tariffId = tariffKeys[ti];
+					var tr = raw.tariffs[tariffId] && typeof raw.tariffs[tariffId] === 'object' ? raw.tariffs[tariffId] : null;
+					if (!tr || tr.active === false) {
+						continue;
+					}
+					tariffs.push({
+						id: tariffId,
+						title: String(tr.title || tariffId),
+						price: Number(tr.price || 0),
+						eta: String(tr.eta || '')
+					});
+				}
+				if (tariffs.length) {
+					normalized.tariffs = tariffs;
+				}
+			}
+			methods.push(normalized);
+		}
 		if (!methods.length) {
 			methods = [
 				{ id: 'post_russia', title: 'Почта России', price: 453, eta: '3 дней', requires_address: true },
@@ -1272,6 +1345,16 @@
 			return result;
 		}
 		return null;
+	}
+
+	function getShippingErrorCopy() {
+		var deliveryCfg = getDeliveryConfig();
+		var source = deliveryCfg && deliveryCfg.shipping_catalog ? deliveryCfg.shipping_catalog : {};
+		var copy = source.error_copy && typeof source.error_copy === 'object' ? source.error_copy : {};
+		return {
+			methodUnavailable: trimNonEmpty(copy.method_unavailable) || 'Выбранный метод доставки недоступен. Выберите другой вариант.',
+			tariffUnavailable: trimNonEmpty(copy.tariff_unavailable) || 'Выбранный тариф недоступен. Выберите другой тариф.'
+		};
 	}
 
 	function applyShippingSelectionToState(state, selection) {
@@ -5113,7 +5196,7 @@
 			var dateBox = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.date || {}) : {};
 			var selection = resolveShippingSelection(methods, methodId, String(dateBox.shipping_tariff_id || ''));
 			if (!selection) {
-				notify('Выбранный метод доставки недоступен.', 'error');
+				notify(getShippingErrorCopy().methodUnavailable, 'error');
 				return;
 			}
 			var nextScenario = scenarioByShippingMethod(methodId);
@@ -5146,7 +5229,7 @@
 			var methods = getV2ShippingCatalog(state);
 			var selection = resolveShippingSelection(methods, methodId, tariffId);
 			if (!selection) {
-				notify('Выбранный тариф доставки недоступен.', 'error');
+				notify(getShippingErrorCopy().tariffUnavailable, 'error');
 				return;
 			}
 			applyShippingSelectionToState(state, selection);
