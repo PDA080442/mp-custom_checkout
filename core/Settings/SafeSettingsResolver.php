@@ -488,6 +488,21 @@ final class SafeSettingsResolver {
 				$tree[ $section_key ] = array(
 					'enable_point_selection' => false,
 					'map_slot_enabled'       => true,
+					'map_widget'             => array(
+						'enabled'            => true,
+						'provider'           => 'yandex',
+						'api_key'            => '',
+						'center_lat'         => 56.010563,
+						'center_lng'         => 92.852572,
+						'zoom'               => 14,
+						'marker_label'       => 'Пункт самовывоза',
+						'marker_hint'        => 'Заберите заказ в рабочие часы.',
+						'fallback_title'     => 'Карта временно недоступна',
+						'fallback_message'   => 'Посмотрите адрес пункта самовывоза выше и постройте маршрут в приложении карт.',
+						'desktop_height'     => 250,
+						'mobile_height'      => 190,
+						'diagnostics_enabled'=> true,
+					),
 					'points'                 => array(
 						array(
 							'id'          => 'pickup_main',

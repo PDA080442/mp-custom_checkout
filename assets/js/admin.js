@@ -122,6 +122,7 @@
 		var pc = window.mpCcAdmin && window.mpCcAdmin.pickupConfig ? window.mpCcAdmin.pickupConfig : {};
 		var points = pc.points && Array.isArray(pc.points) ? pc.points : [];
 		var point = points.length ? points[0] : null;
+		var mapWidget = pc.map_widget && typeof pc.map_widget === 'object' ? pc.map_widget : {};
 		return {
 			previewEnabled: Boolean(copy.admin_preview && copy.admin_preview.enabled !== false),
 			officeBlockTitle: String(pickup.office_block_title || ''),
@@ -134,7 +135,17 @@
 			showMultiOfficeSlot: pickup.show_multi_office_slot !== false,
 			pointTitle: point && point.title ? String(point.title) : '',
 			pointAddress: point && point.address ? String(point.address) : '',
-			pointDescription: point && point.description ? String(point.description) : ''
+			pointDescription: point && point.description ? String(point.description) : '',
+			mapEnabled: mapWidget.enabled !== false,
+			mapLat: Number(mapWidget.center_lat || 56.010563),
+			mapLng: Number(mapWidget.center_lng || 92.852572),
+			mapZoom: Number(mapWidget.zoom || 14),
+			mapMarkerLabel: String(mapWidget.marker_label || 'Пункт самовывоза'),
+			mapMarkerHint: String(mapWidget.marker_hint || 'Заберите заказ в рабочие часы.'),
+			mapFallbackTitle: String(mapWidget.fallback_title || 'Карта временно недоступна'),
+			mapFallbackMessage: String(mapWidget.fallback_message || 'Посмотрите адрес пункта самовывоза выше и постройте маршрут в приложении карт.'),
+			mapDesktopHeight: Number(mapWidget.desktop_height || 250),
+			mapMobileHeight: Number(mapWidget.mobile_height || 190)
 		};
 	}
 
@@ -204,6 +215,17 @@
 		cfg.convenienceHelper = readFormValue(p + '[convenience_helper]', cfg.convenienceHelper);
 		cfg.criticalNotice = readFormValue(p + '[critical_notice]', cfg.criticalNotice);
 		cfg.showMultiOfficeSlot = Boolean(readFormValue(p + '[show_multi_office_slot]', cfg.showMultiOfficeSlot));
+		var pm = 'mp_custom_checkout_settings[pickup][map_widget]';
+		cfg.mapEnabled = Boolean(readFormValue(pm + '[enabled]', cfg.mapEnabled));
+		cfg.mapLat = Number(readFormValue(pm + '[center_lat]', cfg.mapLat));
+		cfg.mapLng = Number(readFormValue(pm + '[center_lng]', cfg.mapLng));
+		cfg.mapZoom = Number(readFormValue(pm + '[zoom]', cfg.mapZoom));
+		cfg.mapMarkerLabel = readFormValue(pm + '[marker_label]', cfg.mapMarkerLabel);
+		cfg.mapMarkerHint = readFormValue(pm + '[marker_hint]', cfg.mapMarkerHint);
+		cfg.mapFallbackTitle = readFormValue(pm + '[fallback_title]', cfg.mapFallbackTitle);
+		cfg.mapFallbackMessage = readFormValue(pm + '[fallback_message]', cfg.mapFallbackMessage);
+		cfg.mapDesktopHeight = Number(readFormValue(pm + '[desktop_height]', cfg.mapDesktopHeight));
+		cfg.mapMobileHeight = Number(readFormValue(pm + '[mobile_height]', cfg.mapMobileHeight));
 		return cfg;
 	}
 
@@ -284,6 +306,26 @@
 			html += '</div>';
 		}
 		html += '<p class="mp-cc-pickup-office__helper">' + escapeHtml(helper) + '</p>';
+		if (cfg.mapEnabled) {
+			var mapLabel = trimNonEmptyAdmin(cfg.mapMarkerLabel) || 'Пункт самовывоза';
+			var mapHint = trimNonEmptyAdmin(cfg.mapMarkerHint) || 'Заберите заказ в рабочие часы.';
+			html += '<section class="mp-cc-pickup-map mp-cc-pickup-map--admin-preview">';
+			html += '<div class="mp-cc-pickup-map__canvas mp-cc-pickup-map__canvas--admin">';
+			html += '<div class="mp-cc-admin-preview__pickup-map">';
+			html += '<strong>Yandex Map preview</strong><br />';
+			html += '<span>center: ' + escapeHtml(String(cfg.mapLat) + ', ' + String(cfg.mapLng)) + '</span><br />';
+			html += '<span>zoom: ' + escapeHtml(String(cfg.mapZoom)) + '</span><br />';
+			html += '<span>marker: ' + escapeHtml(mapLabel) + '</span><br />';
+			html += '<span>hint: ' + escapeHtml(mapHint) + '</span><br />';
+			html += '<span>height: ' + escapeHtml(String(cfg.mapDesktopHeight)) + 'px / mobile ' + escapeHtml(String(cfg.mapMobileHeight)) + 'px</span>';
+			html += '</div>';
+			html += '</div>';
+			html += '<div class="mp-cc-pickup-map__fallback">';
+			html += '<p class="mp-cc-pickup-map__fallback-title">' + escapeHtml(trimNonEmptyAdmin(cfg.mapFallbackTitle) || 'Карта временно недоступна') + '</p>';
+			html += '<p class="mp-cc-pickup-map__fallback-message">' + escapeHtml(trimNonEmptyAdmin(cfg.mapFallbackMessage) || 'Посмотрите адрес пункта самовывоза выше и постройте маршрут в приложении карт.') + '</p>';
+			html += '</div>';
+			html += '</section>';
+		}
 		if (showMulti) {
 			html += '<div class="mp-cc-pickup-office__multi-slot" data-mp-cc-multi-office="1">';
 			html += '<span class="mp-cc-pickup-office__multi-slot-label">' + escapeHtml('Дополнительные точки самовывоза будут отображаться здесь при подключении.') + '</span>';
