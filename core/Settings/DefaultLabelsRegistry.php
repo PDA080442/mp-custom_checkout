@@ -140,6 +140,7 @@ final class DefaultLabelsRegistry {
 				'gift_card_peer_unavailable' => 'Подарочные карты на этом сайте сейчас недоступны.',
 				'gift_card_peer_badge' => 'Подарок',
 				'payment_title' => 'Способ оплаты',
+				'payment_gateway_fields_region' => 'Поля выбранного способа оплаты',
 				'payment_intro' => 'Выберите удобный способ оплаты.',
 				'payment_error_required' => 'Выберите способ оплаты.',
 				'payment_loading' => 'Сохраняем выбранный способ оплаты...',

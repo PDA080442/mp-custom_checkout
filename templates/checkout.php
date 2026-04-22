@@ -21,6 +21,7 @@ get_header();
 
 <main id="mp-cc-checkout" class="mp-cc-checkout" data-mp-cc-context="<?php echo esc_attr( wp_json_encode( $mp_cc_checkout_context ) ); ?>">
 	<div class="mp-cc-checkout__inner" role="region" aria-label="<?php echo esc_attr__( 'Checkout shell', 'mp-custom-checkout' ); ?>">
+		<div id="mp-cc-a11y-announcer" class="mp-cc-visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
 		<header class="mp-cc-v2-shell-head" role="banner" aria-label="<?php echo esc_attr__( 'Checkout header', 'mp-custom-checkout' ); ?>">
 			<button type="button" class="mp-cc-v2-shell-head__exit" id="mp-cc-exit-checkout" aria-label="<?php echo esc_attr__( 'Закрыть оформление', 'mp-custom-checkout' ); ?>" data-exit-checkout="1">×</button>
 			<div class="mp-cc-v2-shell-head__title-wrap">
@@ -33,7 +34,7 @@ get_header();
 		<div class="mp-cc-layout" role="group" aria-label="<?php echo esc_attr__( 'Checkout layout', 'mp-custom-checkout' ); ?>">
 			<div class="mp-cc-layout__main">
 				<nav id="mp-cc-progress-container" class="mp-cc-region mp-cc-region--progress" aria-label="<?php echo esc_attr__( 'Checkout progress', 'mp-custom-checkout' ); ?>"></nav>
-				<section id="mp-cc-step-content-container" class="mp-cc-region mp-cc-region--content" role="region" aria-label="<?php echo esc_attr__( 'Checkout step content', 'mp-custom-checkout' ); ?>">
+				<section id="mp-cc-step-content-container" class="mp-cc-region mp-cc-region--content" role="region" aria-label="<?php echo esc_attr__( 'Checkout step content', 'mp-custom-checkout' ); ?>" tabindex="-1">
 					<?php
 					/**
 					 * Точка вывода контента checkout (SPA/шаги подключаются позже).
