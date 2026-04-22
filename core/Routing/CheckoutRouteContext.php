@@ -169,9 +169,15 @@ final class CheckoutRouteContext {
 		$result['summary']['items_count'] = (int) $cart->get_cart_contents_count();
 		$result['summary']['subtotal']    = (string) $cart->get_cart_subtotal();
 		$shipping_total                   = (float) $cart->get_shipping_total() + (float) $cart->get_shipping_tax();
+		$cart_shipping_total              = $shipping_total;
 		$flow_for_totals      = CheckoutSessionService::get_public_state();
 		$current_step_id      = isset( $flow_for_totals['current_step'] ) ? sanitize_key( (string) $flow_for_totals['current_step'] ) : '';
 		$scenario_for_shipping = isset( $flow_for_totals['scenario'] ) ? CheckoutScenarioRules::sanitize_scenario( (string) $flow_for_totals['scenario'] ) : '';
+		$answers_for_totals   = isset( $flow_for_totals['answers'] ) && is_array( $flow_for_totals['answers'] ) ? $flow_for_totals['answers'] : array();
+		$date_answers         = isset( $answers_for_totals['date_conditions'] ) && is_array( $answers_for_totals['date_conditions'] ) ? $answers_for_totals['date_conditions'] : array();
+		if ( isset( $date_answers['shipping_price'] ) && is_numeric( $date_answers['shipping_price'] ) ) {
+			$shipping_total = max( 0.0, (float) $date_answers['shipping_price'] );
+		}
 		$steps_pre_payment     = array(
 			ScenarioStepRegistry::STEP_CART,
 			ScenarioStepRegistry::STEP_DATE,
@@ -212,6 +218,8 @@ final class CheckoutRouteContext {
 			$ship_amt = (float) $cart->get_shipping_total();
 			$total_tax_display = max( 0.0, $total_tax_display - $ship_tax );
 			$total_edit        = max( 0.0, $total_edit - $ship_tax - $ship_amt );
+		} elseif ( isset( $date_answers['shipping_price'] ) && is_numeric( $date_answers['shipping_price'] ) ) {
+			$total_edit = max( 0.0, $total_edit - $cart_shipping_total + $shipping_total );
 		}
 		$result['summary']['tax']   = (string) wc_price( $total_tax_display );
 		$result['summary']['total'] = (string) wc_price( $total_edit );

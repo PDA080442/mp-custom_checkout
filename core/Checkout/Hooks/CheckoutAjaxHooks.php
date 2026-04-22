@@ -114,6 +114,15 @@ final class CheckoutAjaxHooks {
 					$message = is_string( $message ) && '' !== trim( $message ) ? $message : __( 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.', 'mp-custom-checkout' );
 					wp_send_json_error( array( 'code' => 'invalid_date_selection', 'message' => $message ), 422 );
 				}
+				if ( ! self::validate_shipping_answers_payload( $answers ) ) {
+					wp_send_json_error(
+						array(
+							'code'    => 'invalid_shipping_method',
+							'message' => __( 'Выбранный метод доставки недоступен. Обновите шаг и выберите заново.', 'mp-custom-checkout' ),
+						),
+						422
+					);
+				}
 			}
 			CheckoutSessionService::set_step_answers( $step_id, $answers );
 			wp_send_json_success( array( 'sub_action' => $sub_action, 'step_id' => $step_id, 'flow' => self::build_flow_payload(), 'cart' => CheckoutRouteContext::get_cart_data() ) );
@@ -439,6 +448,42 @@ final class CheckoutAjaxHooks {
 			do_action( 'mp_custom_checkout_log', 'error', '[date_sync] selected_date_not_available', array( 'selected_date' => $selected_date, 'scenario' => $scenario ) );
 		}
 		return $is_valid;
+	}
+
+	/** @param array<string, mixed> $answers */
+	private static function validate_shipping_answers_payload( array $answers ): bool {
+		if ( ! FeatureFlagResolver::is_enabled( DefaultFeatureFlagsRegistry::FLAG_CHECKOUT_UI_V2, false ) ) {
+			return true;
+		}
+		$method_id = isset( $answers['shipping_method_id'] ) ? sanitize_key( (string) $answers['shipping_method_id'] ) : '';
+		if ( '' === $method_id ) {
+			return false;
+		}
+		$catalog = self::shipping_catalog();
+		if ( ! isset( $catalog[ $method_id ] ) || ! is_array( $catalog[ $method_id ] ) ) {
+			do_action( 'mp_custom_checkout_log', 'warning', '[shipping_sync] unknown_shipping_method', array( 'shipping_method_id' => $method_id ) );
+			return false;
+		}
+		$method = $catalog[ $method_id ];
+		if ( ! empty( $method['tariffs'] ) && is_array( $method['tariffs'] ) ) {
+			$tariff_id = isset( $answers['shipping_tariff_id'] ) ? sanitize_key( (string) $answers['shipping_tariff_id'] ) : '';
+			if ( '' === $tariff_id || ! in_array( $tariff_id, $method['tariffs'], true ) ) {
+				do_action( 'mp_custom_checkout_log', 'warning', '[shipping_sync] invalid_shipping_tariff', array( 'shipping_method_id' => $method_id, 'shipping_tariff_id' => $tariff_id ) );
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** @return array<string, array<string, mixed>> */
+	private static function shipping_catalog(): array {
+		return array(
+			'post_russia'           => array( 'tariffs' => array() ),
+			'courier'               => array( 'tariffs' => array( 'express', 'standard' ) ),
+			'pvz'                   => array( 'tariffs' => array( 'express', 'standard' ) ),
+			'krasnoyarsk_delivery'  => array( 'tariffs' => array() ),
+			'pickup'                => array( 'tariffs' => array() ),
+		);
 	}
 
 	private static function handle_update_quantity(): void { /* migrated intact from legacy */
