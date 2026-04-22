@@ -32,6 +32,8 @@
 	font-family: var(--mp-cc-font-family-base);
 	font-size: var(--mp-cc-font-size-base);
 	line-height: 1.45;
+	--mp-cc-keyboard-inset: 0px;
+	scroll-padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px) + var(--mp-cc-keyboard-inset, 0px));
 }
 
 .mp-cc-checkout__app {
@@ -1470,7 +1472,7 @@
 
 	/* Компенсируем место под липким блоком в конце колонки. */
 	.mp-cc-layout__main {
-		padding-bottom: calc(12rem + env(safe-area-inset-bottom, 0px));
+		padding-bottom: calc(12rem + env(safe-area-inset-bottom, 0px) + var(--mp-cc-keyboard-inset, 0px));
 	}
 
 	.mp-cc-region--actions {
@@ -3069,6 +3071,42 @@ body.mp-custom-checkout form.checkout.woocommerce-checkout {
 
 	#mp-cc-checkout {
 		--mp-cc-contact-cols-mobile: 2;
+	}
+
+	/* iOS: не уменьшать шрифт полей — избегаем авто-zoom и улучшаем touch-таргеты */
+	#mp-cc-checkout .mp-cc-input,
+	#mp-cc-checkout .mp-cc-select,
+	#mp-cc-checkout .mp-cc-qty-input,
+	#mp-cc-checkout textarea.mp-cc-input {
+		font-size: max(16px, 1rem);
+		min-height: 2.75rem;
+		scroll-margin-top: 5.5rem;
+		scroll-margin-bottom: calc(6rem + env(safe-area-inset-bottom, 0px) + var(--mp-cc-keyboard-inset, 0px));
+	}
+
+	#mp-cc-checkout .mp-cc-select {
+		min-height: 2.75rem;
+		padding-top: 0.45rem;
+		padding-bottom: 0.45rem;
+		touch-action: manipulation;
+	}
+
+	#mp-cc-checkout .mp-cc-payment-gateway-fields__inner input,
+	#mp-cc-checkout .mp-cc-payment-gateway-fields__inner select,
+	#mp-cc-checkout .mp-cc-payment-gateway-fields__inner textarea {
+		font-size: max(16px, 1rem);
+		scroll-margin-bottom: calc(7rem + env(safe-area-inset-bottom, 0px) + var(--mp-cc-keyboard-inset, 0px));
+	}
+
+	/* Длинный шаг 1: изоляция отрисовки карточек вне экрана */
+	#mp-cc-checkout .mp-cc-cart-list__items {
+		content-visibility: auto;
+		contain-intrinsic-size: 280px;
+	}
+
+	#mp-cc-checkout .mp-cc-cart-item {
+		content-visibility: auto;
+		contain-intrinsic-size: 120px;
 	}
 
 	.mp-cc-v2-shell-head {
