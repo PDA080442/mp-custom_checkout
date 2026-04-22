@@ -149,8 +149,12 @@ final class FrontendAssetsHooks {
 		if ( empty( $stored ) ) {
 			$stored = DefaultLabelsRegistry::all();
 		}
+		$defaults_all = DefaultLabelsRegistry::all();
+		$def_checkout = isset( $defaults_all['checkout'] ) && is_array( $defaults_all['checkout'] ) ? $defaults_all['checkout'] : array();
+		$stored_checkout = isset( $stored['checkout'] ) && is_array( $stored['checkout'] ) ? $stored['checkout'] : array();
 		return array(
 			'common'       => isset( $stored['common'] ) && is_array( $stored['common'] ) ? $stored['common'] : array(),
+			'checkout'     => array_merge( $def_checkout, $stored_checkout ),
 			'step_1'       => isset( $stored['step_1'] ) && is_array( $stored['step_1'] ) ? $stored['step_1'] : array(),
 			'step_2'       => isset( $stored['step_2'] ) && is_array( $stored['step_2'] ) ? $stored['step_2'] : array(),
 			'step_3'       => isset( $stored['step_3'] ) && is_array( $stored['step_3'] ) ? $stored['step_3'] : array(),

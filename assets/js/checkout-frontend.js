@@ -12,8 +12,12 @@
 		actions: '#mp-cc-navigation-actions',
 		summary: '#mp-cc-summary-sidebar',
 		notifications: '#mp-cc-notifications',
-		exit: '#mp-cc-exit-checkout'
+		exit: '#mp-cc-exit-checkout',
+		shellParcelBadge: '#mp-cc-shell-parcel-badge',
+		a11yAnnouncer: '#mp-cc-a11y-announcer',
+		stepContent: '#mp-cc-step-content-container'
 	};
+	var viewportKeyboardBound = false;
 	var flagNames = {
 		checkoutUiV2: 'checkout_ui_v2',
 		multiStepFlow: 'multi_step_flow',
@@ -47,6 +51,57 @@
 			node = node[parts[i]];
 		}
 		return (typeof node === 'string' && node !== '') ? node : fallback;
+	}
+
+	function formatCheckoutStepMeta(currentOneBased, totalSteps) {
+		var cur = Math.max(1, Math.round(Number(currentOneBased) || 0));
+		var tot = Math.max(1, Math.round(Number(totalSteps) || 0));
+		var tmpl = getUiText('checkout.step_meta', 'Шаг {current} / {total}');
+		return String(tmpl)
+			.replace(/\{current\}/g, String(cur))
+			.replace(/\{total\}/g, String(tot));
+	}
+
+	function formatParcelBadgeLabel(count) {
+		var n = Math.max(0, Math.round(Number(count) || 0));
+		if (n <= 0) {
+			return '';
+		}
+		var fewTmpl = getUiText('step_1.parcel_count_few', '{n} посылки');
+		var otherTmpl = getUiText('step_1.parcel_count_other', '{n} посылок');
+		var oneTmpl = getUiText('step_1.parcel_count_one', '{n} посылка');
+		var mod10 = n % 10;
+		var mod100 = n % 100;
+		if (n === 1) {
+			return String(oneTmpl).replace(/\{n\}/g, String(n));
+		}
+		if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+			return String(fewTmpl).replace(/\{n\}/g, String(n));
+		}
+		return String(otherTmpl).replace(/\{n\}/g, String(n));
+	}
+
+	function buildShellParcelBadgeHtml(state) {
+		var cart = state && state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart : {};
+		var items = Array.isArray(cart.items) ? cart.items : [];
+		var summary = cart.summary && typeof cart.summary === 'object' ? cart.summary : {};
+		var count = Number(summary.items_count || items.length || 0);
+		var label = formatParcelBadgeLabel(count);
+		if (!label) {
+			return '';
+		}
+		return '<span class="mp-cc-shell-parcel-badge">' + escapeHtml(label) + '</span>';
+	}
+
+	function getSummaryStepProgress(state) {
+		if (isV2CheckoutUiEnabled(state)) {
+			ensureV2ScreenState(state);
+			var v2len = state.v2Screens && state.v2Screens.length ? state.v2Screens.length : 1;
+			return { cur: state.v2CurrentIndex + 1, total: v2len };
+		}
+		var ix = getStepIndex(state.visibleSteps, state.currentStepId);
+		var tot = state.visibleSteps.length || 1;
+		return { cur: Math.min(tot, Math.max(1, ix + 1)), total: tot };
 	}
 
 	function getStepOneConfig() {
@@ -1807,16 +1862,38 @@
 		state.frontendStore.runtime.invalid_steps = map;
 	}
 
-	function findFirstInvalidFieldElement($app) {
+	function isElementFocusableForValidation(el) {
+		if (!el || el.nodeType !== 1) {
+			return false;
+		}
+		if (el.hasAttribute('disabled') || el.getAttribute('aria-disabled') === 'true') {
+			return false;
+		}
+		var tag = String(el.tagName || '').toLowerCase();
+		if (tag === 'input' || tag === 'select' || tag === 'textarea' || tag === 'button') {
+			return true;
+		}
+		return el.getAttribute('tabindex') === '-1' && el.id === 'mp-cc-payment-gateway-fields';
+	}
+
+	function findFirstInvalidFieldElement($root) {
+		var $scope = $root && $root.length ? $root : $(selectors.root);
+		var $aria = $scope.find('[aria-invalid="true"]').filter(function () {
+			return isElementFocusableForValidation(this);
+		}).first();
+		if ($aria.length) {
+			return $aria;
+		}
 		var selectorsList = [
 			'.mp-cc-input.is-invalid',
 			'.mp-cc-select.is-invalid',
 			'.mp-cc-payment-card__radio.is-invalid',
+			'.mp-cc-payment--has-field-error #mp-cc-payment-gateway-fields',
 			'.mp-cc-date-step__helper.is-error'
 		];
 		var i;
 		for (i = 0; i < selectorsList.length; i += 1) {
-			var $el = $app.find(selectorsList[i]).first();
+			var $el = $scope.find(selectorsList[i]).first();
 			if ($el.length) {
 				return $el;
 			}
@@ -1825,21 +1902,41 @@
 	}
 
 	function scrollToFirstInvalidField($app) {
-		var $el = findFirstInvalidFieldElement($app);
+		var $root = $(selectors.root);
+		var $el = findFirstInvalidFieldElement($root);
+		var behavior = prefersReducedMotion() ? 'auto' : 'smooth';
+		var blockPos = 'center';
+		if (window.matchMedia && window.matchMedia('(max-width: 767px)').matches) {
+			blockPos = 'nearest';
+		}
 		if (!$el.length) {
+			var $heading = $root.find('#mp-cc-step-heading, #mp-cc-fulfillment-title, #mp-cc-contact-title, #mp-cc-payment-title').first();
+			if ($heading.length && $heading.get(0).scrollIntoView) {
+				$heading.get(0).scrollIntoView({ behavior: behavior, block: blockPos, inline: 'nearest' });
+			}
 			return;
 		}
 		var node = $el.get(0);
 		if (node && typeof node.scrollIntoView === 'function') {
-			node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+			node.scrollIntoView({ behavior: behavior, block: blockPos, inline: 'nearest' });
 		}
-		if (node && typeof node.focus === 'function' && !$el.is('.mp-cc-date-step__helper')) {
+		window.setTimeout(function () {
+			if (!node || typeof node.focus !== 'function') {
+				return;
+			}
+			if ($el.is('.mp-cc-date-step__helper')) {
+				return;
+			}
 			try {
 				node.focus({ preventScroll: true });
-			} catch (e) {
-				node.focus();
+			} catch (e1) {
+				try {
+					node.focus();
+				} catch (e2) {
+					// ignore
+				}
 			}
-		}
+		}, prefersReducedMotion() ? 0 : 80);
 	}
 
 	function logValidationFailure(state, stepId, errorsMap) {
@@ -1937,7 +2034,7 @@
 		html += 'data-contact-field="billing_last_name"' + (isContactFieldRequired('last_name') ? ' aria-required="true"' : '');
 		var pLast = getContactPlaceholder('last_name');
 		if (pLast) { html += ' placeholder="' + escapeHtml(pLast) + '"'; }
-		html += errLast ? ' aria-invalid="true"' : '';
+		html += errLast ? ' aria-invalid="true" aria-describedby="mp-cc-contact-last-name-err"' : '';
 		html += '/>';
 		if (errLast) {
 			html += '<p class="mp-cc-field-error" id="mp-cc-contact-last-name-err" role="alert">' + escapeHtml(trimNonEmpty(vm.required) || getUiText('step_4.contact_error_required', 'Заполните это поле.')) + '</p>';
@@ -1953,7 +2050,7 @@
 		html += 'data-contact-field="billing_first_name"' + (isContactFieldRequired('first_name') ? ' aria-required="true"' : '');
 		var pFirst = getContactPlaceholder('first_name');
 		if (pFirst) { html += ' placeholder="' + escapeHtml(pFirst) + '"'; }
-		html += errFirst ? ' aria-invalid="true"' : '';
+		html += errFirst ? ' aria-invalid="true" aria-describedby="mp-cc-contact-first-name-err"' : '';
 		html += '/>';
 		if (errFirst) {
 			html += '<p class="mp-cc-field-error" id="mp-cc-contact-first-name-err" role="alert">' + escapeHtml(trimNonEmpty(vm.required) || getUiText('step_4.contact_error_required', 'Заполните это поле.')) + '</p>';
@@ -1970,7 +2067,7 @@
 		html += (block.patronymic_required || isContactFieldRequired('patronymic')) ? ' aria-required="true"' : '';
 		var pPatr = getContactPlaceholder('patronymic');
 		if (pPatr) { html += ' placeholder="' + escapeHtml(pPatr) + '"'; }
-		html += ' aria-describedby="mp-cc-contact-patronymic-hint"';
+		html += ' aria-describedby="' + escapeHtml(errPat ? 'mp-cc-contact-patronymic-hint mp-cc-contact-patronymic-err' : 'mp-cc-contact-patronymic-hint') + '"';
 		html += errPat ? ' aria-invalid="true"' : '';
 		html += '/>';
 		html += '<p class="mp-cc-field-hint" id="mp-cc-contact-patronymic-hint">' + escapeHtml(getContactHint('patronymic')) + '</p>';
@@ -1986,13 +2083,25 @@
 				html += '<select id="mp-cc-contact-gender" class="mp-cc-select' + (errGender ? ' is-invalid' : '') + '" data-contact-field="billing_gender"';
 				html += isContactFieldRequired('gender') ? ' aria-required="true"' : '';
 				html += errGender ? ' aria-invalid="true"' : '';
+				{
+					var genderDescIds = [];
+					if (trimNonEmpty(getContactHint('gender'))) {
+						genderDescIds.push('mp-cc-contact-gender-hint');
+					}
+					if (errGender) {
+						genderDescIds.push('mp-cc-contact-gender-err');
+					}
+					if (genderDescIds.length) {
+						html += ' aria-describedby="' + escapeHtml(genderDescIds.join(' ')) + '"';
+					}
+				}
 				html += '>';
 				html += '<option value="">' + escapeHtml(genderOptions.placeholder) + '</option>';
 				html += '<option value="male"' + (String(contact.billing_gender || '') === 'male' ? ' selected' : '') + '>' + escapeHtml(genderOptions.male) + '</option>';
 				html += '<option value="female"' + (String(contact.billing_gender || '') === 'female' ? ' selected' : '') + '>' + escapeHtml(genderOptions.female) + '</option>';
 				html += '</select>';
 				if (trimNonEmpty(getContactHint('gender'))) {
-					html += '<p class="mp-cc-field-hint">' + escapeHtml(getContactHint('gender')) + '</p>';
+					html += '<p class="mp-cc-field-hint" id="mp-cc-contact-gender-hint">' + escapeHtml(getContactHint('gender')) + '</p>';
 				}
 				if (errGender) {
 					html += '<p class="mp-cc-field-error" id="mp-cc-contact-gender-err" role="alert">' + escapeHtml(trimNonEmpty(vm.required) || getUiText('step_4.contact_error_required', 'Заполните это поле.')) + '</p>';
@@ -2009,6 +2118,7 @@
 				var pBirth = getContactPlaceholder('birthdate');
 				if (pBirth) { html += ' placeholder="' + escapeHtml(pBirth) + '"'; }
 				html += ' max="' + escapeHtml((new Date()).toISOString().slice(0, 10)) + '"';
+				html += ' aria-describedby="' + escapeHtml(errBirth ? 'mp-cc-contact-birthdate-hint mp-cc-contact-birthdate-err' : 'mp-cc-contact-birthdate-hint') + '"';
 				html += errBirth ? ' aria-invalid="true"' : '';
 				html += '/>';
 				html += '<p class="mp-cc-field-hint" id="mp-cc-contact-birthdate-hint">' + escapeHtml(getContactHint('birthdate')) + '</p>';
@@ -2026,7 +2136,7 @@
 		html += 'data-contact-field="billing_email"' + (isContactFieldRequired('email') ? ' aria-required="true"' : '');
 		var pEmail = getContactPlaceholder('email');
 		if (pEmail) { html += ' placeholder="' + escapeHtml(pEmail) + '"'; }
-		html += ' aria-describedby="mp-cc-contact-email-hint"';
+		html += ' aria-describedby="' + escapeHtml(errEmail ? 'mp-cc-contact-email-hint mp-cc-contact-email-err' : 'mp-cc-contact-email-hint') + '"';
 		html += errEmail ? ' aria-invalid="true"' : '';
 		html += '/>';
 		html += '<p class="mp-cc-field-hint" id="mp-cc-contact-email-hint">' + escapeHtml(getContactHint('email')) + '</p>';
@@ -2042,7 +2152,8 @@
 		html += '<div class="mp-cc-contact__phone-row" role="group" aria-labelledby="mp-cc-contact-phone-label">';
 		html += '<div class="mp-cc-contact__country">';
 		html += '<label class="mp-cc-visually-hidden" for="mp-cc-contact-phone-country">' + escapeHtml(getContactLabel('country_code')) + '</label>';
-		html += '<select id="mp-cc-contact-phone-country" class="mp-cc-select" data-contact-phone-country="1" aria-describedby="mp-cc-contact-phone-hint"';
+		html += '<select id="mp-cc-contact-phone-country" class="mp-cc-select" data-contact-phone-country="1"';
+		html += ' aria-describedby="' + escapeHtml(errPhone ? 'mp-cc-contact-phone-hint mp-cc-contact-phone-err' : 'mp-cc-contact-phone-hint') + '"';
 		html += errPhone ? ' aria-invalid="true"' : '';
 		html += '>';
 		var ci;
@@ -2065,7 +2176,7 @@
 		html += 'data-contact-phone-national="1"' + (isContactFieldRequired('phone') ? ' aria-required="true"' : '');
 		var pPhone = getContactPlaceholder('phone');
 		if (pPhone) { html += ' placeholder="' + escapeHtml(pPhone) + '"'; }
-		html += ' aria-describedby="mp-cc-contact-phone-hint"';
+		html += ' aria-describedby="' + escapeHtml(errPhone ? 'mp-cc-contact-phone-hint mp-cc-contact-phone-err' : 'mp-cc-contact-phone-hint') + '"';
 		html += errPhone ? ' aria-invalid="true"' : '';
 		html += '/>';
 		html += '</div>';
@@ -2096,7 +2207,7 @@
 				html += ' data-contact-field="order_notes" maxlength="' + escapeHtml(String(notesCfgInline.maxLength)) + '"';
 				var pNotesInline = getContactPlaceholder('order_notes');
 				if (pNotesInline) { html += ' placeholder="' + escapeHtml(pNotesInline) + '"'; }
-				html += errNotes ? ' aria-invalid="true"' : '';
+				html += errNotes ? ' aria-invalid="true" aria-describedby="mp-cc-contact-order-notes-err"' : '';
 				html += '>';
 				html += escapeHtml(notesValue);
 				html += '</textarea>';
@@ -2269,7 +2380,8 @@
 		if (String(p.gatewayCompatIssue || '') === 'no_interactive_fields') {
 			compat = '<p class="mp-cc-payment-gateway-fields__compat" role="status">' + escapeHtml(getUiText('step_4.payment_gateway_compat_hint', 'Поля шлюза не обнаружены автоматически: при проблемах с оплатой выберите другой способ или обновите страницу. Мы не подменяем ввод шлюза собственными масками.')) + '</p>';
 		}
-		return '<div class="' + wrapClass + '" id="mp-cc-payment-gateway-fields">' +
+		var gwRegionLabel = getUiText('step_4.payment_gateway_fields_region', 'Поля выбранного способа оплаты');
+		return '<div class="' + wrapClass + '" id="mp-cc-payment-gateway-fields" tabindex="-1" role="region" aria-label="' + escapeHtml(gwRegionLabel) + '">' +
 			'<p class="mp-cc-payment-gateway-fields__lead">' + escapeHtml(lead) + '</p>' +
 			compat +
 			'<div class="wc_payment_box payment_box ' + escapeHtml(gwClass) + ' mp-cc-payment-gateway-fields__inner">' +
@@ -2517,6 +2629,10 @@
 			html += '<p class="mp-cc-payment__intro">' + escapeHtml(intro) + '</p>';
 		}
 		html += '</header>';
+		if (errPayment) {
+			html += '<p class="mp-cc-field-error" id="mp-cc-payment-gateway-err" role="alert">' + escapeHtml(getUiText('step_4.payment_error_required', 'Выберите способ оплаты.')) + '</p>';
+		}
+		var payRadioA11y = errPayment ? ' aria-invalid="true" aria-describedby="mp-cc-payment-gateway-err"' : '';
 		var peerHtml = buildGiftCardPeerCardHtml(state);
 		var hasPeer = trimNonEmpty(peerHtml);
 		if (hasPeer) {
@@ -2532,7 +2648,7 @@
 			var activeMod = escapeHtml(trimNonEmpty(pb.card_active_style) || 'accent');
 			if (surface === 'classic') {
 				html += '<label class="mp-cc-payment-card mp-cc-payment-card--active-' + activeMod + (isSelected ? ' is-active' : '') + '">';
-				html += '<input type="radio" class="mp-cc-payment-card__radio' + (errPayment ? ' is-invalid' : '') + '" name="mp_cc_payment_gateway" value="' + escapeHtml(g.id) + '" data-payment-gateway="1"' + (isSelected ? ' checked' : '') + ' />';
+				html += '<input type="radio" class="mp-cc-payment-card__radio' + (errPayment ? ' is-invalid' : '') + '" name="mp_cc_payment_gateway" value="' + escapeHtml(g.id) + '" data-payment-gateway="1"' + payRadioA11y + (isSelected ? ' checked' : '') + ' />';
 				html += '<span class="mp-cc-payment-card__title">' + escapeHtml(g.title) + '</span>';
 				if (showDescription && g.description) {
 					html += '<span class="mp-cc-payment-card__desc">' + escapeHtml(g.description) + '</span>';
@@ -2550,7 +2666,7 @@
 					}
 				}
 				html += '<label class="mp-cc-payment-card mp-cc-payment-card--surface mp-cc-payment-card--brand-' + escapeHtml(brand) + ' mp-cc-payment-card--active-' + activeMod + (isSelected ? ' is-active' : '') + shellRt + '">';
-				html += '<input type="radio" class="mp-cc-payment-card__radio' + (errPayment ? ' is-invalid' : '') + '" name="mp_cc_payment_gateway" value="' + escapeHtml(g.id) + '" data-payment-gateway="1"' + (isSelected ? ' checked' : '') + ' autocomplete="off" />';
+				html += '<input type="radio" class="mp-cc-payment-card__radio' + (errPayment ? ' is-invalid' : '') + '" name="mp_cc_payment_gateway" value="' + escapeHtml(g.id) + '" data-payment-gateway="1"' + payRadioA11y + (isSelected ? ' checked' : '') + ' autocomplete="off" />';
 				html += buildPaymentCardShellMarkup(g, brand, surface);
 				html += '<span class="mp-cc-payment-card__title mp-cc-payment-card__title--text">' + escapeHtml(g.title) + '</span>';
 				if (showDescription && g.description) {
@@ -4258,7 +4374,6 @@
 				setRuntimeFlag(state, 'blocked', false);
 				render(state, $app);
 				scrollToStepTop();
-				focusStepHeading($app);
 
 				document.dispatchEvent(
 					new CustomEvent('mp_cc_step_changed', {
@@ -4312,7 +4427,6 @@
 			state.v2MaxReachedIndex = Math.max(state.v2MaxReachedIndex, targetIndex);
 			render(state, $app);
 			scrollToStepTop();
-			focusStepHeading($app);
 			document.dispatchEvent(
 				new CustomEvent('mp_cc_v2_step_changed', {
 					detail: {
@@ -4607,7 +4721,9 @@
 					v2classes.push('is-invalid');
 				}
 				v2html += '<li class="' + v2classes.join(' ') + '">';
-				v2html += '<button type="button" class="mp-cc-progress__btn" data-v2-step="1" data-step="' + escapeHtml(s.id) + '" data-step-index="' + vi + '"' + (canGoV2 ? '' : ' disabled') + (isCurrentV2 ? ' aria-current="step"' : '') + '>';
+				v2html += '<button type="button" class="mp-cc-progress__btn" data-v2-step="1" data-step="' + escapeHtml(s.id) + '" data-step-index="' + vi + '"';
+				v2html += ' aria-controls="mp-cc-step-content-container" aria-expanded="' + (isCurrentV2 ? 'true' : 'false') + '"';
+				v2html += (canGoV2 ? '' : ' disabled') + (isCurrentV2 ? ' aria-current="step"' : '') + '>';
 				v2html += '<span class="mp-cc-progress__index">' + (vi + 1) + '</span>';
 				v2html += '<span class="mp-cc-progress__label">' + escapeHtml(s.label) + '</span>';
 				v2html += '</button>';
@@ -4642,6 +4758,7 @@
 
 			html += '<li class="' + classes.join(' ') + '">';
 			html += '<button type="button" class="mp-cc-progress__btn" data-step="' + step.id + '" data-step-index="' + i + '"';
+			html += ' aria-controls="mp-cc-step-content-container" aria-expanded="' + (isCurrent ? 'true' : 'false') + '"';
 			html += canGo ? '' : ' disabled';
 			html += isCurrent ? ' aria-current="step"' : '';
 			html += '>';
@@ -4663,14 +4780,19 @@
 			return '';
 		}
 		var first = items[0] && typeof items[0] === 'object' ? items[0] : {};
-		var count = Number(summary.items_count || items.length || 0);
-		var countLabel = count + ' ' + getUiText('step_1.positions_count', 'позиций');
 		var title = trimNonEmpty(first.name) || getUiText('step_1.title', 'Товар');
 		var qty = Number(first.quantity || 0);
 		var qtyLabel = qty > 0 ? String(qty) + ' шт' : '';
+		var imageUrl = first.image_url ? String(first.image_url) : '';
 		var html = '';
 		html += '<article class="mp-cc-parcel-head">';
-		html += '<span class="mp-cc-parcel-head__badge">' + escapeHtml(countLabel) + '</span>';
+		html += '<div class="mp-cc-parcel-head__media" aria-hidden="true">';
+		if (imageUrl) {
+			html += '<img class="mp-cc-parcel-head__img" src="' + escapeHtml(imageUrl) + '" alt="" loading="lazy" decoding="async" />';
+		} else {
+			html += '<span class="mp-cc-parcel-head__ph" aria-hidden="true"></span>';
+		}
+		html += '</div>';
 		html += '<div class="mp-cc-parcel-head__body">';
 		html += '<h3 class="mp-cc-parcel-head__title">' + escapeHtml(title) + '</h3>';
 		if (qtyLabel) {
@@ -4701,7 +4823,7 @@
 			var v2html = '';
 			v2html += '<section class="mp-cc-step-panel mp-cc-step-screen" data-step-panel="' + escapeHtml(screen ? screen.id : '') + '">';
 			v2html += '<header class="mp-cc-step-panel__header">';
-			v2html += '<p class="mp-cc-step-panel__meta">Шаг ' + String(state.v2CurrentIndex + 1) + ' / ' + String(state.v2Screens.length) + '</p>';
+			v2html += '<p class="mp-cc-step-panel__meta">' + escapeHtml(formatCheckoutStepMeta(state.v2CurrentIndex + 1, state.v2Screens.length)) + '</p>';
 			v2html += '<h2 class="mp-cc-step-panel__title" id="mp-cc-step-heading" tabindex="-1">' + escapeHtml(screenLabel) + '</h2>';
 			v2html += '</header>';
 			v2html += '<div class="mp-cc-step-panel__content" data-mp-cc-step-slot="' + escapeHtml(screen ? screen.id : '') + '">';
@@ -4740,7 +4862,7 @@
 
 		html += '<section class="mp-cc-step-panel mp-cc-step-screen" data-step-panel="' + escapeHtml(step ? step.id : '') + '">';
 		html += '<header class="mp-cc-step-panel__header">';
-		html += '<p class="mp-cc-step-panel__meta">Step ' + (currentIndex + 1) + ' / ' + state.visibleSteps.length + '</p>';
+		html += '<p class="mp-cc-step-panel__meta">' + escapeHtml(formatCheckoutStepMeta(currentIndex + 1, state.visibleSteps.length)) + '</p>';
 		html += '<h2 class="mp-cc-step-panel__title" id="mp-cc-step-heading" tabindex="-1">' + escapeHtml(label) + '</h2>';
 		html += '</header>';
 		html += '<div class="mp-cc-step-panel__content" data-mp-cc-step-slot="' + escapeHtml(step ? step.id : '') + '">';
@@ -5147,6 +5269,7 @@
 	function buildSummaryHtml(state) {
 		var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
 		var total = state.visibleSteps.length;
+		var stepProg = getSummaryStepProgress(state);
 		var snapshot = state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart.snapshot || {} : {};
 		var cartSummary = state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart.summary || {} : {};
 		var runtime = state.frontendStore && state.frontendStore.runtime ? state.frontendStore.runtime : {};
@@ -5195,9 +5318,9 @@
 			: null;
 		var html = '';
 
-		html += '<section class="mp-cc-summary-card" aria-label="Order summary panel">';
+		html += '<section class="mp-cc-summary-card mp-cc-summary-card--mobile-receipt" aria-label="Order summary panel">';
 		html += '<h3 class="mp-cc-summary-card__title">' + escapeHtml(getStepOneLabel(state, 'summary_title', 'order_review.title', 'Order Summary')) + '</h3>';
-		html += '<p class="mp-cc-summary-card__meta">Step ' + (currentIndex + 1) + ' of ' + total + '</p>';
+		html += '<p class="mp-cc-summary-card__meta mp-cc-summary-card__meta--step">' + escapeHtml(formatCheckoutStepMeta(stepProg.cur, stepProg.total)) + '</p>';
 		if (showPlaceholders) {
 			html += '<div class="mp-cc-summary-card__placeholder" aria-hidden="true"></div>';
 			html += '<div class="mp-cc-summary-card__placeholder mp-cc-summary-card__placeholder--sm" aria-hidden="true"></div>';
@@ -5380,11 +5503,74 @@
 		if (!heading || typeof heading.focus !== 'function') {
 			return;
 		}
+		if (typeof heading.scrollIntoView === 'function') {
+			try {
+				heading.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+			} catch (e0) {
+				// ignore
+			}
+		}
 		try {
 			heading.focus({ preventScroll: true });
 		} catch (e) {
 			heading.focus();
 		}
+	}
+
+	function announceCheckoutStepFromDom($app) {
+		var live = document.querySelector(selectors.a11yAnnouncer);
+		if (!live) {
+			return;
+		}
+		var title = $app.find('#mp-cc-step-heading').first().text().replace(/\s+/g, ' ').trim();
+		if (!title) {
+			return;
+		}
+		var meta = $app.find('.mp-cc-step-panel__meta').first().text().replace(/\s+/g, ' ').trim();
+		var msg = (meta ? meta + ' — ' : '') + title;
+		if (String(live.textContent || '') === msg) {
+			return;
+		}
+		live.textContent = '';
+		window.setTimeout(function () {
+			live.textContent = msg;
+		}, 40);
+	}
+
+	function scheduleFocusAndA11yAnnouncement($app, isStepChanged) {
+		if (!isStepChanged) {
+			return;
+		}
+		window.requestAnimationFrame(function () {
+			window.requestAnimationFrame(function () {
+				focusStepHeading($app);
+				announceCheckoutStepFromDom($app);
+			});
+		});
+	}
+
+	function bindVisualViewportKeyboardInset() {
+		if (viewportKeyboardBound || !window.visualViewport || !window.matchMedia) {
+			return;
+		}
+		var root = document.querySelector(selectors.root);
+		if (!root) {
+			return;
+		}
+		viewportKeyboardBound = true;
+		var vv = window.visualViewport;
+		var apply = function () {
+			if (!window.matchMedia('(max-width: 767px)').matches) {
+				root.style.setProperty('--mp-cc-keyboard-inset', '0px');
+				return;
+			}
+			var overlap = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+			root.style.setProperty('--mp-cc-keyboard-inset', overlap + 'px');
+		};
+		vv.addEventListener('resize', apply, { passive: true });
+		vv.addEventListener('scroll', apply, { passive: true });
+		window.addEventListener('orientationchange', apply, { passive: true });
+		apply();
 	}
 
 	function prefersReducedMotion() {
@@ -5626,6 +5812,10 @@
 			$parcel.html(nextParcelHtml);
 			state.__renderCache.parcelHtml = nextParcelHtml;
 		}
+		var $shellParcel = $(selectors.shellParcelBadge);
+		if ($shellParcel.length) {
+			$shellParcel.html(buildShellParcelBadgeHtml(state));
+		}
 		if (isStepChanged) {
 			$app.html(nextStepHtml);
 			state.__renderCache.stepHtml = nextStepHtml;
@@ -5655,7 +5845,7 @@
 			bindHandlers(state, $app, $progress, $actions);
 		}
 		if (isStepChanged) {
-			focusStepHeading($app);
+			scheduleFocusAndA11yAnnouncement($app, true);
 		}
 
 		window.setTimeout(function () {
@@ -6740,6 +6930,7 @@
 		var context = parseContext();
 		bindClientErrorLogging();
 		applyThemeVariant(context);
+		bindVisualViewportKeyboardInset();
 		var state = buildState(context);
 		patchPaymentFieldsFromContext(state, context);
 		// Сервер уже передал снимок корзины в data-mp-cc-context; createFrontendStore иначе оставляет items пустыми до AJAX.
