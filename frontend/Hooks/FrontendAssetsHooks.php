@@ -9,6 +9,7 @@ namespace MP\CustomCheckout\Frontend\Hooks;
 
 use MP\CustomCheckout\DependencyFailureGuard;
 use MP\CustomCheckout\Routing\PickupPointRegistry;
+use MP\CustomCheckout\Integrations\WooCommerce\GiftCardIntegration;
 use MP\CustomCheckout\Routing\CheckoutScenarioRules;
 use MP\CustomCheckout\Settings\DefaultLabelsRegistry;
 use MP\CustomCheckout\Settings\FeatureFlagResolver;
@@ -78,6 +79,7 @@ final class FrontendAssetsHooks {
 				'scenarioStepMap' => self::scenario_step_map(),
 				'designTokens' => self::design_tokens_for_runtime(),
 				'paymentCardArt' => self::payment_card_art_urls(),
+				'giftCardIntegrationAvailable' => ( new GiftCardIntegration() )->is_pw_gift_cards_available(),
 			)
 		);
 		do_action( 'mp_custom_checkout_enqueue_frontend_assets' );
@@ -107,6 +109,7 @@ final class FrontendAssetsHooks {
 			'generic'   => 'bank-card-generic.png',
 			'robokassa' => 'robokassa-card.png',
 			'yookassa'  => 'yookassa-card.png',
+			'gift_card' => 'gift-card-peer.png',
 		);
 		$out = array();
 		foreach ( $map as $key => $file ) {
