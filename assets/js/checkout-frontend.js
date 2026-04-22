@@ -7,12 +7,15 @@
 	var selectors = {
 		root: '#mp-cc-checkout',
 		app: '#mp-cc-checkout-app',
+		parcel: '#mp-cc-parcel-header',
 		progress: '#mp-cc-progress-container',
 		actions: '#mp-cc-navigation-actions',
 		summary: '#mp-cc-summary-sidebar',
-		notifications: '#mp-cc-notifications'
+		notifications: '#mp-cc-notifications',
+		exit: '#mp-cc-exit-checkout'
 	};
 	var flagNames = {
+		checkoutUiV2: 'checkout_ui_v2',
 		multiStepFlow: 'multi_step_flow',
 		multiPickupPoints: 'multi_pickup_points',
 		conditionsStep: 'conditions_step',
@@ -1094,6 +1097,102 @@
 		};
 	}
 
+	function isV2CheckoutUiEnabled(state) {
+		return isFlagEnabled(state, flagNames.checkoutUiV2, false);
+	}
+
+	function getV2StepScreens(state) {
+		var labels = {
+			step1: getUiText('step_2.title', 'Адрес и способ доставки'),
+			step2: getUiText('step_4.contact_title', 'Получатель'),
+			step3: getUiText('step_4.payment_title', 'Способ оплаты'),
+			step4: getUiText('common.confirm', 'Подтверждение')
+		};
+		return [
+			{ id: 'delivery_screen', label: labels.step1, legacyStep: 'date' },
+			{ id: 'recipient_screen', label: labels.step2, legacyStep: 'contact_payment' },
+			{ id: 'payment_screen', label: labels.step3, legacyStep: 'contact_payment' },
+			{ id: 'confirm_screen', label: labels.step4, legacyStep: 'contact_payment' }
+		];
+	}
+
+	function getV2LegacyStepId(screen) {
+		return screen && screen.legacyStep ? String(screen.legacyStep) : 'contact_payment';
+	}
+
+	function ensureV2ScreenState(state) {
+		if (!isV2CheckoutUiEnabled(state)) {
+			return;
+		}
+		state.v2Screens = getV2StepScreens(state);
+		if (typeof state.v2CurrentIndex !== 'number' || state.v2CurrentIndex < 0 || state.v2CurrentIndex >= state.v2Screens.length) {
+			if (state.currentStepId === 'contact_payment') {
+				state.v2CurrentIndex = 1;
+			} else {
+				state.v2CurrentIndex = 0;
+			}
+		}
+		if (typeof state.v2MaxReachedIndex !== 'number' || state.v2MaxReachedIndex < 0) {
+			state.v2MaxReachedIndex = state.v2CurrentIndex;
+		}
+		if (state.v2MaxReachedIndex < state.v2CurrentIndex) {
+			state.v2MaxReachedIndex = state.v2CurrentIndex;
+		}
+	}
+
+	function invalidateV2DownstreamFrom(state, fromIndex) {
+		if (!isV2CheckoutUiEnabled(state)) {
+			return;
+		}
+		ensureV2ScreenState(state);
+		if (typeof fromIndex !== 'number' || fromIndex < 0) {
+			return;
+		}
+		if (state.v2MaxReachedIndex > fromIndex) {
+			state.v2MaxReachedIndex = fromIndex;
+		}
+		var map = state.frontendStore && state.frontendStore.runtime && state.frontendStore.runtime.invalid_v2_steps
+			? state.frontendStore.runtime.invalid_v2_steps
+			: {};
+		var i;
+		for (i = fromIndex + 1; i < state.v2Screens.length; i += 1) {
+			if (map[state.v2Screens[i].id]) {
+				delete map[state.v2Screens[i].id];
+			}
+		}
+		if (state.frontendStore && state.frontendStore.runtime) {
+			state.frontendStore.runtime.invalid_v2_steps = map;
+		}
+	}
+
+	function setV2StepInvalidState(state, screenId, isInvalid) {
+		if (!state || !state.frontendStore || !state.frontendStore.runtime || !screenId) {
+			return;
+		}
+		var map = state.frontendStore.runtime.invalid_v2_steps && typeof state.frontendStore.runtime.invalid_v2_steps === 'object'
+			? state.frontendStore.runtime.invalid_v2_steps
+			: {};
+		if (isInvalid) {
+			map[screenId] = true;
+		} else if (Object.prototype.hasOwnProperty.call(map, screenId)) {
+			delete map[screenId];
+		}
+		state.frontendStore.runtime.invalid_v2_steps = map;
+	}
+
+	function validateRecipientStep(state) {
+		var ok = validateContactPaymentStep(state);
+		var errors = state.frontendStore && state.frontendStore.form && state.frontendStore.form.errors
+			? (state.frontendStore.form.errors.contact || {})
+			: {};
+		if (errors.payment_gateway) {
+			delete errors.payment_gateway;
+			ok = Object.keys(errors).length === 0;
+			state.frontendStore.form.errors.contact = errors;
+		}
+		return ok;
+	}
+
 	function validateContactPaymentStep(state) {
 		ensureContactDefaults(state);
 		var contact = state.frontendStore.form.contact || {};
@@ -1338,7 +1437,9 @@
 		return e[fieldKey] ? String(e[fieldKey]) : '';
 	}
 
-	function buildContactPaymentHtml(state) {
+	function buildContactPaymentHtml(state, options) {
+		options = options || {};
+		var includePayment = options.includePayment !== false;
 		ensureContactDefaults(state);
 		var contact = state.frontendStore.form.contact || {};
 		var cfg = getStepFourConfig();
@@ -1587,7 +1688,9 @@
 			}
 		}
 		html += '</div>';
-		html += buildPaymentGatewaysHtml(state);
+		if (includePayment) {
+			html += buildPaymentGatewaysHtml(state);
+		}
 		html += '</section>';
 		return html;
 	}
@@ -3261,7 +3364,56 @@
 		});
 	}
 
+	function setCurrentV2Screen(state, $app, targetIndex) {
+		ensureV2ScreenState(state);
+		if (targetIndex < 0 || targetIndex >= state.v2Screens.length) {
+			return $.Deferred().reject().promise();
+		}
+		var targetScreen = state.v2Screens[targetIndex];
+		var legacyStepId = getV2LegacyStepId(targetScreen);
+		var done = function () {
+			state.v2CurrentIndex = targetIndex;
+			state.v2MaxReachedIndex = Math.max(state.v2MaxReachedIndex, targetIndex);
+			render(state, $app);
+			scrollToStepTop();
+			focusStepHeading($app);
+			document.dispatchEvent(
+				new CustomEvent('mp_cc_v2_step_changed', {
+					detail: {
+						screenId: targetScreen.id,
+						index: targetIndex + 1,
+						total: state.v2Screens.length,
+						legacyStepId: legacyStepId
+					}
+				})
+			);
+			postCheckout('validation_log', {
+				step_id: targetScreen.id,
+				context_id: state.flowContextId,
+				errors: {},
+				marker: 'v2_step_transition'
+			});
+		};
+		if (state.currentStepId !== legacyStepId) {
+			return setCurrentStep(state, $app, legacyStepId).then(function () {
+				done();
+			});
+		}
+		done();
+		return $.Deferred().resolve().promise();
+	}
+
 	function moveBackward(state, $app) {
+		if (isV2CheckoutUiEnabled(state)) {
+			ensureV2ScreenState(state);
+			if (state.v2CurrentIndex <= 0) {
+				return;
+			}
+			var nextIdx = state.v2CurrentIndex - 1;
+			state.v2MaxReachedIndex = Math.min(state.v2MaxReachedIndex, nextIdx);
+			setCurrentV2Screen(state, $app, nextIdx);
+			return;
+		}
 		var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
 		if (currentIndex <= 0) {
 			return;
@@ -3271,6 +3423,68 @@
 	}
 
 	function moveForward(state, $app) {
+		if (isV2CheckoutUiEnabled(state)) {
+			ensureV2ScreenState(state);
+			var v2Idx = state.v2CurrentIndex;
+			var currentScreen = state.v2Screens[v2Idx];
+			if (!currentScreen) {
+				return;
+			}
+			if (currentScreen.id === 'delivery_screen') {
+				var selectedDateV2 = state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.date
+					? String(state.frontendStore.fulfillment.date.selected_date || '')
+					: '';
+				if (!selectedDateV2 || !parseIsoDate(selectedDateV2)) {
+					setV2StepInvalidState(state, currentScreen.id, true);
+					notify(getStepThreeErrorCopy('empty_date', 'Выберите дату, чтобы продолжить.'), 'error');
+					render(state, $app);
+					scrollToFirstInvalidField($app);
+					return;
+				}
+				setV2StepInvalidState(state, currentScreen.id, false);
+				saveCurrentStepDraft(state);
+				setCurrentV2Screen(state, $app, v2Idx + 1);
+				return;
+			}
+			if (currentScreen.id === 'recipient_screen') {
+				if (!validateRecipientStep(state)) {
+					setV2StepInvalidState(state, currentScreen.id, true);
+					logValidationFailure(state, 'recipient_screen', state.frontendStore.form.errors ? state.frontendStore.form.errors.contact : {});
+					notify(getUiText('step_4.contact_error_all_required', 'Не все обязательные поля заполнены.'), 'error');
+					render(state, $app);
+					scrollToFirstInvalidField($app);
+					return;
+				}
+				setV2StepInvalidState(state, currentScreen.id, false);
+				saveCurrentStepDraft(state);
+				setCurrentV2Screen(state, $app, v2Idx + 1);
+				return;
+			}
+			if (currentScreen.id === 'payment_screen') {
+				var selectedGatewayV2 = trimNonEmpty(state.frontendStore && state.frontendStore.payment ? state.frontendStore.payment.gateway : '');
+				if (!selectedGatewayV2) {
+					state.frontendStore.form.errors = state.frontendStore.form.errors || {};
+					state.frontendStore.form.errors.contact = state.frontendStore.form.errors.contact || {};
+					state.frontendStore.form.errors.contact.payment_gateway = 'required';
+					setV2StepInvalidState(state, currentScreen.id, true);
+					notify(getUiText('step_4.payment_error_required', 'Выберите способ оплаты.'), 'error');
+					render(state, $app);
+					scrollToFirstInvalidField($app);
+					return;
+				}
+				setV2StepInvalidState(state, currentScreen.id, false);
+				saveCurrentStepDraft(state).always(function () {
+					setCurrentV2Screen(state, $app, v2Idx + 1);
+				});
+				return;
+			}
+			if (currentScreen.id === 'confirm_screen') {
+				saveCurrentStepDraft(state).always(function () {
+					submitFinalPayment(state, $app);
+				});
+				return;
+			}
+		}
 		var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
 		if (currentIndex < 0) {
 			return;
@@ -3428,6 +3642,36 @@
 	}
 
 	function buildProgressHtml(state) {
+		if (isV2CheckoutUiEnabled(state)) {
+			ensureV2ScreenState(state);
+			var invalidV2Map = state.frontendStore && state.frontendStore.runtime && state.frontendStore.runtime.invalid_v2_steps
+				? state.frontendStore.runtime.invalid_v2_steps
+				: {};
+			var v2html = '<ol class="mp-cc-progress" role="list" aria-label="' + escapeHtml(getUiText('checkout.progress_label', 'Checkout steps')) + '">';
+			for (var vi = 0; vi < state.v2Screens.length; vi += 1) {
+				var s = state.v2Screens[vi];
+				var canGoV2 = vi <= state.v2MaxReachedIndex;
+				var isCurrentV2 = vi === state.v2CurrentIndex;
+				var v2classes = ['mp-cc-progress__item'];
+				if (isCurrentV2) {
+					v2classes.push('is-active');
+				}
+				if (vi < state.v2CurrentIndex) {
+					v2classes.push('is-complete');
+				}
+				if (invalidV2Map[s.id]) {
+					v2classes.push('is-invalid');
+				}
+				v2html += '<li class="' + v2classes.join(' ') + '">';
+				v2html += '<button type="button" class="mp-cc-progress__btn" data-v2-step="1" data-step="' + escapeHtml(s.id) + '" data-step-index="' + vi + '"' + (canGoV2 ? '' : ' disabled') + (isCurrentV2 ? ' aria-current="step"' : '') + '>';
+				v2html += '<span class="mp-cc-progress__index">' + (vi + 1) + '</span>';
+				v2html += '<span class="mp-cc-progress__label">' + escapeHtml(s.label) + '</span>';
+				v2html += '</button>';
+				v2html += '</li>';
+			}
+			v2html += '</ol>';
+			return v2html;
+		}
 		var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
 		var invalidMap = state.frontendStore && state.frontendStore.runtime && state.frontendStore.runtime.invalid_steps
 			? state.frontendStore.runtime.invalid_steps
@@ -3467,7 +3711,73 @@
 		return html;
 	}
 
+	function buildParcelHeaderHtml(state) {
+		var cart = state && state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart : {};
+		var summary = cart.summary && typeof cart.summary === 'object' ? cart.summary : {};
+		var items = Array.isArray(cart.items) ? cart.items : [];
+		if (!items.length) {
+			return '';
+		}
+		var first = items[0] && typeof items[0] === 'object' ? items[0] : {};
+		var count = Number(summary.items_count || items.length || 0);
+		var countLabel = count + ' ' + getUiText('step_1.positions_count', 'позиций');
+		var title = trimNonEmpty(first.name) || getUiText('step_1.title', 'Товар');
+		var qty = Number(first.quantity || 0);
+		var qtyLabel = qty > 0 ? String(qty) + ' шт' : '';
+		var html = '';
+		html += '<article class="mp-cc-parcel-head">';
+		html += '<span class="mp-cc-parcel-head__badge">' + escapeHtml(countLabel) + '</span>';
+		html += '<div class="mp-cc-parcel-head__body">';
+		html += '<h3 class="mp-cc-parcel-head__title">' + escapeHtml(title) + '</h3>';
+		if (qtyLabel) {
+			html += '<p class="mp-cc-parcel-head__meta">' + escapeHtml(qtyLabel) + '</p>';
+		}
+		html += '</div>';
+		html += '</article>';
+		return html;
+	}
+
+	function buildConfirmationScreenHtml(state) {
+		var payment = state.frontendStore && state.frontendStore.payment ? state.frontendStore.payment : {};
+		var gateway = trimNonEmpty(payment.gateway) || getUiText('step_4.payment_title', 'способ оплаты');
+		var html = '';
+		html += '<section class="mp-cc-confirm-screen" aria-labelledby="mp-cc-confirm-title">';
+		html += '<h3 id="mp-cc-confirm-title">' + escapeHtml(getUiText('common.confirm', 'Подтверждение')) + '</h3>';
+		html += '<p class="mp-cc-step-panel__hint">' + escapeHtml(getUiText('order_review.final_hint', 'Проверьте данные справа и нажмите кнопку оформления заказа.')) + '</p>';
+		html += '<p class="mp-cc-step-panel__hint">' + escapeHtml(getUiText('order_review.selected_gateway', 'Выбранный способ оплаты') + ': ' + gateway) + '</p>';
+		html += '</section>';
+		return html;
+	}
+
 	function buildStepPanelHtml(state) {
+		if (isV2CheckoutUiEnabled(state)) {
+			ensureV2ScreenState(state);
+			var screen = state.v2Screens[state.v2CurrentIndex] || state.v2Screens[0];
+			var screenLabel = screen ? screen.label : getUiText('checkout.progress_label', 'Оформление');
+			var v2html = '';
+			v2html += '<section class="mp-cc-step-panel mp-cc-step-screen" data-step-panel="' + escapeHtml(screen ? screen.id : '') + '">';
+			v2html += '<header class="mp-cc-step-panel__header">';
+			v2html += '<p class="mp-cc-step-panel__meta">Шаг ' + String(state.v2CurrentIndex + 1) + ' / ' + String(state.v2Screens.length) + '</p>';
+			v2html += '<h2 class="mp-cc-step-panel__title" id="mp-cc-step-heading" tabindex="-1">' + escapeHtml(screenLabel) + '</h2>';
+			v2html += '</header>';
+			v2html += '<div class="mp-cc-step-panel__content" data-mp-cc-step-slot="' + escapeHtml(screen ? screen.id : '') + '">';
+			if (screen && screen.id === 'delivery_screen') {
+				v2html += buildFulfillmentChoiceHtml(state);
+			}
+			if (screen && screen.id === 'recipient_screen') {
+				v2html += buildContactPaymentHtml(state, { includePayment: false });
+			}
+			if (screen && screen.id === 'payment_screen') {
+				v2html += buildPaymentGatewaysHtml(state);
+				v2html += buildDiscountToolsHtml(state, {});
+			}
+			if (screen && screen.id === 'confirm_screen') {
+				v2html += buildConfirmationScreenHtml(state);
+			}
+			v2html += '</div>';
+			v2html += '</section>';
+			return v2html;
+		}
 		var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
 		var step = currentIndex >= 0 ? state.visibleSteps[currentIndex] : null;
 		var label = step ? (step.label || step.id) : '';
@@ -3484,7 +3794,7 @@
 		}
 		var html = '';
 
-		html += '<section class="mp-cc-step-panel" data-step-panel="' + escapeHtml(step ? step.id : '') + '">';
+		html += '<section class="mp-cc-step-panel mp-cc-step-screen" data-step-panel="' + escapeHtml(step ? step.id : '') + '">';
 		html += '<header class="mp-cc-step-panel__header">';
 		html += '<p class="mp-cc-step-panel__meta">Step ' + (currentIndex + 1) + ' / ' + state.visibleSteps.length + '</p>';
 		html += '<h2 class="mp-cc-step-panel__title" id="mp-cc-step-heading" tabindex="-1">' + escapeHtml(label) + '</h2>';
@@ -3785,6 +4095,21 @@
 	function buildNavHtml(state) {
 		if (!isFlagEnabled(state, flagNames.multiStepFlow, true)) {
 			return '';
+		}
+		if (isV2CheckoutUiEnabled(state)) {
+			ensureV2ScreenState(state);
+			var isV2First = state.v2CurrentIndex <= 0;
+			var isV2Last = state.v2CurrentIndex >= state.v2Screens.length - 1;
+			var isV2Loading = !!(state.frontendStore && state.frontendStore.runtime && state.frontendStore.runtime.loading);
+			var isV2PaymentSubmitting = isPaymentSubmissionLocked(state);
+			var backText = getUiText('common.back', 'Back');
+			var nextTextV2 = isV2Last ? getUiText('common.confirm', 'Оформить заказ') : getUiText('common.next', 'Далее');
+			var nav = '';
+			nav += '<nav class="mp-cc-nav" aria-label="Step navigation">';
+			nav += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--back" data-nav="back"' + (isV2First || isV2Loading || isV2PaymentSubmitting ? ' disabled' : '') + '>' + escapeHtml(backText) + '</button>';
+			nav += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--next" data-nav="next"' + (isV2Loading || isV2PaymentSubmitting ? ' disabled' : '') + '>' + escapeHtml(nextTextV2) + '</button>';
+			nav += '</nav>';
+			return nav;
 		}
 		var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
 		var isFirst = currentIndex <= 0;
@@ -4108,13 +4433,16 @@
 
 	function render(state, $app) {
 		window.__mpCcCheckoutContextId = state && state.flowContextId ? String(state.flowContextId) : '';
+		ensureV2ScreenState(state);
+		var $parcel = $(selectors.parcel);
 		var $progress = $(selectors.progress);
 		var $actions = $(selectors.actions);
 		var $summary = $(selectors.summary);
-		state.__renderCache = state.__renderCache || { stepHtml: '', summaryHtml: '', progressHtml: '', actionsHtml: '' };
+		state.__renderCache = state.__renderCache || { parcelHtml: '', stepHtml: '', summaryHtml: '', progressHtml: '', actionsHtml: '' };
 
 		if (!state.visibleSteps.length) {
 			$app.html('<p class="mp-cc-empty">No steps available.</p>');
+			$parcel.empty();
 			$progress.empty();
 			$actions.empty();
 			$summary.empty();
@@ -4124,8 +4452,15 @@
 		ensureContactDefaults(state);
 		ensureDiscountDefaults(state);
 
+		var nextParcelHtml = '';
 		var nextStepHtml = '';
 		var nextSummaryHtml = '';
+		try {
+			nextParcelHtml = buildParcelHeaderHtml(state);
+		} catch (parcelErr) {
+			reportClientError('render_parcel_failed', parcelErr && parcelErr.message ? parcelErr.message : 'parcel_render_failed', parcelErr && parcelErr.stack ? parcelErr.stack : '', 'render');
+			nextParcelHtml = '';
+		}
 		try {
 			nextStepHtml = buildStepPanelHtml(state);
 		} catch (stepErr) {
@@ -4140,6 +4475,7 @@
 		}
 		var nextProgressHtml = '';
 		var nextActionsHtml = '';
+		var isParcelChanged = state.__renderCache.parcelHtml !== nextParcelHtml;
 		var isStepChanged = state.__renderCache.stepHtml !== nextStepHtml;
 		var isSummaryChanged = state.__renderCache.summaryHtml !== nextSummaryHtml;
 		var isProgressChanged = false;
@@ -4159,6 +4495,10 @@
 			}
 			isProgressChanged = state.__renderCache.progressHtml !== nextProgressHtml;
 			isActionsChanged = state.__renderCache.actionsHtml !== nextActionsHtml;
+		}
+		if (isParcelChanged) {
+			$parcel.html(nextParcelHtml);
+			state.__renderCache.parcelHtml = nextParcelHtml;
 		}
 		if (isStepChanged) {
 			$app.html(nextStepHtml);
@@ -4185,7 +4525,7 @@
 			state.__renderCache.progressHtml = '';
 			state.__renderCache.actionsHtml = '';
 		}
-		if (isStepChanged || isSummaryChanged || isProgressChanged || isActionsChanged) {
+		if (isParcelChanged || isStepChanged || isSummaryChanged || isProgressChanged || isActionsChanged) {
 			bindHandlers(state, $app, $progress, $actions);
 		}
 		if (isStepChanged) {
@@ -4203,6 +4543,16 @@
 	}
 
 	function bindHandlers(state, $app, $progress, $actions) {
+		$(selectors.exit).off('click').on('click', function () {
+			var summary = state.frontendStore && state.frontendStore.cart ? (state.frontendStore.cart.summary || {}) : {};
+			var fallback = trimNonEmpty(summary.catalog_url) || '/';
+			if (window.history && window.history.length > 1) {
+				window.history.back();
+				return;
+			}
+			window.location.href = fallback;
+		});
+
 		if (!isFlagEnabled(state, flagNames.multiStepFlow, true)) {
 			return;
 		}
@@ -4224,6 +4574,17 @@
 		});
 
 		$progress.find('.mp-cc-progress__btn').off('click').on('click', function () {
+			if (isV2CheckoutUiEnabled(state)) {
+				var v2Index = Number($(this).attr('data-step-index'));
+				if (!Number.isFinite(v2Index)) {
+					return;
+				}
+				if (v2Index < 0 || v2Index > state.v2MaxReachedIndex) {
+					return;
+				}
+				setCurrentV2Screen(state, $app, v2Index);
+				return;
+			}
 			var target = $(this).data('step');
 			if (!target) {
 				return;
@@ -4316,6 +4677,7 @@
 				return;
 			}
 			resetDependentStateForScenario(state, targetScenario);
+			invalidateV2DownstreamFrom(state, 0);
 			render(state, $app);
 			document.dispatchEvent(
 				new CustomEvent('mp_cc_scenario_changed', {
@@ -4361,6 +4723,7 @@
 			var scenarioData = state.frontendStore.fulfillment.scenarioData || {};
 			scenarioData.pickup_point = point;
 			state.frontendStore.fulfillment.scenarioData = scenarioData;
+			invalidateV2DownstreamFrom(state, 0);
 			render(state, $app);
 			postCheckout('session_set_answers', {
 				step_id: 'scenario',
@@ -4389,6 +4752,7 @@
 				dateBox.calendar_month = monthKeyFromDate(parsed);
 			}
 			state.frontendStore.fulfillment.date = dateBox;
+			invalidateV2DownstreamFrom(state, 0);
 			state.frontendStore.form.errors = state.frontendStore.form.errors || {};
 			state.frontendStore.form.errors.date = '';
 			setStepInvalidState(state, 'date', false);
@@ -4510,6 +4874,7 @@
 				var remain = Math.max(0, cfgNotes.maxLength - String(val || '').length);
 				$app.find('[data-order-notes-counter="1"]').text('Осталось символов: ' + String(remain));
 			}
+			invalidateV2DownstreamFrom(state, 1);
 			scheduleCurrentStepDraftSave(state, function () {
 				notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
 			});
@@ -4538,6 +4903,7 @@
 			if (state.frontendStore.form.errors && state.frontendStore.form.errors.contact) {
 				delete state.frontendStore.form.errors.contact.billing_phone_national;
 			}
+			invalidateV2DownstreamFrom(state, 1);
 			scheduleCurrentStepDraftSave(state, function () {
 				notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
 			});
@@ -4562,6 +4928,7 @@
 			if (state.frontendStore.form.errors && state.frontendStore.form.errors.contact) {
 				delete state.frontendStore.form.errors.contact.payment_gateway;
 			}
+			invalidateV2DownstreamFrom(state, 2);
 			render(state, $app);
 			postCheckout('set_payment_gateway', {
 				gateway: gateway,
@@ -4736,6 +5103,7 @@
 			if (state.frontendStore.form.errors && state.frontendStore.form.errors.contact) {
 				delete state.frontendStore.form.errors.contact.billing_phone_national;
 			}
+			invalidateV2DownstreamFrom(state, 1);
 			render(state, $app);
 			saveCurrentStepDraft(state).fail(function () {
 				notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');

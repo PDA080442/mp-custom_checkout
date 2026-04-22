@@ -2107,3 +2107,236 @@ body.woocommerce-checkout #mp-cc-checkout {
 body.mp-custom-checkout form.checkout.woocommerce-checkout {
 	display: none !important;
 }
+
+/* === V2 shell overrides (layout/rail/parcel/exit) === */
+.mp-cc-v2-shell-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+}
+
+.mp-cc-v2-shell-head__title {
+	margin: 0;
+	font-size: clamp(1.45rem, 2.4vw, 2.1rem);
+	line-height: 1.1;
+	letter-spacing: 0.01em;
+}
+
+.mp-cc-v2-shell-head__exit {
+	width: 2.5rem;
+	height: 2.5rem;
+	border: 1px solid var(--mp-cc-color-border);
+	border-radius: 999px;
+	background: var(--mp-cc-color-background);
+	color: var(--mp-cc-color-text);
+	font-size: 1.5rem;
+	line-height: 1;
+	cursor: pointer;
+}
+
+.mp-cc-v2-shell-head__exit:hover {
+	border-color: var(--mp-cc-color-accent);
+}
+
+.mp-cc-v2-shell-head__exit:focus-visible {
+	outline: 2px solid var(--mp-cc-color-accent);
+	outline-offset: 2px;
+}
+
+.mp-cc-region--parcel:empty {
+	display: none;
+}
+
+.mp-cc-parcel-head {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	gap: 0.9rem;
+	border: 1px solid var(--mp-cc-color-border);
+	border-radius: var(--mp-cc-radius-md);
+	padding: 0.7rem 0.85rem;
+	background: rgba(255, 255, 255, 0.7);
+}
+
+.mp-cc-parcel-head__badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 999px;
+	padding: 0.25rem 0.55rem;
+	background: rgba(17, 17, 17, 0.08);
+	font-size: 0.74rem;
+	font-weight: 600;
+}
+
+.mp-cc-parcel-head__title {
+	margin: 0;
+	font-size: 0.98rem;
+}
+
+.mp-cc-parcel-head__meta {
+	margin: 0.2rem 0 0;
+	color: var(--mp-cc-color-text-muted);
+	font-size: 0.84rem;
+}
+
+.mp-cc-layout__main {
+	grid-template-columns: minmax(8rem, 11rem) minmax(0, 1fr);
+	grid-template-areas:
+		'progress content'
+		'progress actions';
+	align-items: start;
+}
+
+.mp-cc-region--progress {
+	grid-area: progress;
+}
+
+.mp-cc-region--content {
+	grid-area: content;
+}
+
+.mp-cc-region--actions {
+	grid-area: actions;
+}
+
+@media (min-width: 960px) {
+	.mp-cc-layout {
+		grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem);
+	}
+}
+
+.mp-cc-progress {
+	grid-template-columns: 1fr;
+	gap: 0.65rem;
+	position: relative;
+	padding: 0;
+	background: transparent;
+}
+
+.mp-cc-progress::before {
+	content: '';
+	position: absolute;
+	left: 0.58rem;
+	top: 0.9rem;
+	bottom: 0.9rem;
+	width: 2px;
+	background: var(--mp-cc-color-border);
+}
+
+.mp-cc-progress__item {
+	position: relative;
+}
+
+.mp-cc-progress__btn {
+	gap: 0.7rem;
+	padding: 0.35rem 0.35rem 0.35rem 0;
+	border: none;
+	border-radius: 0;
+	background: transparent;
+}
+
+.mp-cc-progress__btn:hover {
+	background: transparent;
+	border-color: transparent;
+}
+
+.mp-cc-progress__index {
+	width: 1.15rem;
+	height: 1.15rem;
+	background: #fff;
+	border: 2px solid var(--mp-cc-color-border);
+	font-size: 0;
+	flex-shrink: 0;
+}
+
+.mp-cc-progress__label {
+	font-size: 1rem;
+	font-weight: 700;
+	line-height: 1.2;
+}
+
+.mp-cc-progress__item.is-active .mp-cc-progress__index {
+	border-color: var(--mp-cc-color-accent);
+	background: var(--mp-cc-color-accent);
+}
+
+.mp-cc-progress__item.is-complete .mp-cc-progress__index {
+	border-color: var(--mp-cc-color-success);
+	background: var(--mp-cc-color-success);
+}
+
+.mp-cc-progress__item.is-active .mp-cc-progress__label {
+	color: var(--mp-cc-color-accent);
+}
+
+.mp-cc-progress__item.is-complete .mp-cc-progress__label {
+	color: var(--mp-cc-color-success);
+}
+
+.mp-cc-progress__item.is-invalid .mp-cc-progress__label {
+	color: var(--mp-cc-color-error);
+}
+
+.mp-cc-step-panel {
+	min-height: 22rem;
+}
+
+.mp-cc-step-panel.mp-cc-step-screen {
+	animation: mp-cc-step-screen-in 240ms ease;
+}
+
+@media (max-width: 767px) {
+	.mp-cc-v2-shell-head {
+		align-items: flex-start;
+	}
+
+	.mp-cc-v2-shell-head__title {
+		font-size: 1.32rem;
+	}
+
+	.mp-cc-v2-shell-head__exit {
+		width: 2.2rem;
+		height: 2.2rem;
+	}
+
+	.mp-cc-parcel-head {
+		grid-template-columns: 1fr;
+		gap: 0.45rem;
+	}
+
+	.mp-cc-layout__main {
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-areas:
+			'progress'
+			'content'
+			'actions';
+	}
+
+	.mp-cc-progress {
+		gap: 0.45rem;
+	}
+
+	.mp-cc-progress::before {
+		display: none;
+	}
+
+	.mp-cc-progress__btn {
+		padding: 0.45rem 0;
+	}
+
+	.mp-cc-progress__label {
+		font-size: 0.9rem;
+	}
+}
+
+@keyframes mp-cc-step-screen-in {
+	0% {
+		opacity: 0.72;
+		transform: translateY(5px);
+	}
+	100% {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
