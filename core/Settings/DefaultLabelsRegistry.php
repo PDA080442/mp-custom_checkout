@@ -29,6 +29,10 @@ final class DefaultLabelsRegistry {
 				'loading'       => 'Загрузка…',
 				'error_generic' => 'Произошла ошибка. Попробуйте ещё раз.',
 			),
+			'checkout' => array(
+				'progress_label' => 'Шаги оформления',
+				'step_meta'      => 'Шаг {current} / {total}',
+			),
 			'step_1' => array(
 				'title'            => 'Корзина',
 				'empty_cart'       => 'Корзина пуста',
@@ -36,9 +40,12 @@ final class DefaultLabelsRegistry {
 				'continue'         => 'Продолжить оформление',
 				'subtotal'         => 'Подытог',
 				'positions_count'  => 'Позиций',
+				'parcel_count_one' => '{n} посылка',
+				'parcel_count_few' => '{n} посылки',
+				'parcel_count_other' => '{n} посылок',
 			),
 			'step_2' => array(
-				'title' => 'Дата доставки или получения',
+				'title' => 'Адрес и способ доставки',
 			),
 			'step_3' => array(
 				'title'                 => 'Условия получения',
@@ -66,6 +73,7 @@ final class DefaultLabelsRegistry {
 			),
 			'step_4' => array(
 				'title' => 'Контакты и оплата',
+				'contact_title' => 'Получатель',
 				'contact_last_name' => 'Фамилия',
 				'contact_first_name' => 'Имя',
 				'contact_patronymic' => 'Отчество',
