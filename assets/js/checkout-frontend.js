@@ -12,7 +12,8 @@
 		actions: '#mp-cc-navigation-actions',
 		summary: '#mp-cc-summary-sidebar',
 		notifications: '#mp-cc-notifications',
-		exit: '#mp-cc-exit-checkout'
+		exit: '#mp-cc-exit-checkout',
+		shellParcelBadge: '#mp-cc-shell-parcel-badge'
 	};
 	var flagNames = {
 		checkoutUiV2: 'checkout_ui_v2',
@@ -47,6 +48,57 @@
 			node = node[parts[i]];
 		}
 		return (typeof node === 'string' && node !== '') ? node : fallback;
+	}
+
+	function formatCheckoutStepMeta(currentOneBased, totalSteps) {
+		var cur = Math.max(1, Math.round(Number(currentOneBased) || 0));
+		var tot = Math.max(1, Math.round(Number(totalSteps) || 0));
+		var tmpl = getUiText('checkout.step_meta', 'Шаг {current} / {total}');
+		return String(tmpl)
+			.replace(/\{current\}/g, String(cur))
+			.replace(/\{total\}/g, String(tot));
+	}
+
+	function formatParcelBadgeLabel(count) {
+		var n = Math.max(0, Math.round(Number(count) || 0));
+		if (n <= 0) {
+			return '';
+		}
+		var fewTmpl = getUiText('step_1.parcel_count_few', '{n} посылки');
+		var otherTmpl = getUiText('step_1.parcel_count_other', '{n} посылок');
+		var oneTmpl = getUiText('step_1.parcel_count_one', '{n} посылка');
+		var mod10 = n % 10;
+		var mod100 = n % 100;
+		if (n === 1) {
+			return String(oneTmpl).replace(/\{n\}/g, String(n));
+		}
+		if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+			return String(fewTmpl).replace(/\{n\}/g, String(n));
+		}
+		return String(otherTmpl).replace(/\{n\}/g, String(n));
+	}
+
+	function buildShellParcelBadgeHtml(state) {
+		var cart = state && state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart : {};
+		var items = Array.isArray(cart.items) ? cart.items : [];
+		var summary = cart.summary && typeof cart.summary === 'object' ? cart.summary : {};
+		var count = Number(summary.items_count || items.length || 0);
+		var label = formatParcelBadgeLabel(count);
+		if (!label) {
+			return '';
+		}
+		return '<span class="mp-cc-shell-parcel-badge">' + escapeHtml(label) + '</span>';
+	}
+
+	function getSummaryStepProgress(state) {
+		if (isV2CheckoutUiEnabled(state)) {
+			ensureV2ScreenState(state);
+			var v2len = state.v2Screens && state.v2Screens.length ? state.v2Screens.length : 1;
+			return { cur: state.v2CurrentIndex + 1, total: v2len };
+		}
+		var ix = getStepIndex(state.visibleSteps, state.currentStepId);
+		var tot = state.visibleSteps.length || 1;
+		return { cur: Math.min(tot, Math.max(1, ix + 1)), total: tot };
 	}
 
 	function getStepOneConfig() {
@@ -4663,14 +4715,19 @@
 			return '';
 		}
 		var first = items[0] && typeof items[0] === 'object' ? items[0] : {};
-		var count = Number(summary.items_count || items.length || 0);
-		var countLabel = count + ' ' + getUiText('step_1.positions_count', 'позиций');
 		var title = trimNonEmpty(first.name) || getUiText('step_1.title', 'Товар');
 		var qty = Number(first.quantity || 0);
 		var qtyLabel = qty > 0 ? String(qty) + ' шт' : '';
+		var imageUrl = first.image_url ? String(first.image_url) : '';
 		var html = '';
 		html += '<article class="mp-cc-parcel-head">';
-		html += '<span class="mp-cc-parcel-head__badge">' + escapeHtml(countLabel) + '</span>';
+		html += '<div class="mp-cc-parcel-head__media" aria-hidden="true">';
+		if (imageUrl) {
+			html += '<img class="mp-cc-parcel-head__img" src="' + escapeHtml(imageUrl) + '" alt="" loading="lazy" decoding="async" />';
+		} else {
+			html += '<span class="mp-cc-parcel-head__ph" aria-hidden="true"></span>';
+		}
+		html += '</div>';
 		html += '<div class="mp-cc-parcel-head__body">';
 		html += '<h3 class="mp-cc-parcel-head__title">' + escapeHtml(title) + '</h3>';
 		if (qtyLabel) {
@@ -4701,7 +4758,7 @@
 			var v2html = '';
 			v2html += '<section class="mp-cc-step-panel mp-cc-step-screen" data-step-panel="' + escapeHtml(screen ? screen.id : '') + '">';
 			v2html += '<header class="mp-cc-step-panel__header">';
-			v2html += '<p class="mp-cc-step-panel__meta">Шаг ' + String(state.v2CurrentIndex + 1) + ' / ' + String(state.v2Screens.length) + '</p>';
+			v2html += '<p class="mp-cc-step-panel__meta">' + escapeHtml(formatCheckoutStepMeta(state.v2CurrentIndex + 1, state.v2Screens.length)) + '</p>';
 			v2html += '<h2 class="mp-cc-step-panel__title" id="mp-cc-step-heading" tabindex="-1">' + escapeHtml(screenLabel) + '</h2>';
 			v2html += '</header>';
 			v2html += '<div class="mp-cc-step-panel__content" data-mp-cc-step-slot="' + escapeHtml(screen ? screen.id : '') + '">';
@@ -4740,7 +4797,7 @@
 
 		html += '<section class="mp-cc-step-panel mp-cc-step-screen" data-step-panel="' + escapeHtml(step ? step.id : '') + '">';
 		html += '<header class="mp-cc-step-panel__header">';
-		html += '<p class="mp-cc-step-panel__meta">Step ' + (currentIndex + 1) + ' / ' + state.visibleSteps.length + '</p>';
+		html += '<p class="mp-cc-step-panel__meta">' + escapeHtml(formatCheckoutStepMeta(currentIndex + 1, state.visibleSteps.length)) + '</p>';
 		html += '<h2 class="mp-cc-step-panel__title" id="mp-cc-step-heading" tabindex="-1">' + escapeHtml(label) + '</h2>';
 		html += '</header>';
 		html += '<div class="mp-cc-step-panel__content" data-mp-cc-step-slot="' + escapeHtml(step ? step.id : '') + '">';
@@ -5147,6 +5204,7 @@
 	function buildSummaryHtml(state) {
 		var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
 		var total = state.visibleSteps.length;
+		var stepProg = getSummaryStepProgress(state);
 		var snapshot = state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart.snapshot || {} : {};
 		var cartSummary = state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart.summary || {} : {};
 		var runtime = state.frontendStore && state.frontendStore.runtime ? state.frontendStore.runtime : {};
@@ -5195,9 +5253,9 @@
 			: null;
 		var html = '';
 
-		html += '<section class="mp-cc-summary-card" aria-label="Order summary panel">';
+		html += '<section class="mp-cc-summary-card mp-cc-summary-card--mobile-receipt" aria-label="Order summary panel">';
 		html += '<h3 class="mp-cc-summary-card__title">' + escapeHtml(getStepOneLabel(state, 'summary_title', 'order_review.title', 'Order Summary')) + '</h3>';
-		html += '<p class="mp-cc-summary-card__meta">Step ' + (currentIndex + 1) + ' of ' + total + '</p>';
+		html += '<p class="mp-cc-summary-card__meta mp-cc-summary-card__meta--step">' + escapeHtml(formatCheckoutStepMeta(stepProg.cur, stepProg.total)) + '</p>';
 		if (showPlaceholders) {
 			html += '<div class="mp-cc-summary-card__placeholder" aria-hidden="true"></div>';
 			html += '<div class="mp-cc-summary-card__placeholder mp-cc-summary-card__placeholder--sm" aria-hidden="true"></div>';
@@ -5625,6 +5683,10 @@
 		if (isParcelChanged) {
 			$parcel.html(nextParcelHtml);
 			state.__renderCache.parcelHtml = nextParcelHtml;
+		}
+		var $shellParcel = $(selectors.shellParcelBadge);
+		if ($shellParcel.length) {
+			$shellParcel.html(buildShellParcelBadgeHtml(state));
 		}
 		if (isStepChanged) {
 			$app.html(nextStepHtml);
