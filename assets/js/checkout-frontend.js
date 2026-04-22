@@ -32,6 +32,8 @@
 		stepTransition: false,
 		paymentSubmit: false
 	};
+	var pickupMapScriptPromise = null;
+	var pickupMapLogCache = {};
 
 	function getUiText(path, fallback) {
 		var source = (window.mpCcCheckout && window.mpCcCheckout.uiText) ? window.mpCcCheckout.uiText : {};
@@ -125,6 +127,21 @@
 		return {
 			enablePointSelection: Boolean(source.enable_point_selection),
 			mapSlotEnabled: source.map_slot_enabled !== false,
+			mapWidget: $.extend(true, {
+				enabled: true,
+				provider: 'yandex',
+				api_key: '',
+				center_lat: 56.010563,
+				center_lng: 92.852572,
+				zoom: 14,
+				marker_label: 'Пункт самовывоза',
+				marker_hint: 'Заберите заказ в рабочие часы.',
+				fallback_title: 'Карта временно недоступна',
+				fallback_message: 'Посмотрите адрес пункта самовывоза выше и постройте маршрут в приложении карт.',
+				desktop_height: 250,
+				mobile_height: 190,
+				diagnostics_enabled: true
+			}, source.map_widget && typeof source.map_widget === 'object' ? source.map_widget : {}),
 			points: Array.isArray(source.points) ? source.points : []
 		};
 	}
@@ -157,6 +174,34 @@
 				tablet_columns: 1,
 				mobile_columns: 1,
 				card_density: 'comfortable'
+			}
+		}, source);
+	}
+
+	function getDeliveryConfig() {
+		var source = (window.mpCcCheckout && window.mpCcCheckout.deliveryConfig && typeof window.mpCcCheckout.deliveryConfig === 'object')
+			? window.mpCcCheckout.deliveryConfig
+			: {};
+		return $.extend(true, {
+			shipping_catalog: {
+				sort_order: [],
+				methods: {},
+				error_copy: {
+					method_unavailable: 'Выбранный метод доставки недоступен. Выберите другой вариант.',
+					tariff_unavailable: 'Выбранный тариф недоступен. Выберите другой тариф.'
+				},
+				bulk_update: {
+					enabled: true,
+					seasonal_delta_pct: 0,
+					seasonal_delta_abs: 0,
+					eta_suffix: ''
+				},
+				preview: {
+					enabled: true,
+					mock_subtotal: 3670,
+					mock_discount: 200,
+					mock_tax: 160
+				}
 			}
 		}, source);
 	}
@@ -1193,6 +1238,177 @@
 		return ok;
 	}
 
+	function getV2ShippingCatalog(state) {
+		var deliveryCfg = getDeliveryConfig();
+		var source = deliveryCfg.shipping_catalog && typeof deliveryCfg.shipping_catalog === 'object' ? deliveryCfg.shipping_catalog : {};
+		var mapMethods = source.methods && typeof source.methods === 'object' ? source.methods : {};
+		var sortOrder = Array.isArray(source.sort_order) ? source.sort_order : Object.keys(mapMethods);
+		var methods = [];
+		var currentScenario = normalizeScenarioId(state && state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenario || '') : '');
+		var i;
+		for (i = 0; i < sortOrder.length; i += 1) {
+			var methodId = String(sortOrder[i] || '');
+			var raw = mapMethods[methodId] && typeof mapMethods[methodId] === 'object' ? mapMethods[methodId] : null;
+			if (!raw || raw.active === false) {
+				continue;
+			}
+			var scenarios = Array.isArray(raw.visibility_scenarios) ? raw.visibility_scenarios : [];
+			if (scenarios.length && currentScenario && scenarios.indexOf(currentScenario) === -1) {
+				continue;
+			}
+			var normalized = {
+				id: methodId,
+				title: String(raw.title || methodId),
+				price: Number(raw.price || 0),
+				eta: String(raw.eta || ''),
+				description: String(raw.description || ''),
+				requires_address: raw.requires_address !== false
+			};
+			if (raw.tariffs && typeof raw.tariffs === 'object') {
+				var tariffs = [];
+				var tariffKeys = Object.keys(raw.tariffs);
+				var ti;
+				for (ti = 0; ti < tariffKeys.length; ti += 1) {
+					var tariffId = tariffKeys[ti];
+					var tr = raw.tariffs[tariffId] && typeof raw.tariffs[tariffId] === 'object' ? raw.tariffs[tariffId] : null;
+					if (!tr || tr.active === false) {
+						continue;
+					}
+					tariffs.push({
+						id: tariffId,
+						title: String(tr.title || tariffId),
+						price: Number(tr.price || 0),
+						eta: String(tr.eta || '')
+					});
+				}
+				if (tariffs.length) {
+					normalized.tariffs = tariffs;
+				}
+			}
+			methods.push(normalized);
+		}
+		if (!methods.length) {
+			methods = [
+				{ id: 'post_russia', title: 'Почта России', price: 453, eta: '3 дней', requires_address: true },
+				{
+					id: 'courier', title: 'Курьером до двери', requires_address: true, tariffs: [
+						{ id: 'express', title: 'Курьером до двери (экспресс)', price: 710, eta: '3 дней' },
+						{ id: 'standard', title: 'Курьером до двери (стандарт)', price: 580, eta: '3 дней' }
+					]
+				},
+				{
+					id: 'pvz', title: 'Доставка до ПВЗ', requires_address: false, tariffs: [
+						{ id: 'express', title: 'Доставка до ПВЗ (экспресс)', price: 530, eta: '3 дней' },
+						{ id: 'standard', title: 'Доставка до ПВЗ (стандарт)', price: 330, eta: '3 дней' }
+					]
+				},
+				{ id: 'krasnoyarsk_delivery', title: 'Доставка по Красноярску', price: 400, eta: 'в течение дня', requires_address: true },
+				{ id: 'pickup', title: 'Самовывоз', price: 0, eta: '', requires_address: false }
+			];
+		}
+		return methods;
+	}
+
+	function resolveShippingSelection(methods, selectedMethodId, selectedTariffId) {
+		var i;
+		for (i = 0; i < methods.length; i += 1) {
+			var m = methods[i] || {};
+			if (String(m.id || '') !== String(selectedMethodId || '')) {
+				continue;
+			}
+			var result = {
+				method_id: String(m.id || ''),
+				method_title: String(m.title || ''),
+				tariff_id: '',
+				tariff_title: '',
+				price: Number(m.price || 0),
+				eta: String(m.eta || ''),
+				requires_address: m.requires_address !== false
+			};
+			var tariffs = Array.isArray(m.tariffs) ? m.tariffs : [];
+			if (!tariffs.length) {
+				return result;
+			}
+			var fallbackTariff = tariffs[0] || {};
+			var chosen = fallbackTariff;
+			var ti;
+			for (ti = 0; ti < tariffs.length; ti += 1) {
+				if (String(tariffs[ti].id || '') === String(selectedTariffId || '')) {
+					chosen = tariffs[ti];
+					break;
+				}
+			}
+			result.tariff_id = String(chosen.id || '');
+			result.tariff_title = String(chosen.title || '');
+			result.price = Number(chosen.price || 0);
+			result.eta = String(chosen.eta || '');
+			return result;
+		}
+		return null;
+	}
+
+	function getShippingErrorCopy() {
+		var deliveryCfg = getDeliveryConfig();
+		var source = deliveryCfg && deliveryCfg.shipping_catalog ? deliveryCfg.shipping_catalog : {};
+		var copy = source.error_copy && typeof source.error_copy === 'object' ? source.error_copy : {};
+		return {
+			methodUnavailable: trimNonEmpty(copy.method_unavailable) || 'Выбранный метод доставки недоступен. Выберите другой вариант.',
+			tariffUnavailable: trimNonEmpty(copy.tariff_unavailable) || 'Выбранный тариф недоступен. Выберите другой тариф.'
+		};
+	}
+
+	function applyShippingSelectionToState(state, selection) {
+		if (!selection) {
+			return;
+		}
+		var dateBox = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+			? state.frontendStore.fulfillment.date
+			: {};
+		dateBox.shipping_method_id = String(selection.method_id || '');
+		dateBox.shipping_method_title = String(selection.method_title || '');
+		dateBox.shipping_tariff_id = String(selection.tariff_id || '');
+		dateBox.shipping_tariff_title = String(selection.tariff_title || '');
+		dateBox.shipping_price = Number(selection.price || 0);
+		dateBox.shipping_eta = String(selection.eta || '');
+		dateBox.shipping_requires_address = selection.requires_address !== false;
+		state.frontendStore.fulfillment.date = dateBox;
+
+		var contact = state.frontendStore.form.contact || {};
+		contact.__address_visibility = contact.__address_visibility && typeof contact.__address_visibility === 'object' ? contact.__address_visibility : {};
+		if (dateBox.shipping_method_id === 'pickup' || dateBox.shipping_requires_address === false) {
+			contact.__address_visibility.hide_address_fields = true;
+			contact.__address_visibility.required_address_fields = false;
+			delete contact.country;
+			delete contact.state;
+			delete contact.city;
+			delete contact.address_1;
+			delete contact.address_2;
+			delete contact.postcode;
+		} else {
+			contact.__address_visibility.hide_address_fields = false;
+			contact.__address_visibility.required_address_fields = true;
+		}
+		state.frontendStore.form.contact = contact;
+
+		var summary = state.frontendStore.cart && state.frontendStore.cart.summary && typeof state.frontendStore.cart.summary === 'object'
+			? state.frontendStore.cart.summary
+			: {};
+		summary.shipping_total = Number(dateBox.shipping_price || 0);
+		summary.shipping = summary.shipping_total > 0 ? String(summary.shipping_total.toFixed(0)) + ' ₽' : '';
+		state.frontendStore.cart.summary = summary;
+	}
+
+	function scenarioByShippingMethod(methodId) {
+		var id = String(methodId || '');
+		if (id === 'pickup') {
+			return 'pickup';
+		}
+		if (id === 'krasnoyarsk_delivery') {
+			return 'krasnoyarsk_delivery';
+		}
+		return 'other_city_delivery';
+	}
+
 	function validateContactPaymentStep(state) {
 		ensureContactDefaults(state);
 		var contact = state.frontendStore.form.contact || {};
@@ -2103,6 +2319,61 @@
 		return point;
 	}
 
+	function getPickupMapConfig() {
+		var pickupCfg = getPickupConfig();
+		var mapCfg = pickupCfg && pickupCfg.mapWidget ? pickupCfg.mapWidget : {};
+		return {
+			enabled: mapCfg.enabled !== false,
+			provider: String(mapCfg.provider || 'yandex'),
+			apiKey: String(mapCfg.api_key || ''),
+			centerLat: Number(mapCfg.center_lat || 56.010563),
+			centerLng: Number(mapCfg.center_lng || 92.852572),
+			zoom: Math.max(2, Math.min(19, Number(mapCfg.zoom || 14))),
+			markerLabel: trimNonEmpty(mapCfg.marker_label) || 'Пункт самовывоза',
+			markerHint: trimNonEmpty(mapCfg.marker_hint) || 'Заберите заказ в рабочие часы.',
+			fallbackTitle: trimNonEmpty(mapCfg.fallback_title) || 'Карта временно недоступна',
+			fallbackMessage: trimNonEmpty(mapCfg.fallback_message) || 'Посмотрите адрес пункта самовывоза выше и постройте маршрут в приложении карт.',
+			desktopHeight: Math.max(160, Math.min(520, Number(mapCfg.desktop_height || 250))),
+			mobileHeight: Math.max(120, Math.min(420, Number(mapCfg.mobile_height || 190))),
+			diagnosticsEnabled: mapCfg.diagnostics_enabled !== false
+		};
+	}
+
+	function buildPickupMapHtml(point, sourceLabel) {
+		var cfg = getPickupMapConfig();
+		if (!cfg.enabled || cfg.provider !== 'yandex') {
+			return '';
+		}
+		var lat = Number(cfg.centerLat);
+		var lng = Number(cfg.centerLng);
+		if (point && point.lat && point.lng) {
+			lat = Number(point.lat);
+			lng = Number(point.lng);
+		}
+		var markerLabel = point && point.title ? String(point.title) : cfg.markerLabel;
+		var markerHint = point && point.address ? String(point.address) : cfg.markerHint;
+		var html = '';
+		html += '<section class="mp-cc-pickup-map" data-pickup-map-root="1"';
+		html += ' data-map-source="' + escapeHtml(String(sourceLabel || 'pickup')) + '"';
+		html += ' data-map-lat="' + escapeHtml(String(lat)) + '"';
+		html += ' data-map-lng="' + escapeHtml(String(lng)) + '"';
+		html += ' data-map-zoom="' + escapeHtml(String(cfg.zoom)) + '"';
+		html += ' data-map-marker-label="' + escapeHtml(markerLabel) + '"';
+		html += ' data-map-marker-hint="' + escapeHtml(markerHint) + '"';
+		html += ' data-map-fallback-title="' + escapeHtml(cfg.fallbackTitle) + '"';
+		html += ' data-map-fallback-message="' + escapeHtml(cfg.fallbackMessage) + '"';
+		html += ' data-map-height-desktop="' + escapeHtml(String(cfg.desktopHeight)) + '"';
+		html += ' data-map-height-mobile="' + escapeHtml(String(cfg.mobileHeight)) + '"';
+		html += '>';
+		html += '<div class="mp-cc-pickup-map__canvas" data-pickup-map-canvas="1" aria-label="' + escapeHtml(markerLabel) + '"></div>';
+		html += '<div class="mp-cc-pickup-map__fallback" data-pickup-map-fallback="1" hidden>';
+		html += '<p class="mp-cc-pickup-map__fallback-title">' + escapeHtml(cfg.fallbackTitle) + '</p>';
+		html += '<p class="mp-cc-pickup-map__fallback-message">' + escapeHtml(cfg.fallbackMessage) + '</p>';
+		html += '</div>';
+		html += '</section>';
+		return html;
+	}
+
 	function buildConditionsReceiptPlainText(state) {
 		var scenario = normalizeScenarioId(state.frontendStore.fulfillment.scenario || '');
 		var root = getConditionsCopyRoot();
@@ -2345,6 +2616,7 @@
 			html += '</div>';
 		}
 		html += '<p class="mp-cc-pickup-office__helper">' + escapeHtml(helper) + '</p>';
+		html += buildPickupMapHtml(point, 'conditions');
 		if (showMulti) {
 			html += '<div class="mp-cc-pickup-office__multi-slot" data-mp-cc-multi-office="1">';
 			html += '<span class="mp-cc-pickup-office__multi-slot-label">' + escapeHtml(getUiText('step_3.pickup_multi_office_hint', 'Дополнительные точки самовывоза будут отображаться здесь при подключении.')) + '</span>';
@@ -3084,6 +3356,17 @@
 			state.frontendStore.discounts.coupon_runtime = $.extend({}, prevRuntime);
 		}
 		applyScenarioFieldAvailability(state);
+		var dateBox = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.date || {}) : {};
+		if (trimNonEmpty(dateBox.shipping_method_id)) {
+			var selection = resolveShippingSelection(
+				getV2ShippingCatalog(state),
+				String(dateBox.shipping_method_id || ''),
+				String(dateBox.shipping_tariff_id || '')
+			);
+			if (selection) {
+				applyShippingSelectionToState(state, selection);
+			}
+		}
 	}
 
 	function stripAddressFieldErrors(state) {
@@ -3431,6 +3714,14 @@
 				return;
 			}
 			if (currentScreen.id === 'delivery_screen') {
+				var shipDateBox = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.date || {}) : {};
+				if (!trimNonEmpty(shipDateBox.shipping_method_id)) {
+					setV2StepInvalidState(state, currentScreen.id, true);
+					notify('Выберите способ доставки, чтобы продолжить.', 'error');
+					render(state, $app);
+					scrollToFirstInvalidField($app);
+					return;
+				}
 				var selectedDateV2 = state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.date
 					? String(state.frontendStore.fulfillment.date.selected_date || '')
 					: '';
@@ -3836,6 +4127,8 @@
 		var scenarios = map.scenarios || {};
 		var rules = map.rules || {};
 		var selectedScenario = String(state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenario || '') : '');
+		var selectedMethodId = String(state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.date ? (state.frontendStore.fulfillment.date.shipping_method_id || '') : '');
+		var methodScenario = scenarioByShippingMethod(selectedMethodId);
 		var scenarioIds = Object.keys(scenarios);
 		var pickupId = 'pickup';
 		var deliveryIds = [];
@@ -3847,7 +4140,7 @@
 			}
 		}
 		var defaultDeliveryId = deliveryIds.length ? deliveryIds[0] : 'krasnoyarsk_delivery';
-		var selectedGroup = selectedScenario === pickupId ? pickupId : 'delivery';
+		var selectedGroup = (selectedScenario === pickupId || methodScenario === pickupId) ? pickupId : 'delivery';
 		var deliveryLabel = scenarios[defaultDeliveryId] ? String(scenarios[defaultDeliveryId]) : 'Доставка';
 		var pickupLabel = scenarios[pickupId] ? String(scenarios[pickupId]) : 'Самовывоз';
 		var pickupCopy = rules[pickupId] && rules[pickupId].copy_rules ? String(rules[pickupId].copy_rules.hint || '') : '';
@@ -3893,36 +4186,90 @@
 		html += '<header class="mp-cc-fulfillment__header">';
 		html += '<h3 class="mp-cc-fulfillment__title" id="mp-cc-fulfillment-title">' + escapeHtml(getUiText('step_2.title', 'Выберите способ получения')) + '</h3>';
 		html += '</header>';
-		html += '<div class="mp-cc-fulfillment__cards" role="radiogroup" aria-label="' + escapeHtml(getUiText('step_2.title', 'Способ получения')) + '">';
-		for (i = 0; i < cards.length; i += 1) {
-			var card = cards[i];
-			var isActive = selectedGroup === card.group;
-			html += '<button type="button" class="mp-cc-fulfillment-card mp-cc-fulfillment-card--' + escapeHtml(card.iconStyle || 'soft') + (isActive ? ' is-active' : '') + '"';
-			html += ' role="radio"';
-			html += ' aria-checked="' + (isActive ? 'true' : 'false') + '"';
-			html += ' tabindex="' + (isActive ? '0' : '-1') + '"';
-			html += ' data-scenario-card="' + escapeHtml(card.group) + '"';
-			html += ' data-scenario-target="' + escapeHtml(card.target) + '"';
-			html += '>';
-			html += '<span class="mp-cc-fulfillment-card__media" aria-hidden="true">';
-			html += '<span class="mp-cc-fulfillment-card__icon mp-cc-fulfillment-card__icon--' + escapeHtml(card.icon) + '"></span>';
-			html += '</span>';
-			html += '<span class="mp-cc-fulfillment-card__body">';
-			html += '<span class="mp-cc-fulfillment-card__label">' + escapeHtml(card.label) + '</span>';
-			if (card.copy) {
-				html += '<span class="mp-cc-fulfillment-card__copy">' + escapeHtml(card.copy) + '</span>';
+		if (!isV2CheckoutUiEnabled(state)) {
+			html += '<div class="mp-cc-fulfillment__cards" role="radiogroup" aria-label="' + escapeHtml(getUiText('step_2.title', 'Способ получения')) + '">';
+			for (i = 0; i < cards.length; i += 1) {
+				var card = cards[i];
+				var isActive = selectedGroup === card.group;
+				html += '<button type="button" class="mp-cc-fulfillment-card mp-cc-fulfillment-card--' + escapeHtml(card.iconStyle || 'soft') + (isActive ? ' is-active' : '') + '"';
+				html += ' role="radio"';
+				html += ' aria-checked="' + (isActive ? 'true' : 'false') + '"';
+				html += ' tabindex="' + (isActive ? '0' : '-1') + '"';
+				html += ' data-scenario-card="' + escapeHtml(card.group) + '"';
+				html += ' data-scenario-target="' + escapeHtml(card.target) + '"';
+				html += '>';
+				html += '<span class="mp-cc-fulfillment-card__media" aria-hidden="true">';
+				html += '<span class="mp-cc-fulfillment-card__icon mp-cc-fulfillment-card__icon--' + escapeHtml(card.icon) + '"></span>';
+				html += '</span>';
+				html += '<span class="mp-cc-fulfillment-card__body">';
+				html += '<span class="mp-cc-fulfillment-card__label">' + escapeHtml(card.label) + '</span>';
+				if (card.copy) {
+					html += '<span class="mp-cc-fulfillment-card__copy">' + escapeHtml(card.copy) + '</span>';
+				}
+				if (card.helper) {
+					html += '<span class="mp-cc-fulfillment-card__helper">' + escapeHtml(card.helper) + '</span>';
+				}
+				html += '</span>';
+				html += '</button>';
 			}
-			if (card.helper) {
-				html += '<span class="mp-cc-fulfillment-card__helper">' + escapeHtml(card.helper) + '</span>';
-			}
-			html += '</span>';
-			html += '</button>';
+			html += '</div>';
 		}
-		html += '</div>';
-		if (selectedGroup === 'pickup') {
+		if (selectedMethodId === 'pickup') {
 			html += buildPickupPointHtml(state);
 		}
+		html += buildShippingMethodsHtml(state);
 		html += buildDateCalendarHtml(state);
+		html += '</section>';
+		return html;
+	}
+
+	function buildShippingMethodsHtml(state) {
+		var methods = getV2ShippingCatalog(state);
+		var dateBox = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.date || {}) : {};
+		var selectedMethodId = String(dateBox.shipping_method_id || '');
+		var selectedTariffId = String(dateBox.shipping_tariff_id || '');
+		var html = '';
+		var i;
+		html += '<section class="mp-cc-shipping-catalog" aria-labelledby="mp-cc-shipping-catalog-title">';
+		html += '<h4 class="mp-cc-shipping-catalog__title" id="mp-cc-shipping-catalog-title">Метод доставки</h4>';
+		html += '<div class="mp-cc-shipping-catalog__list" role="radiogroup" aria-label="Выбор метода доставки">';
+		for (i = 0; i < methods.length; i += 1) {
+			var method = methods[i] || {};
+			var methodId = String(method.id || '');
+			var hasTariffs = Array.isArray(method.tariffs) && method.tariffs.length > 0;
+			var selected = resolveShippingSelection(methods, methodId, selectedMethodId === methodId ? selectedTariffId : '');
+			var isActive = selectedMethodId === methodId;
+			var title = selected && selected.tariff_title ? selected.tariff_title : String(method.title || methodId);
+			var methodPrice = selected ? Number(selected.price || 0) : Number(method.price || 0);
+			var priceText = String(Math.round(methodPrice)) + ' ₽';
+			var etaText = selected && selected.eta ? String(selected.eta) : String(method.eta || '');
+			html += '<button type="button" class="mp-cc-shipping-card' + (isActive ? ' is-active' : '') + '" role="radio"';
+			html += ' aria-checked="' + (isActive ? 'true' : 'false') + '"';
+			html += ' data-shipping-method="' + escapeHtml(methodId) + '">';
+			html += '<span class="mp-cc-shipping-card__title">' + escapeHtml(String(method.title || methodId)) + '</span>';
+			html += '<span class="mp-cc-shipping-card__meta">' + escapeHtml(priceText + (etaText ? ' · ' + etaText : '')) + '</span>';
+			html += '</button>';
+			if (isActive && hasTariffs) {
+				var tariffs = method.tariffs || [];
+				html += '<div class="mp-cc-shipping-card__tariffs" role="radiogroup" aria-label="Выбор тарифа доставки">';
+				for (var t = 0; t < tariffs.length; t += 1) {
+					var tariff = tariffs[t] || {};
+					var tariffId = String(tariff.id || '');
+					var isTariffActive = selectedTariffId === tariffId || (!selectedTariffId && t === 0);
+					var tariffPrice = String(Math.round(Number(tariff.price || 0))) + ' ₽';
+					var tariffEta = String(tariff.eta || '');
+					html += '<button type="button" class="mp-cc-shipping-tariff' + (isTariffActive ? ' is-active' : '') + '" role="radio"';
+					html += ' aria-checked="' + (isTariffActive ? 'true' : 'false') + '"';
+					html += ' data-shipping-tariff="' + escapeHtml(tariffId) + '"';
+					html += ' data-shipping-method-owner="' + escapeHtml(methodId) + '">';
+					html += '<span class="mp-cc-shipping-tariff__title">' + escapeHtml(String(tariff.title || tariffId || title)) + '</span>';
+					html += '<span class="mp-cc-shipping-tariff__meta">' + escapeHtml(tariffPrice + (tariffEta ? ' · ' + tariffEta : '')) + '</span>';
+					html += '</button>';
+				}
+				html += '</div>';
+			}
+		}
+		html += '</div>';
 		html += '</section>';
 		return html;
 	}
@@ -3969,6 +4316,7 @@
 				html += '<div class="mp-cc-pickup-point__map-slot" data-pickup-map-slot="1">';
 				html += '<p>' + escapeHtml(String(selectedPoint.map_hint || 'Слот карты будет подключен позже.')) + '</p>';
 				html += '</div>';
+				html += buildPickupMapHtml(selectedPoint, 'delivery');
 			}
 		}
 		html += '</section>';
@@ -4431,6 +4779,133 @@
 		root.classList.add('mp-cc-step1-mobile-' + (responsive.mobile_mode === 'comfortable' ? 'comfortable' : 'compact'));
 	}
 
+	function logPickupMapIssue(state, code, message) {
+		var cfg = getPickupMapConfig();
+		if (!cfg.diagnosticsEnabled) {
+			return;
+		}
+		var cacheKey = String(code || '') + '|' + String(message || '');
+		if (pickupMapLogCache[cacheKey]) {
+			return;
+		}
+		pickupMapLogCache[cacheKey] = true;
+		reportClientError(String(code || 'pickup_map_issue'), String(message || 'pickup_map_error'), '', 'pickup_map');
+		postCheckout('validation_log', {
+			step_id: 'pickup_map',
+			context_id: state && state.flowContextId ? state.flowContextId : '',
+			errors: {
+				map_error: String(code || 'unknown')
+			}
+		});
+	}
+
+	function setPickupMapFallback($root, title, message) {
+		var $fallback = $root.find('[data-pickup-map-fallback]');
+		$fallback.find('.mp-cc-pickup-map__fallback-title').text(String(title || 'Карта временно недоступна'));
+		$fallback.find('.mp-cc-pickup-map__fallback-message').text(String(message || 'Посмотрите адрес пункта самовывоза выше.'));
+		$fallback.prop('hidden', false);
+	}
+
+	function ensureYandexMapsApi(state) {
+		var cfg = getPickupMapConfig();
+		if (cfg.provider !== 'yandex') {
+			return $.Deferred().reject(new Error('unsupported_map_provider')).promise();
+		}
+		if (window.ymaps && typeof window.ymaps.ready === 'function') {
+			return $.Deferred().resolve(window.ymaps).promise();
+		}
+		if (pickupMapScriptPromise) {
+			return pickupMapScriptPromise;
+		}
+		var deferred = $.Deferred();
+		pickupMapScriptPromise = deferred.promise();
+		var script = document.createElement('script');
+		var src = 'https://api-maps.yandex.ru/2.1/?lang=ru_RU';
+		if (cfg.apiKey) {
+			src += '&apikey=' + encodeURIComponent(cfg.apiKey);
+		}
+		script.src = src;
+		script.async = true;
+		script.onerror = function () {
+			logPickupMapIssue(state, 'pickup_map_script_failed', 'Не удалось загрузить скрипт Яндекс.Карт.');
+			deferred.reject(new Error('yandex_maps_script_failed'));
+		};
+		script.onload = function () {
+			if (!window.ymaps || typeof window.ymaps.ready !== 'function') {
+				logPickupMapIssue(state, 'pickup_map_api_missing', 'API Яндекс.Карт не инициализировано.');
+				deferred.reject(new Error('yandex_maps_api_missing'));
+				return;
+			}
+			window.ymaps.ready(function () {
+				deferred.resolve(window.ymaps);
+			});
+		};
+		document.head.appendChild(script);
+		return pickupMapScriptPromise;
+	}
+
+	function mountPickupMaps(state, $app) {
+		var cfg = getPickupMapConfig();
+		if (!cfg.enabled) {
+			return;
+		}
+		var $roots = $app.find('[data-pickup-map-root]');
+		if (!$roots.length) {
+			return;
+		}
+		$roots.each(function () {
+			var $root = $(this);
+			var $canvas = $root.find('[data-pickup-map-canvas]');
+			if (!$canvas.length || $root.attr('data-map-mounted') === '1') {
+				return;
+			}
+			var desktopHeight = Number($root.attr('data-map-height-desktop') || cfg.desktopHeight);
+			var mobileHeight = Number($root.attr('data-map-height-mobile') || cfg.mobileHeight);
+			var mapHeight = window.matchMedia('(max-width: 767px)').matches ? mobileHeight : desktopHeight;
+			$canvas.css('height', String(Math.max(120, mapHeight)) + 'px');
+			ensureYandexMapsApi(state).then(function (ymaps) {
+				try {
+					var lat = Number($root.attr('data-map-lat') || cfg.centerLat);
+					var lng = Number($root.attr('data-map-lng') || cfg.centerLng);
+					var zoom = Number($root.attr('data-map-zoom') || cfg.zoom);
+					var markerLabel = String($root.attr('data-map-marker-label') || cfg.markerLabel);
+					var markerHint = String($root.attr('data-map-marker-hint') || cfg.markerHint);
+					var map = new ymaps.Map($canvas.get(0), {
+						center: [lat, lng],
+						zoom: zoom,
+						controls: ['zoomControl']
+					});
+					var placemark = new ymaps.Placemark(
+						[lat, lng],
+						{
+							balloonContentHeader: markerLabel,
+							balloonContentBody: markerHint,
+							hintContent: markerLabel
+						},
+						{
+							preset: 'islands#redDotIcon'
+						}
+					);
+					map.geoObjects.add(placemark);
+					$root.attr('data-map-mounted', '1');
+				} catch (mapErr) {
+					logPickupMapIssue(state, 'pickup_map_render_failed', mapErr && mapErr.message ? mapErr.message : 'Ошибка рендера карты.');
+					setPickupMapFallback(
+						$root,
+						String($root.attr('data-map-fallback-title') || cfg.fallbackTitle),
+						String($root.attr('data-map-fallback-message') || cfg.fallbackMessage)
+					);
+				}
+			}).fail(function () {
+				setPickupMapFallback(
+					$root,
+					String($root.attr('data-map-fallback-title') || cfg.fallbackTitle),
+					String($root.attr('data-map-fallback-message') || cfg.fallbackMessage)
+				);
+			});
+		});
+	}
+
 	function render(state, $app) {
 		window.__mpCcCheckoutContextId = state && state.flowContextId ? String(state.flowContextId) : '';
 		ensureV2ScreenState(state);
@@ -4552,6 +5027,7 @@
 			}
 			window.location.href = fallback;
 		});
+		mountPickupMaps(state, $app);
 
 		if (!isFlagEnabled(state, flagNames.multiStepFlow, true)) {
 			return;
@@ -4709,6 +5185,60 @@
 				$next.trigger('click');
 				$next.trigger('focus');
 			}
+		});
+
+		$app.find('[data-shipping-method]').off('click').on('click', function () {
+			var methodId = String($(this).data('shipping-method') || '');
+			if (!methodId) {
+				return;
+			}
+			var methods = getV2ShippingCatalog(state);
+			var dateBox = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.date || {}) : {};
+			var selection = resolveShippingSelection(methods, methodId, String(dateBox.shipping_tariff_id || ''));
+			if (!selection) {
+				notify(getShippingErrorCopy().methodUnavailable, 'error');
+				return;
+			}
+			var nextScenario = scenarioByShippingMethod(methodId);
+			var currentScenario = normalizeScenarioId(state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenario || '') : '');
+			if (nextScenario !== currentScenario) {
+				resetDependentStateForScenario(state, nextScenario);
+			}
+			state.frontendStore.fulfillment.date = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+				? state.frontendStore.fulfillment.date
+				: {};
+			applyShippingSelectionToState(state, selection);
+			invalidateV2DownstreamFrom(state, 0);
+			render(state, $app);
+			scheduleCurrentStepDraftSave(state, function () {
+				notify('Не удалось сохранить выбор доставки.', 'error');
+			});
+			postCheckout('session_set_scenario', {
+				scenario: nextScenario,
+				context_id: state.flowContextId
+			});
+			syncStoreWithBackend(state, $app);
+		});
+
+		$app.find('[data-shipping-tariff]').off('click').on('click', function () {
+			var methodId = String($(this).data('shipping-method-owner') || '');
+			var tariffId = String($(this).data('shipping-tariff') || '');
+			if (!methodId || !tariffId) {
+				return;
+			}
+			var methods = getV2ShippingCatalog(state);
+			var selection = resolveShippingSelection(methods, methodId, tariffId);
+			if (!selection) {
+				notify(getShippingErrorCopy().tariffUnavailable, 'error');
+				return;
+			}
+			applyShippingSelectionToState(state, selection);
+			invalidateV2DownstreamFrom(state, 0);
+			render(state, $app);
+			scheduleCurrentStepDraftSave(state, function () {
+				notify('Не удалось сохранить выбор тарифа.', 'error');
+			});
+			syncStoreWithBackend(state, $app);
 		});
 
 		$app.find('[data-pickup-point]').off('click').on('click', function () {
@@ -4878,6 +5408,9 @@
 			scheduleCurrentStepDraftSave(state, function () {
 				notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
 			});
+			if (key === 'country' || key === 'state' || key === 'city' || key === 'address_1' || key === 'address_2' || key === 'postcode') {
+				syncStoreWithBackend(state, $app);
+			}
 		}).on('blur', function () {
 			ensureContactDefaults(state);
 			saveCurrentStepDraft(state).fail(function () {

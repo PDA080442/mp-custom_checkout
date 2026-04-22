@@ -810,6 +810,37 @@
 	color: var(--mp-cc-color-text-muted);
 }
 
+.mp-cc-pickup-map {
+	margin-top: 0.65rem;
+	border: 1px solid var(--mp-cc-color-border);
+	border-radius: var(--mp-cc-radius-sm);
+	background: #fff;
+	overflow: hidden;
+}
+
+.mp-cc-pickup-map__canvas {
+	width: 100%;
+	min-height: 180px;
+}
+
+.mp-cc-pickup-map__fallback {
+	padding: 0.7rem 0.8rem;
+	background: rgba(17, 17, 17, 0.02);
+	border-top: 1px dashed var(--mp-cc-color-border);
+}
+
+.mp-cc-pickup-map__fallback-title {
+	margin: 0;
+	font-size: 0.88rem;
+	font-weight: 700;
+}
+
+.mp-cc-pickup-map__fallback-message {
+	margin: 0.35rem 0 0;
+	font-size: 0.84rem;
+	color: var(--mp-cc-color-text-muted);
+}
+
 .mp-cc-cart-list__items {
 	display: grid;
 	gap: 0.75rem;
@@ -2286,6 +2317,62 @@ body.mp-custom-checkout form.checkout.woocommerce-checkout {
 	animation: mp-cc-step-screen-in 240ms ease;
 }
 
+.mp-cc-shipping-catalog {
+	margin-top: 1rem;
+}
+
+.mp-cc-shipping-catalog__title {
+	margin: 0 0 0.65rem;
+	font-size: 1rem;
+	font-weight: 700;
+}
+
+.mp-cc-shipping-catalog__list {
+	display: grid;
+	gap: 0.55rem;
+}
+
+.mp-cc-shipping-card,
+.mp-cc-shipping-tariff {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 0.55rem;
+	width: 100%;
+	padding: 0.7rem 0.8rem;
+	border: 1px solid var(--mp-cc-color-border);
+	border-radius: 0.8rem;
+	background: #fff;
+	text-align: left;
+	cursor: pointer;
+}
+
+.mp-cc-shipping-card.is-active,
+.mp-cc-shipping-tariff.is-active {
+	border-color: var(--mp-cc-color-accent);
+	box-shadow: 0 0 0 1px rgba(73, 104, 255, 0.15);
+}
+
+.mp-cc-shipping-card__title,
+.mp-cc-shipping-tariff__title {
+	display: block;
+	font-weight: 600;
+}
+
+.mp-cc-shipping-card__meta,
+.mp-cc-shipping-tariff__meta {
+	display: block;
+	font-size: 0.9rem;
+	color: var(--mp-cc-color-text-muted);
+	white-space: nowrap;
+}
+
+.mp-cc-shipping-card__tariffs {
+	margin: 0.4rem 0 0.7rem 0.8rem;
+	display: grid;
+	gap: 0.45rem;
+}
+
 @media (max-width: 767px) {
 	.mp-cc-v2-shell-head {
 		align-items: flex-start;
@@ -2327,6 +2414,10 @@ body.mp-custom-checkout form.checkout.woocommerce-checkout {
 
 	.mp-cc-progress__label {
 		font-size: 0.9rem;
+	}
+
+	.mp-cc-pickup-map__canvas {
+		min-height: 150px;
 	}
 }
 

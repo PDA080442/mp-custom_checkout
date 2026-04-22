@@ -484,10 +484,126 @@ final class SafeSettingsResolver {
 				);
 				continue;
 			}
+			if ( OptionKeys::SECTION_DELIVERY === $section_key ) {
+				$tree[ $section_key ] = array(
+					'shipping_catalog' => array(
+						'sort_order' => array( 'post_russia', 'courier', 'pvz', 'krasnoyarsk_delivery', 'pickup', 'custom_1', 'custom_2' ),
+						'methods'    => array(
+							'post_russia' => array(
+								'title'               => 'Почта России',
+								'price'               => 453,
+								'eta'                 => '3 дней',
+								'description'         => 'Отправка через отделение Почты России.',
+								'active'              => true,
+								'requires_address'    => true,
+								'visibility_scenarios'=> array( 'other_city_delivery' ),
+							),
+							'courier' => array(
+								'title'               => 'Курьером до двери',
+								'price'               => 580,
+								'eta'                 => '3 дней',
+								'description'         => 'Доставка курьером по адресу получателя.',
+								'active'              => true,
+								'requires_address'    => true,
+								'visibility_scenarios'=> array( 'krasnoyarsk_delivery', 'other_city_delivery' ),
+								'tariffs'             => array(
+									'express'  => array( 'title' => 'Курьером до двери (экспресс)', 'price' => 710, 'eta' => '3 дней', 'active' => true ),
+									'standard' => array( 'title' => 'Курьером до двери (стандарт)', 'price' => 580, 'eta' => '3 дней', 'active' => true ),
+									'slot_1'   => array( 'title' => '', 'price' => 0, 'eta' => '', 'active' => false ),
+									'slot_2'   => array( 'title' => '', 'price' => 0, 'eta' => '', 'active' => false ),
+								),
+							),
+							'pvz' => array(
+								'title'               => 'Доставка до ПВЗ',
+								'price'               => 330,
+								'eta'                 => '3 дней',
+								'description'         => 'Получение заказа в пункте выдачи.',
+								'active'              => true,
+								'requires_address'    => false,
+								'visibility_scenarios'=> array( 'krasnoyarsk_delivery', 'other_city_delivery' ),
+								'tariffs'             => array(
+									'express'  => array( 'title' => 'Доставка до ПВЗ (экспресс)', 'price' => 530, 'eta' => '3 дней', 'active' => true ),
+									'standard' => array( 'title' => 'Доставка до ПВЗ (стандарт)', 'price' => 330, 'eta' => '3 дней', 'active' => true ),
+									'slot_1'   => array( 'title' => '', 'price' => 0, 'eta' => '', 'active' => false ),
+									'slot_2'   => array( 'title' => '', 'price' => 0, 'eta' => '', 'active' => false ),
+								),
+							),
+							'krasnoyarsk_delivery' => array(
+								'title'               => 'Доставка по Красноярску',
+								'price'               => 400,
+								'eta'                 => 'в течение дня',
+								'description'         => 'Локальная доставка по городу.',
+								'active'              => true,
+								'requires_address'    => true,
+								'visibility_scenarios'=> array( 'krasnoyarsk_delivery' ),
+							),
+							'pickup' => array(
+								'title'               => 'Самовывоз',
+								'price'               => 0,
+								'eta'                 => '',
+								'description'         => 'Получение заказа в офисе самовывоза.',
+								'active'              => true,
+								'requires_address'    => false,
+								'visibility_scenarios'=> array( 'pickup' ),
+							),
+							'custom_1' => array(
+								'title'               => 'Пользовательский метод 1',
+								'price'               => 0,
+								'eta'                 => '',
+								'description'         => '',
+								'active'              => false,
+								'requires_address'    => false,
+								'visibility_scenarios'=> array( 'pickup', 'krasnoyarsk_delivery', 'other_city_delivery' ),
+							),
+							'custom_2' => array(
+								'title'               => 'Пользовательский метод 2',
+								'price'               => 0,
+								'eta'                 => '',
+								'description'         => '',
+								'active'              => false,
+								'requires_address'    => false,
+								'visibility_scenarios'=> array( 'pickup', 'krasnoyarsk_delivery', 'other_city_delivery' ),
+							),
+						),
+						'error_copy' => array(
+							'method_unavailable' => 'Выбранный метод доставки недоступен. Выберите другой вариант.',
+							'tariff_unavailable' => 'Выбранный тариф недоступен. Выберите другой тариф.',
+						),
+						'bulk_update' => array(
+							'enabled'           => true,
+							'seasonal_delta_pct'=> 0,
+							'seasonal_delta_abs'=> 0,
+							'eta_suffix'        => '',
+						),
+						'preview' => array(
+							'enabled'           => true,
+							'mock_subtotal'     => 3670,
+							'mock_discount'     => 200,
+							'mock_tax'          => 160,
+						),
+					),
+				);
+				continue;
+			}
 			if ( OptionKeys::SECTION_PICKUP === $section_key ) {
 				$tree[ $section_key ] = array(
 					'enable_point_selection' => false,
 					'map_slot_enabled'       => true,
+					'map_widget'             => array(
+						'enabled'            => true,
+						'provider'           => 'yandex',
+						'api_key'            => '',
+						'center_lat'         => 56.010563,
+						'center_lng'         => 92.852572,
+						'zoom'               => 14,
+						'marker_label'       => 'Пункт самовывоза',
+						'marker_hint'        => 'Заберите заказ в рабочие часы.',
+						'fallback_title'     => 'Карта временно недоступна',
+						'fallback_message'   => 'Посмотрите адрес пункта самовывоза выше и постройте маршрут в приложении карт.',
+						'desktop_height'     => 250,
+						'mobile_height'      => 190,
+						'diagnostics_enabled'=> true,
+					),
 					'points'                 => array(
 						array(
 							'id'          => 'pickup_main',

@@ -347,6 +347,14 @@
 	background: #f8f9fb;
 }
 
+.mp-cc-pickup-map--admin-preview {
+	margin-top: 10px;
+}
+
+.mp-cc-pickup-map__canvas--admin {
+	min-height: 140px;
+}
+
 .mp-cc-admin-step4-error-sample {
 	margin: 6px 0 0;
 	padding: 6px 8px;
@@ -821,4 +829,110 @@
 	.mp-cc-admin-shell__grid {
 		grid-template-columns: minmax(0, 1fr);
 	}
+}
+
+/* Delivery tab — catalog studio */
+.mp-cc-delivery-studio {
+	margin: 0 0 24px;
+	padding: 16px 18px;
+	border: 1px solid var(--mp-cc-admin-border, #d0d7de);
+	border-radius: 10px;
+	background: var(--mp-cc-admin-surface, #fff);
+	box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.mp-cc-delivery-studio__head {
+	margin-bottom: 14px;
+}
+
+.mp-cc-delivery-studio__title {
+	margin: 0 0 6px;
+	font-size: 15px;
+	line-height: 1.3;
+}
+
+.mp-cc-delivery-studio__lead {
+	margin: 0;
+	font-size: 12px;
+	line-height: 1.45;
+	color: var(--mp-cc-admin-muted, #57606a);
+}
+
+.mp-cc-delivery-studio__block {
+	margin-top: 16px;
+	padding-top: 14px;
+	border-top: 1px solid #e5e7eb;
+}
+
+.mp-cc-delivery-studio__block h4 {
+	margin: 0 0 10px;
+	font-size: 13px;
+}
+
+.mp-cc-delivery-studio__sort-list {
+	margin: 0;
+	padding-left: 1.1rem;
+	list-style: decimal;
+}
+
+.mp-cc-delivery-studio__sort-item {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	flex-wrap: wrap;
+	margin: 6px 0;
+	padding: 6px 8px;
+	border-radius: 6px;
+	background: #f9fafb;
+}
+
+.mp-cc-delivery-studio__sort-item[data-inactive="1"] {
+	opacity: 0.65;
+}
+
+.mp-cc-delivery-studio__sort-label {
+	font-size: 13px;
+}
+
+.mp-cc-delivery-studio__sort-actions {
+	display: inline-flex;
+	gap: 4px;
+}
+
+.mp-cc-delivery-studio__tariff-table {
+	width: 100%;
+	max-width: 920px;
+	border-collapse: collapse;
+	font-size: 12px;
+}
+
+.mp-cc-delivery-studio__tariff-table th,
+.mp-cc-delivery-studio__tariff-table td {
+	padding: 6px 8px;
+	border: 1px solid #e5e7eb;
+	vertical-align: middle;
+}
+
+.mp-cc-delivery-studio__tariff-table th {
+	text-align: left;
+	background: #f3f4f6;
+	font-weight: 600;
+}
+
+.mp-cc-delivery-studio__input {
+	max-width: 100%;
+}
+
+.mp-cc-delivery-studio__check {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	white-space: nowrap;
+}
+
+.mp-cc-admin-preview__tariff-line {
+	margin: 4px 0 0;
+	font-size: 12px;
+	color: #4b5563;
 }
