@@ -77,6 +77,7 @@ final class FrontendAssetsHooks {
 				'pickupConfig' => PickupPointRegistry::config(),
 				'scenarioStepMap' => self::scenario_step_map(),
 				'designTokens' => self::design_tokens_for_runtime(),
+				'paymentCardArt' => self::payment_card_art_urls(),
 			)
 		);
 		do_action( 'mp_custom_checkout_enqueue_frontend_assets' );
@@ -91,6 +92,37 @@ final class FrontendAssetsHooks {
 				wp_enqueue_style( $handle );
 			}
 		}
+	}
+
+	/**
+	 * URL иллюстраций для визуальных карточек способов оплаты (PNG в assets/images/payment).
+	 *
+	 * @return array<string, string>
+	 */
+	private static function payment_card_art_urls(): array {
+		$base = MP_CUSTOM_CHECKOUT_URL . 'assets/images/payment/';
+		$dir  = MP_CUSTOM_CHECKOUT_PATH . 'assets/images/payment/';
+		$map  = array(
+			'bank'      => 'bank-card-generic.png',
+			'generic'   => 'bank-card-generic.png',
+			'robokassa' => 'robokassa-card.png',
+			'yookassa'  => 'yookassa-card.png',
+		);
+		$out = array();
+		foreach ( $map as $key => $file ) {
+			$path = $dir . $file;
+			if ( is_readable( $path ) ) {
+				$url = $base . $file;
+				$m   = (int) filemtime( $path );
+				if ( $m > 0 ) {
+					$url .= '?ver=' . (string) $m;
+				}
+				$out[ $key ] = $url;
+			} else {
+				$out[ $key ] = '';
+			}
+		}
+		return $out;
 	}
 
 	private static function asset_version( string $style_path, string $script_path ): string {

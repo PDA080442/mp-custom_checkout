@@ -8,6 +8,7 @@
 namespace MP\CustomCheckout\Routing;
 
 use MP\CustomCheckout\Checkout\Routing\CheckoutPermalinkCompatibility;
+use MP\CustomCheckout\Checkout\Hooks\CheckoutAjaxHooks;
 use MP\CustomCheckout\Checkout\Routing\CheckoutSessionService;
 use MP\CustomCheckout\Integrations\WooCommerce\GiftCardIntegration;
 use MP\CustomCheckout\Settings\FeatureFlagResolver;
@@ -51,6 +52,15 @@ final class CheckoutRouteContext {
 				'visible_steps' => $step_manager->get_visible_step_ids(),
 				'scenario_rules' => CheckoutScenarioRules::build( $scenario ),
 			);
+		}
+
+		if ( function_exists( 'WC' ) && WC() ) {
+			$payment_fields                     = CheckoutAjaxHooks::get_payment_fields_for_context();
+			$context['payment_fields_html']     = isset( $payment_fields['payment_fields_html'] ) ? (string) $payment_fields['payment_fields_html'] : '';
+			$context['payment_fields_gateway']  = isset( $payment_fields['payment_fields_gateway'] ) ? (string) $payment_fields['payment_fields_gateway'] : '';
+		} else {
+			$context['payment_fields_html']    = '';
+			$context['payment_fields_gateway'] = '';
 		}
 
 		$lang = self::detect_current_language();

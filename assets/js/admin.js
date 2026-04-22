@@ -182,6 +182,9 @@
 				title: 'Способ оплаты',
 				intro: 'Выберите удобный способ оплаты.',
 				gateway_order: [],
+				card_surface: 'visual',
+				auto_classic_on_empty_gateway_fields: true,
+				decorative_card_fields: true,
 				card_style: 'default',
 				card_active_style: 'accent',
 				radio_style: 'default',
@@ -1187,7 +1190,7 @@
 		html += '<div class="mp-cc-admin-preview__date-rules">';
 		html += '<p><strong>Coupon placement:</strong> ' + escapeHtml(String(cfg.discountLayout.placement || 'step_4')) + ', separate-step ready=' + escapeHtml(cfg.discountLayout.separate_step_enabled ? 'yes' : 'no') + '</p>';
 		html += '<p><strong>Discount styles:</strong> empty=' + escapeHtml(String(cfg.discountStyles.state_empty || 'default')) + ', success=' + escapeHtml(String(cfg.discountStyles.state_success || 'success')) + ', error=' + escapeHtml(String(cfg.discountStyles.state_error || 'error')) + '</p>';
-		html += '<p><strong>Payment block:</strong> title="' + escapeHtml(String(cfg.payment.title || 'Способ оплаты')) + '", style=' + escapeHtml(String(cfg.payment.card_style || 'default')) + ', description=' + escapeHtml(cfg.payment.show_description === false ? 'off' : 'on') + '</p>';
+		html += '<p><strong>Payment block:</strong> title="' + escapeHtml(String(cfg.payment.title || 'Способ оплаты')) + '", surface=' + escapeHtml(String(cfg.payment.card_surface || 'visual')) + ', auto_classic_if_empty=' + escapeHtml(cfg.payment.auto_classic_on_empty_gateway_fields === false ? 'off' : 'on') + ', decorative=' + escapeHtml(cfg.payment.decorative_card_fields === false ? 'off' : 'on') + ', style=' + escapeHtml(String(cfg.payment.card_style || 'default')) + ', description=' + escapeHtml(cfg.payment.show_description === false ? 'off' : 'on') + '</p>';
 		html += '<p><strong>Payment states:</strong> loading="' + escapeHtml(String((cfg.payment.messages && cfg.payment.messages.loading) || '—')) + '", success="' + escapeHtml(String((cfg.payment.messages && cfg.payment.messages.success) || '—')) + '", error="' + escapeHtml(String((cfg.payment.messages && cfg.payment.messages.error) || '—')) + '"</p>';
 		html += '<p><strong>Payment diagnostics:</strong> ' + escapeHtml(cfg.payment.diagnostics && cfg.payment.diagnostics.enabled === false ? 'off' : 'on') + '</p>';
 		html += '</div>';
@@ -1235,23 +1238,25 @@
 	}
 
 	function readFormValue(name, fallback) {
+		var $checkbox = $('[name="' + name + '"]').filter('[type="checkbox"]');
+		if ($checkbox.length) {
+			return $checkbox.is(':checked');
+		}
 		var $field = $('[name="' + name + '"]').first();
 		if (!$field.length) {
 			return fallback;
-		}
-		if ($field.is(':checkbox')) {
-			return $field.is(':checked');
 		}
 		return String($field.val() || '');
 	}
 
 	function writeFormValue(name, value) {
-		var $field = $('[name="' + name + '"]').first();
-		if (!$field.length) {
+		var $checkbox = $('[name="' + name + '"]').filter('[type="checkbox"]');
+		if ($checkbox.length) {
+			$checkbox.prop('checked', Boolean(value));
 			return;
 		}
-		if ($field.is(':checkbox')) {
-			$field.prop('checked', Boolean(value));
+		var $field = $('[name="' + name + '"]').first();
+		if (!$field.length) {
 			return;
 		}
 		$field.val(String(value == null ? '' : value));
@@ -1373,6 +1378,9 @@
 		var py = 'mp_custom_checkout_settings[step_4][payment_block]';
 		cfg.payment.title = readFormValue(py + '[title]', cfg.payment.title || 'Способ оплаты');
 		cfg.payment.intro = readFormValue(py + '[intro]', cfg.payment.intro || 'Выберите удобный способ оплаты.');
+		cfg.payment.card_surface = readFormValue(py + '[card_surface]', cfg.payment.card_surface || 'visual');
+		cfg.payment.auto_classic_on_empty_gateway_fields = Boolean(readFormValue(py + '[auto_classic_on_empty_gateway_fields]', cfg.payment.auto_classic_on_empty_gateway_fields !== false));
+		cfg.payment.decorative_card_fields = Boolean(readFormValue(py + '[decorative_card_fields]', cfg.payment.decorative_card_fields !== false));
 		cfg.payment.card_style = readFormValue(py + '[card_style]', cfg.payment.card_style || 'default');
 		cfg.payment.show_description = Boolean(readFormValue(py + '[show_description]', cfg.payment.show_description !== false));
 		cfg.payment.required = Boolean(readFormValue(py + '[required]', cfg.payment.required !== false));

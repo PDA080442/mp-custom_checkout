@@ -624,6 +624,8 @@ final class AdminMenuHooks {
 			echo '<small class="mp-cc-admin-shell__hint">' . esc_html( $help ) . '</small>';
 		}
 		if ( is_bool( $value ) ) {
+			// Без hidden WordPress не присылает ключ при снятом чекбоксе — булевы флаги нельзя сохранить как false.
+			echo '<input type="hidden" name="' . esc_attr( $name ) . '" value="0" />';
 			echo '<input type="checkbox" name="' . esc_attr( $name ) . '" value="1"' . checked( true, $value, false ) . ' />';
 		} elseif ( is_int( $value ) || is_float( $value ) ) {
 			echo '<input type="number" step="any" class="regular-text" name="' . esc_attr( $name ) . '" value="' . esc_attr( (string) $value ) . '" />';
@@ -701,6 +703,15 @@ final class AdminMenuHooks {
 		}
 		if ( false !== strpos( $p, 'field_order' ) ) {
 			return __( 'Определяет визуальный порядок полей в шаге.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'payment_block' ) && false !== strpos( $p, 'card_surface' ) ) {
+			return __( 'Режим карточек: classic — радио-список WooCommerce; visual — карточки и поля шлюза под сеткой; in_card — поля шлюза внутри выбранной карточки (HTML из payment_fields(), без самодельных PAN).', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'payment_block' ) && false !== strpos( $p, 'auto_classic_on_empty_gateway_fields' ) ) {
+			return __( 'Если для выбранного шлюза не удалось получить разметку полей, автоматически показать классический список способов оплаты.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'payment_block' ) && false !== strpos( $p, 'decorative_card_fields' ) ) {
+			return __( 'Устаревший флаг: декоративный PAN в checkout не используется; ввод только через шлюз WooCommerce.', 'mp-custom-checkout' );
 		}
 		return '';
 	}
