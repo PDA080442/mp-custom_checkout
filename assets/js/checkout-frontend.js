@@ -32,6 +32,8 @@
 		stepTransition: false,
 		paymentSubmit: false
 	};
+	var pickupMapScriptPromise = null;
+	var pickupMapLogCache = {};
 
 	function getUiText(path, fallback) {
 		var source = (window.mpCcCheckout && window.mpCcCheckout.uiText) ? window.mpCcCheckout.uiText : {};
@@ -125,6 +127,21 @@
 		return {
 			enablePointSelection: Boolean(source.enable_point_selection),
 			mapSlotEnabled: source.map_slot_enabled !== false,
+			mapWidget: $.extend(true, {
+				enabled: true,
+				provider: 'yandex',
+				api_key: '',
+				center_lat: 56.010563,
+				center_lng: 92.852572,
+				zoom: 14,
+				marker_label: 'Пункт самовывоза',
+				marker_hint: 'Заберите заказ в рабочие часы.',
+				fallback_title: 'Карта временно недоступна',
+				fallback_message: 'Посмотрите адрес пункта самовывоза выше и постройте маршрут в приложении карт.',
+				desktop_height: 250,
+				mobile_height: 190,
+				diagnostics_enabled: true
+			}, source.map_widget && typeof source.map_widget === 'object' ? source.map_widget : {}),
 			points: Array.isArray(source.points) ? source.points : []
 		};
 	}
@@ -2219,6 +2236,61 @@
 		return point;
 	}
 
+	function getPickupMapConfig() {
+		var pickupCfg = getPickupConfig();
+		var mapCfg = pickupCfg && pickupCfg.mapWidget ? pickupCfg.mapWidget : {};
+		return {
+			enabled: mapCfg.enabled !== false,
+			provider: String(mapCfg.provider || 'yandex'),
+			apiKey: String(mapCfg.api_key || ''),
+			centerLat: Number(mapCfg.center_lat || 56.010563),
+			centerLng: Number(mapCfg.center_lng || 92.852572),
+			zoom: Math.max(2, Math.min(19, Number(mapCfg.zoom || 14))),
+			markerLabel: trimNonEmpty(mapCfg.marker_label) || 'Пункт самовывоза',
+			markerHint: trimNonEmpty(mapCfg.marker_hint) || 'Заберите заказ в рабочие часы.',
+			fallbackTitle: trimNonEmpty(mapCfg.fallback_title) || 'Карта временно недоступна',
+			fallbackMessage: trimNonEmpty(mapCfg.fallback_message) || 'Посмотрите адрес пункта самовывоза выше и постройте маршрут в приложении карт.',
+			desktopHeight: Math.max(160, Math.min(520, Number(mapCfg.desktop_height || 250))),
+			mobileHeight: Math.max(120, Math.min(420, Number(mapCfg.mobile_height || 190))),
+			diagnosticsEnabled: mapCfg.diagnostics_enabled !== false
+		};
+	}
+
+	function buildPickupMapHtml(point, sourceLabel) {
+		var cfg = getPickupMapConfig();
+		if (!cfg.enabled || cfg.provider !== 'yandex') {
+			return '';
+		}
+		var lat = Number(cfg.centerLat);
+		var lng = Number(cfg.centerLng);
+		if (point && point.lat && point.lng) {
+			lat = Number(point.lat);
+			lng = Number(point.lng);
+		}
+		var markerLabel = point && point.title ? String(point.title) : cfg.markerLabel;
+		var markerHint = point && point.address ? String(point.address) : cfg.markerHint;
+		var html = '';
+		html += '<section class="mp-cc-pickup-map" data-pickup-map-root="1"';
+		html += ' data-map-source="' + escapeHtml(String(sourceLabel || 'pickup')) + '"';
+		html += ' data-map-lat="' + escapeHtml(String(lat)) + '"';
+		html += ' data-map-lng="' + escapeHtml(String(lng)) + '"';
+		html += ' data-map-zoom="' + escapeHtml(String(cfg.zoom)) + '"';
+		html += ' data-map-marker-label="' + escapeHtml(markerLabel) + '"';
+		html += ' data-map-marker-hint="' + escapeHtml(markerHint) + '"';
+		html += ' data-map-fallback-title="' + escapeHtml(cfg.fallbackTitle) + '"';
+		html += ' data-map-fallback-message="' + escapeHtml(cfg.fallbackMessage) + '"';
+		html += ' data-map-height-desktop="' + escapeHtml(String(cfg.desktopHeight)) + '"';
+		html += ' data-map-height-mobile="' + escapeHtml(String(cfg.mobileHeight)) + '"';
+		html += '>';
+		html += '<div class="mp-cc-pickup-map__canvas" data-pickup-map-canvas="1" aria-label="' + escapeHtml(markerLabel) + '"></div>';
+		html += '<div class="mp-cc-pickup-map__fallback" data-pickup-map-fallback="1" hidden>';
+		html += '<p class="mp-cc-pickup-map__fallback-title">' + escapeHtml(cfg.fallbackTitle) + '</p>';
+		html += '<p class="mp-cc-pickup-map__fallback-message">' + escapeHtml(cfg.fallbackMessage) + '</p>';
+		html += '</div>';
+		html += '</section>';
+		return html;
+	}
+
 	function buildConditionsReceiptPlainText(state) {
 		var scenario = normalizeScenarioId(state.frontendStore.fulfillment.scenario || '');
 		var root = getConditionsCopyRoot();
@@ -2461,6 +2533,7 @@
 			html += '</div>';
 		}
 		html += '<p class="mp-cc-pickup-office__helper">' + escapeHtml(helper) + '</p>';
+		html += buildPickupMapHtml(point, 'conditions');
 		if (showMulti) {
 			html += '<div class="mp-cc-pickup-office__multi-slot" data-mp-cc-multi-office="1">';
 			html += '<span class="mp-cc-pickup-office__multi-slot-label">' + escapeHtml(getUiText('step_3.pickup_multi_office_hint', 'Дополнительные точки самовывоза будут отображаться здесь при подключении.')) + '</span>';
@@ -4160,6 +4233,7 @@
 				html += '<div class="mp-cc-pickup-point__map-slot" data-pickup-map-slot="1">';
 				html += '<p>' + escapeHtml(String(selectedPoint.map_hint || 'Слот карты будет подключен позже.')) + '</p>';
 				html += '</div>';
+				html += buildPickupMapHtml(selectedPoint, 'delivery');
 			}
 		}
 		html += '</section>';
@@ -4622,6 +4696,133 @@
 		root.classList.add('mp-cc-step1-mobile-' + (responsive.mobile_mode === 'comfortable' ? 'comfortable' : 'compact'));
 	}
 
+	function logPickupMapIssue(state, code, message) {
+		var cfg = getPickupMapConfig();
+		if (!cfg.diagnosticsEnabled) {
+			return;
+		}
+		var cacheKey = String(code || '') + '|' + String(message || '');
+		if (pickupMapLogCache[cacheKey]) {
+			return;
+		}
+		pickupMapLogCache[cacheKey] = true;
+		reportClientError(String(code || 'pickup_map_issue'), String(message || 'pickup_map_error'), '', 'pickup_map');
+		postCheckout('validation_log', {
+			step_id: 'pickup_map',
+			context_id: state && state.flowContextId ? state.flowContextId : '',
+			errors: {
+				map_error: String(code || 'unknown')
+			}
+		});
+	}
+
+	function setPickupMapFallback($root, title, message) {
+		var $fallback = $root.find('[data-pickup-map-fallback]');
+		$fallback.find('.mp-cc-pickup-map__fallback-title').text(String(title || 'Карта временно недоступна'));
+		$fallback.find('.mp-cc-pickup-map__fallback-message').text(String(message || 'Посмотрите адрес пункта самовывоза выше.'));
+		$fallback.prop('hidden', false);
+	}
+
+	function ensureYandexMapsApi(state) {
+		var cfg = getPickupMapConfig();
+		if (cfg.provider !== 'yandex') {
+			return $.Deferred().reject(new Error('unsupported_map_provider')).promise();
+		}
+		if (window.ymaps && typeof window.ymaps.ready === 'function') {
+			return $.Deferred().resolve(window.ymaps).promise();
+		}
+		if (pickupMapScriptPromise) {
+			return pickupMapScriptPromise;
+		}
+		var deferred = $.Deferred();
+		pickupMapScriptPromise = deferred.promise();
+		var script = document.createElement('script');
+		var src = 'https://api-maps.yandex.ru/2.1/?lang=ru_RU';
+		if (cfg.apiKey) {
+			src += '&apikey=' + encodeURIComponent(cfg.apiKey);
+		}
+		script.src = src;
+		script.async = true;
+		script.onerror = function () {
+			logPickupMapIssue(state, 'pickup_map_script_failed', 'Не удалось загрузить скрипт Яндекс.Карт.');
+			deferred.reject(new Error('yandex_maps_script_failed'));
+		};
+		script.onload = function () {
+			if (!window.ymaps || typeof window.ymaps.ready !== 'function') {
+				logPickupMapIssue(state, 'pickup_map_api_missing', 'API Яндекс.Карт не инициализировано.');
+				deferred.reject(new Error('yandex_maps_api_missing'));
+				return;
+			}
+			window.ymaps.ready(function () {
+				deferred.resolve(window.ymaps);
+			});
+		};
+		document.head.appendChild(script);
+		return pickupMapScriptPromise;
+	}
+
+	function mountPickupMaps(state, $app) {
+		var cfg = getPickupMapConfig();
+		if (!cfg.enabled) {
+			return;
+		}
+		var $roots = $app.find('[data-pickup-map-root]');
+		if (!$roots.length) {
+			return;
+		}
+		$roots.each(function () {
+			var $root = $(this);
+			var $canvas = $root.find('[data-pickup-map-canvas]');
+			if (!$canvas.length || $root.attr('data-map-mounted') === '1') {
+				return;
+			}
+			var desktopHeight = Number($root.attr('data-map-height-desktop') || cfg.desktopHeight);
+			var mobileHeight = Number($root.attr('data-map-height-mobile') || cfg.mobileHeight);
+			var mapHeight = window.matchMedia('(max-width: 767px)').matches ? mobileHeight : desktopHeight;
+			$canvas.css('height', String(Math.max(120, mapHeight)) + 'px');
+			ensureYandexMapsApi(state).then(function (ymaps) {
+				try {
+					var lat = Number($root.attr('data-map-lat') || cfg.centerLat);
+					var lng = Number($root.attr('data-map-lng') || cfg.centerLng);
+					var zoom = Number($root.attr('data-map-zoom') || cfg.zoom);
+					var markerLabel = String($root.attr('data-map-marker-label') || cfg.markerLabel);
+					var markerHint = String($root.attr('data-map-marker-hint') || cfg.markerHint);
+					var map = new ymaps.Map($canvas.get(0), {
+						center: [lat, lng],
+						zoom: zoom,
+						controls: ['zoomControl']
+					});
+					var placemark = new ymaps.Placemark(
+						[lat, lng],
+						{
+							balloonContentHeader: markerLabel,
+							balloonContentBody: markerHint,
+							hintContent: markerLabel
+						},
+						{
+							preset: 'islands#redDotIcon'
+						}
+					);
+					map.geoObjects.add(placemark);
+					$root.attr('data-map-mounted', '1');
+				} catch (mapErr) {
+					logPickupMapIssue(state, 'pickup_map_render_failed', mapErr && mapErr.message ? mapErr.message : 'Ошибка рендера карты.');
+					setPickupMapFallback(
+						$root,
+						String($root.attr('data-map-fallback-title') || cfg.fallbackTitle),
+						String($root.attr('data-map-fallback-message') || cfg.fallbackMessage)
+					);
+				}
+			}).fail(function () {
+				setPickupMapFallback(
+					$root,
+					String($root.attr('data-map-fallback-title') || cfg.fallbackTitle),
+					String($root.attr('data-map-fallback-message') || cfg.fallbackMessage)
+				);
+			});
+		});
+	}
+
 	function render(state, $app) {
 		window.__mpCcCheckoutContextId = state && state.flowContextId ? String(state.flowContextId) : '';
 		ensureV2ScreenState(state);
@@ -4743,6 +4944,7 @@
 			}
 			window.location.href = fallback;
 		});
+		mountPickupMaps(state, $app);
 
 		if (!isFlagEnabled(state, flagNames.multiStepFlow, true)) {
 			return;

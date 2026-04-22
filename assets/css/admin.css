@@ -347,6 +347,14 @@
 	background: #f8f9fb;
 }
 
+.mp-cc-pickup-map--admin-preview {
+	margin-top: 10px;
+}
+
+.mp-cc-pickup-map__canvas--admin {
+	min-height: 140px;
+}
+
 .mp-cc-admin-step4-error-sample {
 	margin: 6px 0 0;
 	padding: 6px 8px;
