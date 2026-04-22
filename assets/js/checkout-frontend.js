@@ -386,6 +386,18 @@
 				required: true,
 				error_message: '',
 				messages: { loading: '', success: '', error: '' },
+				summary_mini_review: {
+					enabled: true,
+					title: '',
+					intro: '',
+					method_label: '',
+					id_label: '',
+					state_loading: '',
+					state_success: '',
+					state_error: '',
+					show_gateway_id: false,
+					show_gateway_description: true
+				},
 				diagnostics: { enabled: true }
 			},
 			available_gateways: [],
@@ -432,7 +444,9 @@
 				apply_label: '',
 				empty_message: '',
 				success_message: '',
-				error_message: ''
+				error_message: '',
+				allow_remove_applied: true,
+				summary_section_title: ''
 			},
 			gift_card_block: {
 				title: '',
@@ -960,6 +974,144 @@
 			}
 		}
 		return selected;
+	}
+
+	function getGatewayMetaById(gatewayId) {
+		var gid = trimNonEmpty(gatewayId);
+		if (!gid) {
+			return null;
+		}
+		var gateways = getAvailablePaymentGateways();
+		for (var i = 0; i < gateways.length; i += 1) {
+			if (String(gateways[i].id) === gid) {
+				return gateways[i];
+			}
+		}
+		return { id: gid, title: gid, description: '' };
+	}
+
+	function stripTagsHtml(s) {
+		return String(s || '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+	}
+
+	function truncateUiPlain(s, maxLen) {
+		var t = String(s || '');
+		var m = Math.max(8, Number(maxLen) || 160);
+		if (t.length <= m) {
+			return t;
+		}
+		return t.slice(0, m - 1) + '…';
+	}
+
+	function isCouponRemoveAllowed() {
+		var cfg = getStepFourConfig();
+		var c = cfg.coupon_block || {};
+		return c.allow_remove_applied !== false;
+	}
+
+	function buildContactPaymentSummaryBreakdownHtml(state) {
+		var cartSummary = state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart.summary || {} : {};
+		var couponLines = Array.isArray(cartSummary.coupon_lines) ? cartSummary.coupon_lines : [];
+		var giftCardCodes = Array.isArray(cartSummary.applied_gift_cards) ? cartSummary.applied_gift_cards : [];
+		var giftCardLines = Array.isArray(cartSummary.gift_card_lines) ? cartSummary.gift_card_lines : [];
+		var giftCardTotal = String(cartSummary.gift_card_total || '');
+		if (!couponLines.length && !giftCardCodes.length && !giftCardLines.length) {
+			return '';
+		}
+		var cfg = getStepFourConfig();
+		var cb = cfg.coupon_block || {};
+		var sectionTitle = trimNonEmpty(cb.summary_section_title) || getUiText('order_review.promo_breakdown_title', 'Промокоды и скидки');
+		var giftCardLabel = getStepOneLabel(state, 'gift_card_label', 'step_4.gift_card_title', 'Подарочная карта');
+		var couponWord = getUiText('order_review.coupon_line_prefix', 'Промокод');
+		var allowRm = isCouponRemoveAllowed();
+		var allowGiftRm = isGiftCardRemoveAllowed();
+		var html = '';
+		html += '<div class="mp-cc-summary-card__scenario mp-cc-summary-card__scenario--breakdown" data-final-review-breakdown="1">';
+		html += '<p class="mp-cc-summary-card__scenario-title"><strong>' + escapeHtml(sectionTitle) + '</strong></p>';
+		html += '<div class="mp-cc-summary-card__breakdown-list">';
+		for (var di = 0; di < couponLines.length; di += 1) {
+			var line = couponLines[di] || {};
+			var ccode = String(line.code || '');
+			html += '<div class="mp-cc-summary-card__breakdown-row">';
+			html += '<span class="mp-cc-summary-card__breakdown-meta">' + escapeHtml(couponWord + (ccode ? ' ' + ccode : '')) + ': ' + wcPriceHtmlFragment(String(line.amount || '')) + '</span>';
+			if (allowRm && ccode) {
+				html += '<button type="button" class="mp-cc-summary-card__breakdown-remove" data-coupon-remove="1" data-code="' + escapeHtml(ccode) + '" aria-label="' + escapeHtml(getUiText('step_4.coupon_remove', 'Снять купон')) + '">×</button>';
+			}
+			html += '</div>';
+		}
+		for (var gli = 0; gli < giftCardLines.length; gli += 1) {
+			var gl = giftCardLines[gli] || {};
+			html += '<div class="mp-cc-summary-card__breakdown-row">';
+			html += '<span class="mp-cc-summary-card__breakdown-meta">' + escapeHtml(String(gl.label || giftCardLabel)) + ': ' + wcPriceHtmlFragment(String(gl.amount || '')) + '</span>';
+			html += '</div>';
+		}
+		if (!giftCardLines.length && (giftCardCodes.length || trimNonEmpty(giftCardTotal))) {
+			var prefix = giftCardLabel + (giftCardCodes.length ? ' ' + giftCardCodes.join(', ') : '');
+			html += '<div class="mp-cc-summary-card__breakdown-row">';
+			html += '<span class="mp-cc-summary-card__breakdown-meta">' + escapeHtml(prefix) + ': ' + wcPriceHtmlFragment(giftCardTotal || '—') + '</span>';
+			if (allowGiftRm && giftCardCodes.length === 1) {
+				var gc0 = String(giftCardCodes[0] || '');
+				if (gc0) {
+					html += '<button type="button" class="mp-cc-summary-card__breakdown-remove" data-gift-card-remove="1" data-code="' + escapeHtml(gc0) + '" aria-label="' + escapeHtml(getUiText('step_4.gift_card_remove', 'Снять подарочную карту')) + '">×</button>';
+				}
+			}
+			html += '</div>';
+		}
+		html += '</div></div>';
+		return html;
+	}
+
+	function buildPaymentMiniReviewHtml(state) {
+		var cfg = getStepFourConfig();
+		var pb = cfg.payment_block || {};
+		var mr = pb.summary_mini_review && typeof pb.summary_mini_review === 'object' ? pb.summary_mini_review : {};
+		if (mr.enabled === false) {
+			return '';
+		}
+		var pay = state.frontendStore && state.frontendStore.payment ? state.frontendStore.payment : {};
+		var gw = trimNonEmpty(pay.gateway);
+		var payState = String(pay.state || 'idle');
+		var title = trimNonEmpty(mr.title) || getUiText('order_review.payment_mini_title', 'Способ оплаты');
+		var intro = trimNonEmpty(mr.intro) || getUiText('order_review.payment_mini_intro', 'Выбранный метод проведения платежа.');
+		var gatewayTitle = getSelectedGatewayTitle(state);
+		var meta = getGatewayMetaById(gw);
+		var desc = '';
+		if (mr.show_gateway_description !== false && meta && meta.description) {
+			desc = truncateUiPlain(stripTagsHtml(meta.description), 180);
+		}
+		var methodLbl = trimNonEmpty(mr.method_label) || getUiText('order_review.payment_mini_method', 'Метод');
+		var idLbl = trimNonEmpty(mr.id_label) || getUiText('order_review.payment_mini_id', 'Код метода');
+		var stateLine = '';
+		if (gw && payState === 'syncing') {
+			stateLine = trimNonEmpty(mr.state_loading) || getUiText('order_review.payment_mini_loading', 'Сохраняем выбор…');
+		} else if (gw && payState === 'success') {
+			stateLine = trimNonEmpty(mr.state_success) || getUiText('order_review.payment_mini_synced', 'Способ оплаты сохранён.');
+		} else if (gw && payState === 'error') {
+			stateLine = trimNonEmpty(mr.state_error) || getUiText('order_review.payment_mini_error', 'Проверьте способ оплаты.');
+		}
+		var html = '';
+		html += '<div class="mp-cc-summary-card__mini-review" data-payment-mini-review="1" data-payment-mini-state="' + escapeHtml(payState) + '" data-payment-gateway="' + escapeHtml(gw) + '">';
+		html += '<p class="mp-cc-summary-card__mini-review__title"><strong>' + escapeHtml(title) + '</strong></p>';
+		if (intro) {
+			html += '<p class="mp-cc-summary-card__mini-review__intro">' + escapeHtml(intro) + '</p>';
+		}
+		if (gw) {
+			html += '<p class="mp-cc-summary-card__mini-review__line"><span class="mp-cc-summary-card__mini-review__k">' + escapeHtml(methodLbl) + '</span> <span class="mp-cc-summary-card__mini-review__v">' + escapeHtml(gatewayTitle || gw) + '</span></p>';
+			if (mr.show_gateway_id === true) {
+				html += '<p class="mp-cc-summary-card__mini-review__line mp-cc-summary-card__mini-review__line--muted"><span class="mp-cc-summary-card__mini-review__k">' + escapeHtml(idLbl) + '</span> <code class="mp-cc-summary-card__mini-review__code">' + escapeHtml(gw) + '</code></p>';
+			}
+			if (desc) {
+				html += '<p class="mp-cc-summary-card__mini-review__desc">' + escapeHtml(desc) + '</p>';
+			}
+		} else {
+			html += '<p class="mp-cc-summary-card__mini-review__muted">' + escapeHtml(getUiText('order_review.payment_mini_pick', 'Выберите способ оплаты слева.')) + '</p>';
+		}
+		if (stateLine) {
+			var stClass = payState === 'error' ? 'mp-cc-summary-card__mini-review__state--error' : (payState === 'success' ? 'mp-cc-summary-card__mini-review__state--success' : 'mp-cc-summary-card__mini-review__state--muted');
+			html += '<p class="mp-cc-summary-card__mini-review__state ' + stClass + '" data-payment-mini-review-state="1">' + escapeHtml(stateLine) + '</p>';
+		}
+		html += '</div>';
+		return html;
 	}
 
 	function isPaymentSubmissionLocked(state) {
@@ -2657,6 +2809,7 @@
 		var appliedGiftCards = Array.isArray(cartSummary.applied_gift_cards) ? cartSummary.applied_gift_cards : [];
 		var hideGiftInCoupon = shouldHideGiftChipsInCouponBlock(state, opts);
 		var allowGiftRm = isGiftCardRemoveAllowed();
+		var allowCouponRm = isCouponRemoveAllowed();
 		var code = String(rt.code || '');
 		var runtimeState = String(rt.state || 'empty');
 		var msg = trimNonEmpty(rt.message);
@@ -2684,7 +2837,9 @@
 				}
 				html += '<span class="mp-cc-coupon__chip">';
 				html += '<span>' + escapeHtml(cp) + '</span>';
-				html += '<button type="button" class="mp-cc-coupon__chip-remove" data-coupon-remove="1" data-code="' + escapeHtml(cp) + '" aria-label="' + escapeHtml(getUiText('step_4.coupon_remove', 'Снять купон')) + '">×</button>';
+				if (allowCouponRm) {
+					html += '<button type="button" class="mp-cc-coupon__chip-remove" data-coupon-remove="1" data-code="' + escapeHtml(cp) + '" aria-label="' + escapeHtml(getUiText('step_4.coupon_remove', 'Снять купон')) + '">×</button>';
+				}
 				html += '</span>';
 			}
 			html += '</div>';
@@ -5009,6 +5164,7 @@
 		var scenarioLabel = scenarioRules && scenarioRules.label ? String(scenarioRules.label) : '';
 		var couponLines = Array.isArray(cartSummary.coupon_lines) ? cartSummary.coupon_lines : [];
 		var giftCardCodes = Array.isArray(cartSummary.applied_gift_cards) ? cartSummary.applied_gift_cards : [];
+		var giftCardLines = Array.isArray(cartSummary.gift_card_lines) ? cartSummary.gift_card_lines : [];
 		var giftCardTotal = String(cartSummary.gift_card_total || '');
 		var isPickup = scenario === 'pickup';
 		var shippingTotalNum = typeof cartSummary.shipping_total === 'number' && !Number.isNaN(cartSummary.shipping_total)
@@ -5123,17 +5279,9 @@
 				}
 				html += '</div>';
 			}
-			if (couponLines.length || giftCardCodes.length) {
-				html += '<div class="mp-cc-summary-card__scenario" data-final-review-discounts="1">';
-				html += '<p class="mp-cc-summary-card__scenario-title"><strong>' + escapeHtml(discountLabel) + '</strong></p>';
-				for (var di = 0; di < couponLines.length; di += 1) {
-					var line = couponLines[di] || {};
-					html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml('Купон ' + String(line.code || '')) + ': ' + wcPriceHtmlFragment(String(line.amount || '')) + '</p>';
-				}
-				if (giftCardCodes.length) {
-					html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(giftCardPrefixText) + ': ' + wcPriceHtmlFragment(giftCardTotal || '—') + '</p>';
-				}
-				html += '</div>';
+			var breakdownFragment = buildContactPaymentSummaryBreakdownHtml(state);
+			if (trimNonEmpty(breakdownFragment)) {
+				html += breakdownFragment;
 			}
 			if (cartItems.length) {
 				html += '<div class="mp-cc-summary-card__scenario" data-final-review-cart="1">';
@@ -5160,10 +5308,12 @@
 				var feeLabelJ = trimNonEmpty(feeRowJ.label) ? String(feeRowJ.label) : getUiText('order_review.fee_line', 'Сбор');
 				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(feeLabelJ) + ': ' + wcPriceHtmlFragment(String(feeRowJ.amount || '')) + '</p>';
 			}
-			if (trimNonEmpty(cartSummary.discount)) {
+			var hideAggDiscountInFinal = couponLines.length > 0;
+			var hideGiftInFinalFinancials = giftCardLines.length > 0 || giftCardCodes.length > 0;
+			if (!hideAggDiscountInFinal && trimNonEmpty(cartSummary.discount)) {
 				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(discountLabel) + ': ' + wcPriceHtmlFragment(String(cartSummary.discount)) + '</p>';
 			}
-			if (giftCardCodes.length || trimNonEmpty(giftCardTotal)) {
+			if (!hideGiftInFinalFinancials && (giftCardCodes.length || trimNonEmpty(giftCardTotal))) {
 				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(giftCardPrefixText) + ': ' + wcPriceHtmlFragment(giftCardTotal || '—') + '</p>';
 			}
 			if (trimNonEmpty(taxText)) {
@@ -5173,7 +5323,10 @@
 				html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(totalLabel) + ':</strong> ' + wcPriceHtmlFragment(totalText) + '</p>';
 			}
 			html += '</div>';
-			if (trimNonEmpty(gatewayTitle)) {
+			var miniHtml = buildPaymentMiniReviewHtml(state);
+			if (trimNonEmpty(miniHtml)) {
+				html += miniHtml;
+			} else if (trimNonEmpty(gatewayTitle)) {
 				html += '<div class="mp-cc-summary-card__scenario" data-final-review-gateway="1">';
 				html += '<p class="mp-cc-summary-card__scenario-title"><strong>' + escapeHtml(getUiText('step_4.payment_title', 'Способ оплаты')) + '</strong></p>';
 				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(gatewayTitle) + '</p>';
@@ -5530,6 +5683,69 @@
 			window.location.href = fallback;
 		});
 		mountPickupMaps(state, $app);
+
+		$(selectors.root).off('click.mpCcRemoveCoupon', '[data-coupon-remove]').on('click.mpCcRemoveCoupon', '[data-coupon-remove]', function () {
+			if (!isCouponRemoveAllowed()) {
+				return;
+			}
+			var raw = String($(this).attr('data-code') || '');
+			var rmCode = trimNonEmpty(raw);
+			if (!rmCode) {
+				return;
+			}
+			postCheckout('remove_coupon', {
+				coupon_code: rmCode,
+				context_id: state.flowContextId
+			}).then(function (response) {
+				var data = response && response.data ? response.data : {};
+				if (data.flow || data.cart) {
+					syncFromFlow(state, data.flow || {}, data.cart || {});
+				}
+				render(state, $app);
+			}).fail(function (xhr) {
+				var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
+				if (payload.flow || payload.cart) {
+					syncFromFlow(state, payload.flow || {}, payload.cart || {});
+				}
+				render(state, $app);
+				notify(trimNonEmpty(payload.message) || getUiText('step_4.coupon_remove_error', 'Не удалось снять купон.'), 'error');
+			});
+		});
+
+		$(selectors.root).off('click.mpCcRemoveGift', '[data-gift-card-remove]').on('click.mpCcRemoveGift', '[data-gift-card-remove]', function () {
+			if (!isGiftCardRemoveAllowed()) {
+				return;
+			}
+			var raw = String($(this).attr('data-code') || '');
+			var rmCode = trimNonEmpty(raw);
+			if (!rmCode) {
+				return;
+			}
+			postCheckout('remove_gift_card', {
+				gift_card_code: rmCode,
+				context_id: state.flowContextId
+			}).then(function (response) {
+				var data = response && response.data ? response.data : {};
+				if (data.flow || data.cart) {
+					syncFromFlow(state, data.flow || {}, data.cart || {});
+				}
+				var discountsAfter = state.frontendStore.discounts || {};
+				var grtClear = discountsAfter.gift_card_runtime || { code: '', state: 'empty', message: '' };
+				grtClear.state = 'empty';
+				grtClear.message = '';
+				grtClear.code = '';
+				discountsAfter.gift_card_runtime = grtClear;
+				state.frontendStore.discounts = discountsAfter;
+				render(state, $app);
+			}).fail(function (xhr) {
+				var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
+				if (payload.flow || payload.cart) {
+					syncFromFlow(state, payload.flow || {}, payload.cart || {});
+				}
+				render(state, $app);
+				notify(trimNonEmpty(payload.message) || getUiText('step_4.gift_card_remove_error', 'Не удалось снять подарочную карту.'), 'error');
+			});
+		});
 
 		if (!isFlagEnabled(state, flagNames.multiStepFlow, true)) {
 			return;
@@ -6133,66 +6349,6 @@
 			});
 		});
 
-		$app.off('click.mpCcRemoveCoupon', '[data-coupon-remove]').on('click.mpCcRemoveCoupon', '[data-coupon-remove]', function () {
-			var raw = String($(this).attr('data-code') || '');
-			var rmCode = trimNonEmpty(raw);
-			if (!rmCode) {
-				return;
-			}
-			postCheckout('remove_coupon', {
-				coupon_code: rmCode,
-				context_id: state.flowContextId
-			}).then(function (response) {
-				var data = response && response.data ? response.data : {};
-				if (data.flow || data.cart) {
-					syncFromFlow(state, data.flow || {}, data.cart || {});
-				}
-				render(state, $app);
-			}).fail(function (xhr) {
-				var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
-				if (payload.flow || payload.cart) {
-					syncFromFlow(state, payload.flow || {}, payload.cart || {});
-				}
-				render(state, $app);
-				notify(trimNonEmpty(payload.message) || getUiText('step_4.coupon_remove_error', 'Не удалось снять купон.'), 'error');
-			});
-		});
-
-		$app.off('click.mpCcRemoveGift', '[data-gift-card-remove]').on('click.mpCcRemoveGift', '[data-gift-card-remove]', function () {
-			if (!isGiftCardRemoveAllowed()) {
-				return;
-			}
-			var raw = String($(this).attr('data-code') || '');
-			var rmCode = trimNonEmpty(raw);
-			if (!rmCode) {
-				return;
-			}
-			postCheckout('remove_gift_card', {
-				gift_card_code: rmCode,
-				context_id: state.flowContextId
-			}).then(function (response) {
-				var data = response && response.data ? response.data : {};
-				if (data.flow || data.cart) {
-					syncFromFlow(state, data.flow || {}, data.cart || {});
-				}
-				var discountsAfter = state.frontendStore.discounts || {};
-				var grtClear = discountsAfter.gift_card_runtime || { code: '', state: 'empty', message: '' };
-				grtClear.state = 'empty';
-				grtClear.message = '';
-				grtClear.code = '';
-				discountsAfter.gift_card_runtime = grtClear;
-				state.frontendStore.discounts = discountsAfter;
-				render(state, $app);
-			}).fail(function (xhr) {
-				var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
-				if (payload.flow || payload.cart) {
-					syncFromFlow(state, payload.flow || {}, payload.cart || {});
-				}
-				render(state, $app);
-				notify(trimNonEmpty(payload.message) || getUiText('step_4.gift_card_remove_error', 'Не удалось снять подарочную карту.'), 'error');
-			});
-		});
-
 		$app.off('input.mpCcGiftPeer', '[data-gift-card-peer-code]').on('input.mpCcGiftPeer', '[data-gift-card-peer-code]', function () {
 			ensureDiscountDefaults(state);
 			var discounts = state.frontendStore.discounts || {};
@@ -6516,6 +6672,12 @@
 		var appliedCouponCodesSig = Array.isArray(cartSummary.applied_coupons) ? cartSummary.applied_coupons.join(',') : '';
 		var couponLinesSig = Array.isArray(cartSummary.coupon_lines) ? cartSummary.coupon_lines.map(function (l) { return String(l && l.code ? l.code : ''); }).join(',') : '';
 		var giftCodesSig = Array.isArray(cartSummary.applied_gift_cards) ? cartSummary.applied_gift_cards.join(',') : '';
+		var giftLinesSig = Array.isArray(cartSummary.gift_card_lines) ? cartSummary.gift_card_lines.map(function (l) {
+			var row = l || {};
+			return String(row.label || '') + ':' + String(row.amount || '');
+		}).join(';') : '';
+		var pay = state.frontendStore && state.frontendStore.payment ? state.frontendStore.payment : {};
+		var paySig = String(pay.gateway || '') + ':' + String(pay.state || '');
 		var signature = [
 			String(cartSummary.items_count || 0),
 			String(cartSummary.subtotal || ''),
@@ -6527,7 +6689,9 @@
 			scenario,
 			appliedCouponCodesSig,
 			couponLinesSig,
-			giftCodesSig
+			giftCodesSig,
+			giftLinesSig,
+			paySig
 		].join('|');
 		var prevSignature = String(state.frontendStore.meta.lastSummarySignature || '');
 		state.frontendStore.meta.lastSummarySignature = signature;
