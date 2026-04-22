@@ -48,6 +48,7 @@ final class FeatureFlagResolver {
 		$all = self::all();
 		return array(
 			DefaultFeatureFlagsRegistry::FLAG_CUSTOM_CHECKOUT_ROUTE    => $all[ DefaultFeatureFlagsRegistry::FLAG_CUSTOM_CHECKOUT_ROUTE ],
+			DefaultFeatureFlagsRegistry::FLAG_CHECKOUT_UI_V2           => $all[ DefaultFeatureFlagsRegistry::FLAG_CHECKOUT_UI_V2 ],
 			DefaultFeatureFlagsRegistry::FLAG_MULTI_STEP_FLOW          => $all[ DefaultFeatureFlagsRegistry::FLAG_MULTI_STEP_FLOW ],
 			DefaultFeatureFlagsRegistry::FLAG_MULTI_PICKUP_POINTS      => $all[ DefaultFeatureFlagsRegistry::FLAG_MULTI_PICKUP_POINTS ],
 			DefaultFeatureFlagsRegistry::FLAG_CONDITIONS_STEP          => $all[ DefaultFeatureFlagsRegistry::FLAG_CONDITIONS_STEP ],

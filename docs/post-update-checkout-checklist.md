@@ -35,4 +35,7 @@
 - Clear resolved logs if needed.
 - Keep exported JSON log snapshot with release notes.
 - Mark release as checkout-verified.
+- Confirm baseline docs are актуальны:
+  - `docs/v2-scope-baseline.md`
+  - `docs/v2-conflict-matrix.md`
 
