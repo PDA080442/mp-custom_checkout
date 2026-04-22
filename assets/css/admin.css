@@ -1012,3 +1012,90 @@
 	font-size: 12px;
 	color: #6b7280;
 }
+
+/* Step 4 — sidebar summary + mini-review preview (21.3) */
+.mp-cc-admin-sidebar-mock {
+	max-width: 360px;
+}
+
+.mp-cc-admin-sidebar-mock__card {
+	margin-top: 8px;
+	padding: 12px;
+	border-radius: 10px;
+	border: 1px solid #e5e7eb;
+	background: #fafafa;
+	display: grid;
+	gap: 8px;
+}
+
+.mp-cc-admin-sidebar-mock__pret {
+	margin: 0;
+	font-size: 12px;
+	font-weight: 700;
+	color: #374151;
+}
+
+.mp-cc-admin-sidebar-mock__chiprow {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	font-size: 12px;
+}
+
+.mp-cc-admin-sidebar-mock__chip {
+	padding: 4px 8px;
+	border-radius: 999px;
+	background: #eef2ff;
+	border: 1px solid #c7d2fe;
+}
+
+.mp-cc-admin-sidebar-mock__x {
+	font-weight: 700;
+	color: #6b7280;
+}
+
+.mp-cc-admin-sidebar-mock__row {
+	margin: 0;
+	font-size: 12px;
+	color: #4b5563;
+}
+
+.mp-cc-admin-sidebar-mock__mini {
+	margin-top: 4px;
+	padding-top: 10px;
+	border-top: 1px dashed #d1d5db;
+	display: grid;
+	gap: 4px;
+}
+
+.mp-cc-admin-sidebar-mock__mint {
+	margin: 0;
+	font-size: 12px;
+	font-weight: 700;
+}
+
+.mp-cc-admin-sidebar-mock__minm {
+	margin: 0;
+	font-size: 11px;
+	color: #6b7280;
+}
+
+.mp-cc-admin-sidebar-mock__minl {
+	margin: 0;
+	font-size: 11px;
+	display: flex;
+	gap: 6px;
+	flex-wrap: wrap;
+}
+
+.mp-cc-admin-sidebar-mock__minl--muted {
+	color: #6b7280;
+}
+
+.mp-cc-admin-sidebar-mock__minst {
+	margin: 0;
+	font-size: 11px;
+	font-weight: 600;
+	color: #4b5563;
+}

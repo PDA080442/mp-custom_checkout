@@ -1237,6 +1237,131 @@
 	font-weight: 600;
 }
 
+.mp-cc-summary-card__scenario--breakdown .mp-cc-summary-card__breakdown-list {
+	display: grid;
+	gap: 0.35rem;
+	margin-top: 0.15rem;
+}
+
+.mp-cc-summary-card__breakdown-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+	flex-wrap: wrap;
+}
+
+.mp-cc-summary-card__breakdown-meta {
+	font-size: 0.82rem;
+	color: var(--mp-cc-color-text-muted, #64748b);
+	line-height: 1.35;
+}
+
+.mp-cc-summary-card__breakdown-remove {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 1.65rem;
+	height: 1.65rem;
+	padding: 0;
+	border: none;
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--mp-cc-color-border, #e2e8f0) 55%, transparent);
+	cursor: pointer;
+	font-size: 1rem;
+	line-height: 1;
+	color: var(--mp-cc-color-text, #0f172a);
+}
+
+.mp-cc-summary-card__breakdown-remove:hover {
+	background: color-mix(in srgb, var(--mp-cc-color-error, #b91c1c) 12%, #fff);
+}
+
+.mp-cc-summary-card__mini-review {
+	margin-top: 0.65rem;
+	padding: 0.65rem 0.7rem 0.7rem;
+	border-radius: var(--mp-cc-radius-sm, 10px);
+	border: 1px solid color-mix(in srgb, var(--mp-cc-color-border, #e2e8f0) 90%, transparent);
+	background: color-mix(in srgb, var(--mp-cc-color-surface-elevated, #f8fafc) 88%, #fff);
+	display: grid;
+	gap: 0.28rem;
+}
+
+.mp-cc-summary-card__mini-review__title {
+	margin: 0;
+	font-size: 0.82rem;
+}
+
+.mp-cc-summary-card__mini-review__intro {
+	margin: 0;
+	font-size: 0.72rem;
+	color: var(--mp-cc-color-text-muted, #64748b);
+	line-height: 1.35;
+}
+
+.mp-cc-summary-card__mini-review__line {
+	margin: 0;
+	font-size: 0.78rem;
+	line-height: 1.35;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.25rem 0.4rem;
+	align-items: baseline;
+}
+
+.mp-cc-summary-card__mini-review__line--muted {
+	opacity: 0.85;
+}
+
+.mp-cc-summary-card__mini-review__k {
+	font-weight: 600;
+	color: var(--mp-cc-color-text-muted, #64748b);
+	font-size: 0.72rem;
+}
+
+.mp-cc-summary-card__mini-review__v {
+	font-weight: 700;
+}
+
+.mp-cc-summary-card__mini-review__code {
+	font-size: 0.68rem;
+	padding: 0.08rem 0.28rem;
+	border-radius: 4px;
+	background: #fff;
+	border: 1px solid var(--mp-cc-color-border, #e2e8f0);
+}
+
+.mp-cc-summary-card__mini-review__desc {
+	margin: 0;
+	font-size: 0.72rem;
+	line-height: 1.4;
+	color: var(--mp-cc-color-text-muted, #64748b);
+}
+
+.mp-cc-summary-card__mini-review__muted {
+	margin: 0;
+	font-size: 0.74rem;
+	color: var(--mp-cc-color-text-muted, #64748b);
+}
+
+.mp-cc-summary-card__mini-review__state {
+	margin: 0.15rem 0 0;
+	font-size: 0.72rem;
+	font-weight: 600;
+}
+
+.mp-cc-summary-card__mini-review__state--success {
+	color: #15803d;
+}
+
+.mp-cc-summary-card__mini-review__state--error {
+	color: var(--mp-cc-color-error, #b91c1c);
+}
+
+.mp-cc-summary-card__mini-review__state--muted {
+	color: var(--mp-cc-color-text-muted, #64748b);
+}
+
 .mp-cc-summary-card__conditions {
 	margin-top: 0.65rem;
 	padding-top: 0.65rem;
@@ -1331,8 +1456,8 @@
 		will-change: transform;
 	}
 
-	/* На мобилке оставляем в липком блоке только финансовые строки. */
-	.mp-cc-summary-card__scenario:not(.mp-cc-summary-card__scenario--final-review):not([data-summary-financials='1']):not([data-final-review-financials='1']) {
+	/* На мобилке в липком блоке оставляем финансы + сводку промо + mini-review оплаты. */
+	.mp-cc-summary-card__scenario:not(.mp-cc-summary-card__scenario--final-review):not([data-summary-financials='1']):not([data-final-review-financials='1']):not([data-final-review-breakdown='1']) {
 		display: none;
 	}
 
