@@ -465,6 +465,13 @@ final class CheckoutAjaxHooks {
 			return false;
 		}
 		$method = $catalog[ $method_id ];
+		$flow = CheckoutSessionService::get_public_state();
+		$current_scenario = isset( $flow['scenario'] ) ? CheckoutScenarioRules::sanitize_scenario( (string) $flow['scenario'] ) : '';
+		$allowed_scenarios = isset( $method['visibility_scenarios'] ) && is_array( $method['visibility_scenarios'] ) ? $method['visibility_scenarios'] : array();
+		if ( ! empty( $allowed_scenarios ) && '' !== $current_scenario && ! in_array( $current_scenario, $allowed_scenarios, true ) ) {
+			do_action( 'mp_custom_checkout_log', 'warning', '[shipping_sync] scenario_visibility_blocked', array( 'shipping_method_id' => $method_id, 'scenario' => $current_scenario ) );
+			return false;
+		}
 		if ( ! empty( $method['tariffs'] ) && is_array( $method['tariffs'] ) ) {
 			$tariff_id = isset( $answers['shipping_tariff_id'] ) ? sanitize_key( (string) $answers['shipping_tariff_id'] ) : '';
 			if ( '' === $tariff_id || ! in_array( $tariff_id, $method['tariffs'], true ) ) {
@@ -477,13 +484,47 @@ final class CheckoutAjaxHooks {
 
 	/** @return array<string, array<string, mixed>> */
 	private static function shipping_catalog(): array {
-		return array(
-			'post_russia'           => array( 'tariffs' => array() ),
-			'courier'               => array( 'tariffs' => array( 'express', 'standard' ) ),
-			'pvz'                   => array( 'tariffs' => array( 'express', 'standard' ) ),
-			'krasnoyarsk_delivery'  => array( 'tariffs' => array() ),
-			'pickup'                => array( 'tariffs' => array() ),
-		);
+		$delivery = SafeSettingsResolver::get_section( 'delivery' );
+		$catalog  = isset( $delivery['shipping_catalog'] ) && is_array( $delivery['shipping_catalog'] ) ? $delivery['shipping_catalog'] : array();
+		$methods  = isset( $catalog['methods'] ) && is_array( $catalog['methods'] ) ? $catalog['methods'] : array();
+		$result   = array();
+		foreach ( $methods as $method_id => $method ) {
+			$id = sanitize_key( (string) $method_id );
+			if ( '' === $id || ! is_array( $method ) ) {
+				continue;
+			}
+			if ( array_key_exists( 'active', $method ) && empty( $method['active'] ) ) {
+				continue;
+			}
+			$tariffs = array();
+			if ( isset( $method['tariffs'] ) && is_array( $method['tariffs'] ) ) {
+				foreach ( $method['tariffs'] as $tariff_id => $tariff ) {
+					$t_id = sanitize_key( (string) $tariff_id );
+					if ( '' === $t_id ) {
+						continue;
+					}
+					if ( is_array( $tariff ) && array_key_exists( 'active', $tariff ) && empty( $tariff['active'] ) ) {
+						continue;
+					}
+					$tariffs[] = $t_id;
+				}
+			}
+			$visibility = isset( $method['visibility_scenarios'] ) && is_array( $method['visibility_scenarios'] ) ? array_values( array_map( 'sanitize_key', $method['visibility_scenarios'] ) ) : array();
+			$result[ $id ] = array(
+				'tariffs' => $tariffs,
+				'visibility_scenarios' => array_values( array_filter( $visibility ) ),
+			);
+		}
+		if ( empty( $result ) ) {
+			$result = array(
+				'post_russia'          => array( 'tariffs' => array(), 'visibility_scenarios' => array( 'other_city_delivery' ) ),
+				'courier'              => array( 'tariffs' => array( 'express', 'standard' ), 'visibility_scenarios' => array( 'krasnoyarsk_delivery', 'other_city_delivery' ) ),
+				'pvz'                  => array( 'tariffs' => array( 'express', 'standard' ), 'visibility_scenarios' => array( 'krasnoyarsk_delivery', 'other_city_delivery' ) ),
+				'krasnoyarsk_delivery' => array( 'tariffs' => array(), 'visibility_scenarios' => array( 'krasnoyarsk_delivery' ) ),
+				'pickup'               => array( 'tariffs' => array(), 'visibility_scenarios' => array( 'pickup' ) ),
+			);
+		}
+		return $result;
 	}
 
 	private static function handle_update_quantity(): void { /* migrated intact from legacy */

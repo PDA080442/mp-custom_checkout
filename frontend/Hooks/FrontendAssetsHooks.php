@@ -73,6 +73,7 @@ final class FrontendAssetsHooks {
 				'scenarioUiConfig' => self::scenario_ui_config(),
 				'stepThreeConfig' => self::step_three_config(),
 				'stepFourConfig'  => self::step_four_config(),
+				'deliveryConfig'  => self::delivery_config(),
 				'pickupConfig' => PickupPointRegistry::config(),
 				'scenarioStepMap' => self::scenario_step_map(),
 				'designTokens' => self::design_tokens_for_runtime(),
@@ -176,6 +177,11 @@ final class FrontendAssetsHooks {
 		$config = is_array( $config ) ? $config : array();
 		$config['available_gateways'] = self::available_payment_gateways_for_runtime();
 		return $config;
+	}
+
+	private static function delivery_config(): array {
+		$config = SafeSettingsResolver::get_section( 'delivery' );
+		return is_array( $config ) ? $config : array();
 	}
 
 	private static function available_payment_gateways_for_runtime(): array {
