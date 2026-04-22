@@ -1205,6 +1205,22 @@
 		html += '</article>';
 		html += '</div>';
 		html += '<div class="mp-cc-admin-preview__date-grid">';
+		html += '<article class="mp-cc-admin-gift-peer-preview">';
+		html += '<strong>Превью: подарочная карта рядом с оплатой</strong>';
+		html += '<p>Карточный UI: <code>gift_card_block.peer_next_to_payment</code>=' + escapeHtml(cfg.giftCard.peer_next_to_payment === false ? 'off' : 'on') + ', <code>allow_remove_applied</code>=' + escapeHtml(cfg.giftCard.allow_remove_applied === false ? 'off' : 'on') + '</p>';
+		var gTitle = trimNonEmptyAdmin(cfg.giftCard.card_title) || trimNonEmptyAdmin(cfg.giftCard.title) || 'Подарочная карта';
+		var gSub = trimNonEmptyAdmin(cfg.giftCard.card_subtitle) || trimNonEmptyAdmin(cfg.giftCard.intro) || 'Введите код подарочной карты.';
+		html += '<div class="mp-cc-admin-gift-peer-preview__mock" aria-hidden="true">';
+		html += '<div class="mp-cc-admin-gift-peer-preview__shell"><span class="mp-cc-admin-gift-peer-preview__badge">Подарок</span>';
+		html += '<p class="mp-cc-admin-gift-peer-preview__t">' + escapeHtml(gTitle) + '</p>';
+		html += '<p class="mp-cc-admin-gift-peer-preview__s">' + escapeHtml(gSub) + '</p></div>';
+		html += '<div class="mp-cc-admin-gift-peer-preview__inlay">';
+		html += '<span class="mp-cc-admin-gift-peer-preview__ph"></span>';
+		html += '<span class="mp-cc-admin-gift-peer-preview__btn">' + escapeHtml(trimNonEmptyAdmin(cfg.giftCard.apply_label) || 'Применить') + '</span>';
+		html += '</div></div>';
+		html += '<p class="mp-cc-admin-preview__muted"><code>card_title</code> / <code>card_subtitle</code> / <code>unavailable_message</code> — опционально; пустые значения берутся из основных полей блока.</p>';
+		html += '</article></div>';
+		html += '<div class="mp-cc-admin-preview__date-grid">';
 		html += '<article>';
 		html += '<strong>Payment preview: loading</strong>';
 		html += '<p class="mp-cc-admin-step4-error-sample">' + escapeHtml(String((cfg.payment.messages && cfg.payment.messages.loading) || 'Сохраняем выбранный способ оплаты...')) + '</p>';
@@ -1420,6 +1436,11 @@
 		cfg.giftCard.empty_message = readFormValue(gc + '[empty_message]', cfg.giftCard.empty_message || '');
 		cfg.giftCard.success_message = readFormValue(gc + '[success_message]', cfg.giftCard.success_message || '');
 		cfg.giftCard.error_message = readFormValue(gc + '[error_message]', cfg.giftCard.error_message || '');
+		cfg.giftCard.peer_next_to_payment = Boolean(readFormValue(gc + '[peer_next_to_payment]', cfg.giftCard.peer_next_to_payment !== false));
+		cfg.giftCard.allow_remove_applied = Boolean(readFormValue(gc + '[allow_remove_applied]', cfg.giftCard.allow_remove_applied !== false));
+		cfg.giftCard.card_title = readFormValue(gc + '[card_title]', cfg.giftCard.card_title || '');
+		cfg.giftCard.card_subtitle = readFormValue(gc + '[card_subtitle]', cfg.giftCard.card_subtitle || '');
+		cfg.giftCard.unavailable_message = readFormValue(gc + '[unavailable_message]', cfg.giftCard.unavailable_message || '');
 		return cfg;
 	}
 

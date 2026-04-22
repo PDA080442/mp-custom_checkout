@@ -442,7 +442,12 @@
 				apply_label: '',
 				empty_message: '',
 				success_message: '',
-				error_message: ''
+				error_message: '',
+				peer_next_to_payment: true,
+				allow_remove_applied: true,
+				card_title: '',
+				card_subtitle: '',
+				unavailable_message: ''
 			},
 			geo_preview: { enabled: false }
 		}, source);
@@ -1142,6 +1147,56 @@
 			emptyMessage: trimNonEmpty(g.empty_message) || trimNonEmpty(c.empty_message) || getUiText('step_4.gift_card_empty', 'Введите код.'),
 			successMessage: trimNonEmpty(g.success_message) || trimNonEmpty(c.success_message) || getUiText('step_4.gift_card_success', 'Код применён.'),
 			errorMessage: trimNonEmpty(g.error_message) || trimNonEmpty(c.error_message) || getUiText('step_4.gift_card_error', 'Не удалось применить код.')
+		};
+	}
+
+	function isGiftCardPeerNextToPaymentConfigured() {
+		var cfg = getStepFourConfig();
+		var g = cfg.gift_card_block || {};
+		return g.peer_next_to_payment !== false;
+	}
+
+	function isGiftCardPwRuntimeAvailable() {
+		return Boolean(window.mpCcCheckout && window.mpCcCheckout.giftCardIntegrationAvailable);
+	}
+
+	function isGiftCardRemoveAllowed() {
+		var cfg = getStepFourConfig();
+		var g = cfg.gift_card_block || {};
+		return g.allow_remove_applied !== false;
+	}
+
+	function shouldHideGiftChipsInCouponBlock(state, opts) {
+		if (!isGiftCardPeerNextToPaymentConfigured()) {
+			return false;
+		}
+		if (opts && opts.cartStep === true) {
+			return false;
+		}
+		var cfg = getStepFourConfig();
+		var layout = cfg.discount_layout && typeof cfg.discount_layout === 'object' ? cfg.discount_layout : {};
+		var placement = trimNonEmpty(layout.placement) || 'step_4';
+		return placement === 'step_4';
+	}
+
+	function getGiftCardPeerCopy() {
+		var cfg = getStepFourConfig();
+		var g = cfg.gift_card_block || {};
+		var base = getCouponCopy();
+		var cardTitle = trimNonEmpty(g.card_title) || trimNonEmpty(g.title) || base.title;
+		var cardSubtitle = trimNonEmpty(g.card_subtitle) || trimNonEmpty(g.intro) || base.intro;
+		var unavailable = trimNonEmpty(g.unavailable_message)
+			|| getUiText('step_4.gift_card_peer_unavailable', 'Подарочные карты на этом сайте сейчас недоступны.');
+		return {
+			cardTitle: cardTitle,
+			cardSubtitle: cardSubtitle,
+			inputLabel: base.inputLabel,
+			placeholder: base.placeholder,
+			applyLabel: base.applyLabel,
+			emptyMessage: base.emptyMessage,
+			successMessage: base.successMessage,
+			errorMessage: base.errorMessage,
+			unavailableMessage: unavailable
 		};
 	}
 
@@ -2168,6 +2223,91 @@
 		state.frontendStore.payment.gatewayCompatIssue = '';
 	}
 
+	function buildGiftCardPeerCardHtml(state) {
+		if (!isGiftCardPeerNextToPaymentConfigured()) {
+			return '';
+		}
+		ensureDiscountDefaults(state);
+		var copy = getGiftCardPeerCopy();
+		var pwOk = isGiftCardPwRuntimeAvailable();
+		var cartSummary = state.frontendStore && state.frontendStore.cart && state.frontendStore.cart.summary && typeof state.frontendStore.cart.summary === 'object'
+			? state.frontendStore.cart.summary
+			: {};
+		var appliedGiftCards = Array.isArray(cartSummary.applied_gift_cards) ? cartSummary.applied_gift_cards : [];
+		var rt = state.frontendStore && state.frontendStore.discounts && state.frontendStore.discounts.gift_card_runtime
+			? state.frontendStore.discounts.gift_card_runtime
+			: { code: '', state: 'empty', message: '' };
+		var code = String(rt.code || '');
+		var runtimeState = String(rt.state || 'empty');
+		var msg = trimNonEmpty(rt.message);
+		var hasApplied = appliedGiftCards.length > 0;
+		var styles = getStepFourConfig().discount_block_styles || {};
+		var stateClass = String(styles.state_empty || 'default');
+		if (runtimeState === 'loading') {
+			stateClass = 'busy';
+		} else if (hasApplied || runtimeState === 'success') {
+			stateClass = String(styles.state_success || 'success');
+		} else if (runtimeState === 'error') {
+			stateClass = String(styles.state_error || 'error');
+		}
+		var artMap = window.mpCcCheckout && window.mpCcCheckout.paymentCardArt ? window.mpCcCheckout.paymentCardArt : {};
+		var giftArt = artMap && artMap.gift_card ? String(artMap.gift_card) : '';
+		var html = '';
+		html += '<article class="mp-cc-gift-peer mp-cc-gift-peer--' + escapeHtml(stateClass) + (!pwOk ? ' mp-cc-gift-peer--unavailable' : '') + '" data-gift-peer-card="1">';
+		html += '<div class="mp-cc-gift-peer__shell">';
+		html += '<div class="mp-cc-gift-peer__shell-bg" aria-hidden="true"></div>';
+		if (giftArt) {
+			html += '<img class="mp-cc-gift-peer__shell-art" src="' + escapeHtml(giftArt) + '" alt="" decoding="async" loading="lazy" />';
+		}
+		html += '<div class="mp-cc-gift-peer__shell-body">';
+		html += '<span class="mp-cc-payment-card__mark">' + escapeHtml(getUiText('step_4.gift_card_peer_badge', 'Подарок')) + '</span>';
+		html += '<p class="mp-cc-gift-peer__headline">' + escapeHtml(copy.cardTitle) + '</p>';
+		if (pwOk && copy.cardSubtitle) {
+			html += '<p class="mp-cc-gift-peer__lede">' + escapeHtml(copy.cardSubtitle) + '</p>';
+		}
+		if (!pwOk) {
+			html += '<p class="mp-cc-gift-peer__blocked">' + escapeHtml(copy.unavailableMessage) + '</p>';
+		}
+		html += '</div></div>';
+		if (pwOk) {
+			html += '<div class="mp-cc-gift-peer__inlay">';
+			if (hasApplied) {
+				html += '<div class="mp-cc-gift-peer__applied" data-gift-peer-applied="1">';
+				for (var gi = 0; gi < appliedGiftCards.length; gi += 1) {
+					var gc = String(appliedGiftCards[gi] || '');
+					if (!gc) {
+						continue;
+					}
+					html += '<span class="mp-cc-gift-peer__chip">';
+					html += '<span class="mp-cc-gift-peer__chip-code">' + escapeHtml(gc) + '</span>';
+					if (isGiftCardRemoveAllowed()) {
+						html += '<button type="button" class="mp-cc-gift-peer__chip-remove" data-gift-card-remove="1" data-code="' + escapeHtml(gc) + '" aria-label="' + escapeHtml(getUiText('step_4.gift_card_remove', 'Снять подарочную карту')) + '">×</button>';
+					}
+					html += '</span>';
+				}
+				html += '</div>';
+			}
+			if (!hasApplied) {
+				html += '<div class="mp-cc-gift-peer__controls">';
+				html += '<label class="mp-cc-visually-hidden" for="mp-cc-gift-peer-code">' + escapeHtml(copy.inputLabel) + '</label>';
+				var inpClass = 'mp-cc-input mp-cc-gift-peer__input' + (runtimeState === 'error' ? ' is-invalid' : '');
+				var busyAttr = runtimeState === 'loading' ? ' disabled' : '';
+				html += '<input type="text" class="' + escapeHtml(inpClass) + '" id="mp-cc-gift-peer-code" data-gift-card-peer-code="1" value="' + escapeHtml(code) + '" placeholder="' + escapeHtml(copy.placeholder) + '" autocomplete="off"' + busyAttr + '/>';
+				html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--next mp-cc-gift-peer__apply" data-gift-card-peer-apply="1"' + busyAttr + '>' + escapeHtml(copy.applyLabel) + '</button>';
+				html += '</div>';
+			}
+			if (msg) {
+				var errCls = runtimeState === 'error' ? ' mp-cc-gift-peer__hint--error' : (runtimeState === 'success' ? ' mp-cc-gift-peer__hint--success' : '');
+				html += '<p class="mp-cc-gift-peer__hint' + errCls + '" data-gift-card-peer-message="1">' + escapeHtml(msg) + '</p>';
+			} else if (hasApplied && runtimeState !== 'error') {
+				html += '<p class="mp-cc-gift-peer__hint mp-cc-gift-peer__hint--success" data-gift-card-peer-message="1">' + escapeHtml(copy.successMessage) + '</p>';
+			}
+			html += '</div>';
+		}
+		html += '</article>';
+		return html;
+	}
+
 	function buildPaymentGatewaysHtml(state) {
 		var cfg = getStepFourConfig();
 		var pb = cfg.payment_block && typeof cfg.payment_block === 'object' ? cfg.payment_block : {};
@@ -2181,6 +2321,13 @@
 			htmlEmpty += '<h4 class="mp-cc-payment__title" id="mp-cc-payment-title">' + escapeHtml(emptyTitle) + '</h4>';
 			htmlEmpty += '</header>';
 			htmlEmpty += '<p class="mp-cc-field-error" role="alert">' + escapeHtml(emptyMsg) + '</p>';
+			var peerWhenEmpty = buildGiftCardPeerCardHtml(state);
+			if (trimNonEmpty(peerWhenEmpty)) {
+				htmlEmpty += '<div class="mp-cc-payment__deck mp-cc-payment__deck--solo-gift">';
+				htmlEmpty += '<aside class="mp-cc-payment__deck-aside" aria-label="' + escapeHtml(getGiftCardPeerCopy().cardTitle) + '">';
+				htmlEmpty += peerWhenEmpty;
+				htmlEmpty += '</aside></div>';
+			}
 			htmlEmpty += '</section>';
 			return htmlEmpty;
 		}
@@ -2218,6 +2365,12 @@
 			html += '<p class="mp-cc-payment__intro">' + escapeHtml(intro) + '</p>';
 		}
 		html += '</header>';
+		var peerHtml = buildGiftCardPeerCardHtml(state);
+		var hasPeer = trimNonEmpty(peerHtml);
+		if (hasPeer) {
+			html += '<div class="mp-cc-payment__deck">';
+			html += '<div class="mp-cc-payment__deck-main">';
+		}
 		html += '<div class="mp-cc-payment__grid" role="group" aria-label="' + escapeHtml(getUiText('step_4.payment_method_group_label', 'Выбор способа оплаты')) + '" style="--mp-cc-payment-cols:' + escapeHtml(String(Number(layout.desktop_columns || 2))) + ';--mp-cc-payment-cols-tablet:' + escapeHtml(String(Number(layout.tablet_columns || 2))) + ';--mp-cc-payment-cols-mobile:' + escapeHtml(String(Number(layout.mobile_columns || 1))) + ';--mp-cc-payment-gap:' + escapeHtml(trimNonEmpty(layout.grid_gap) || '0.6rem 0.75rem') + ';">';
 		var gi;
 		for (gi = 0; gi < gateways.length; gi += 1) {
@@ -2258,6 +2411,11 @@
 			}
 		}
 		html += '</div>';
+		if (hasPeer) {
+			html += '</div>';
+			html += '<aside class="mp-cc-payment__deck-aside" aria-label="' + escapeHtml(getGiftCardPeerCopy().cardTitle) + '">' + peerHtml + '</aside>';
+			html += '</div>';
+		}
 		if (surface === 'visual') {
 			html += buildPaymentGatewayFieldsBlock(state, selected, surface, 'below_grid');
 		}
@@ -2497,6 +2655,8 @@
 			? cartSummary.applied_coupons
 			: (state.frontendStore && state.frontendStore.discounts && Array.isArray(state.frontendStore.discounts.coupons) ? state.frontendStore.discounts.coupons : []);
 		var appliedGiftCards = Array.isArray(cartSummary.applied_gift_cards) ? cartSummary.applied_gift_cards : [];
+		var hideGiftInCoupon = shouldHideGiftChipsInCouponBlock(state, opts);
+		var allowGiftRm = isGiftCardRemoveAllowed();
 		var code = String(rt.code || '');
 		var runtimeState = String(rt.state || 'empty');
 		var msg = trimNonEmpty(rt.message);
@@ -2529,7 +2689,7 @@
 			}
 			html += '</div>';
 		}
-		if (appliedGiftCards.length) {
+		if (!hideGiftInCoupon && appliedGiftCards.length) {
 			html += '<div class="mp-cc-coupon__applied mp-cc-coupon__applied--gift" data-gift-card-list="1">';
 			for (var gi = 0; gi < appliedGiftCards.length; gi += 1) {
 				var gc = String(appliedGiftCards[gi] || '');
@@ -2538,7 +2698,9 @@
 				}
 				html += '<span class="mp-cc-coupon__chip mp-cc-coupon__chip--gift">';
 				html += '<span>' + escapeHtml(gc) + '</span>';
-				html += '<button type="button" class="mp-cc-coupon__chip-remove" data-gift-card-remove="1" data-code="' + escapeHtml(gc) + '" aria-label="' + escapeHtml(getUiText('step_4.gift_card_remove', 'Снять подарочную карту')) + '">×</button>';
+				if (allowGiftRm) {
+					html += '<button type="button" class="mp-cc-coupon__chip-remove" data-gift-card-remove="1" data-code="' + escapeHtml(gc) + '" aria-label="' + escapeHtml(getUiText('step_4.gift_card_remove', 'Снять подарочную карту')) + '">×</button>';
+				}
 				html += '</span>';
 			}
 			html += '</div>';
@@ -3627,6 +3789,7 @@
 			nextFlow = {};
 		}
 		var prevRuntime = state.frontendStore && state.frontendStore.discounts ? state.frontendStore.discounts.coupon_runtime : null;
+		var prevGiftRuntime = state.frontendStore && state.frontendStore.discounts ? state.frontendStore.discounts.gift_card_runtime : null;
 		var prevPaymentFields = state.frontendStore && state.frontendStore.payment ? {
 			html: state.frontendStore.payment.fieldsHtml,
 			gatewayId: state.frontendStore.payment.fieldsGatewayId,
@@ -3674,6 +3837,9 @@
 		ensureDiscountDefaults(state);
 		if (prevRuntime && typeof prevRuntime === 'object') {
 			state.frontendStore.discounts.coupon_runtime = $.extend({}, prevRuntime);
+		}
+		if (prevGiftRuntime && typeof prevGiftRuntime === 'object') {
+			state.frontendStore.discounts.gift_card_runtime = $.extend({}, prevGiftRuntime);
 		}
 		applyScenarioFieldAvailability(state);
 		var dateBox = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.date || {}) : {};
@@ -5928,6 +6094,11 @@
 						rt.state = 'success';
 						rt.message = trimNonEmpty(data.message) || copy.successMessage;
 						discounts.coupon_runtime = rt;
+						var grt = discounts.gift_card_runtime || { code: '', state: 'empty', message: '' };
+						grt.code = '';
+						grt.state = 'success';
+						grt.message = trimNonEmpty(data.message) || getGiftCardPeerCopy().successMessage;
+						discounts.gift_card_runtime = grt;
 						state.frontendStore.discounts = discounts;
 						if (data.flow || data.cart) {
 							syncFromFlow(state, data.flow || {}, data.cart || {});
@@ -5988,6 +6159,9 @@
 		});
 
 		$app.off('click.mpCcRemoveGift', '[data-gift-card-remove]').on('click.mpCcRemoveGift', '[data-gift-card-remove]', function () {
+			if (!isGiftCardRemoveAllowed()) {
+				return;
+			}
 			var raw = String($(this).attr('data-code') || '');
 			var rmCode = trimNonEmpty(raw);
 			if (!rmCode) {
@@ -6001,6 +6175,13 @@
 				if (data.flow || data.cart) {
 					syncFromFlow(state, data.flow || {}, data.cart || {});
 				}
+				var discountsAfter = state.frontendStore.discounts || {};
+				var grtClear = discountsAfter.gift_card_runtime || { code: '', state: 'empty', message: '' };
+				grtClear.state = 'empty';
+				grtClear.message = '';
+				grtClear.code = '';
+				discountsAfter.gift_card_runtime = grtClear;
+				state.frontendStore.discounts = discountsAfter;
 				render(state, $app);
 			}).fail(function (xhr) {
 				var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
@@ -6009,6 +6190,76 @@
 				}
 				render(state, $app);
 				notify(trimNonEmpty(payload.message) || getUiText('step_4.gift_card_remove_error', 'Не удалось снять подарочную карту.'), 'error');
+			});
+		});
+
+		$app.off('input.mpCcGiftPeer', '[data-gift-card-peer-code]').on('input.mpCcGiftPeer', '[data-gift-card-peer-code]', function () {
+			ensureDiscountDefaults(state);
+			var discounts = state.frontendStore.discounts || {};
+			var rt = discounts.gift_card_runtime || { code: '', state: 'empty', message: '' };
+			rt.code = String($(this).val() || '');
+			if (rt.state === 'error' || rt.state === 'success') {
+				rt.state = 'empty';
+				rt.message = '';
+			}
+			discounts.gift_card_runtime = rt;
+			state.frontendStore.discounts = discounts;
+		});
+
+		$app.off('keydown.mpCcGiftPeer', '[data-gift-card-peer-code]').on('keydown.mpCcGiftPeer', '[data-gift-card-peer-code]', function (ev) {
+			if (ev.key === 'Enter') {
+				ev.preventDefault();
+				$(this).closest('[data-gift-peer-card]').find('[data-gift-card-peer-apply]').trigger('click');
+			}
+		});
+
+		$app.off('click.mpCcGiftPeerApply', '[data-gift-card-peer-apply]').on('click.mpCcGiftPeerApply', '[data-gift-card-peer-apply]', function () {
+			if (!isGiftCardPwRuntimeAvailable()) {
+				return;
+			}
+			ensureDiscountDefaults(state);
+			var discounts = state.frontendStore.discounts || {};
+			var rt = discounts.gift_card_runtime || { code: '', state: 'empty', message: '' };
+			var copy = getGiftCardPeerCopy();
+			var code = trimNonEmpty(rt.code);
+			if (!code) {
+				rt.state = 'error';
+				rt.message = copy.emptyMessage;
+				discounts.gift_card_runtime = rt;
+				state.frontendStore.discounts = discounts;
+				render(state, $app);
+				return;
+			}
+			rt.state = 'loading';
+			rt.message = '';
+			discounts.gift_card_runtime = rt;
+			state.frontendStore.discounts = discounts;
+			render(state, $app);
+			postCheckout('apply_gift_card', {
+				gift_card_code: code,
+				context_id: state.flowContextId
+			}).then(function (response) {
+				var data = response && response.data ? response.data : {};
+				rt.state = 'success';
+				rt.message = trimNonEmpty(data.message) || copy.successMessage;
+				rt.code = '';
+				discounts.gift_card_runtime = rt;
+				state.frontendStore.discounts = discounts;
+				if (data.flow || data.cart) {
+					syncFromFlow(state, data.flow || {}, data.cart || {});
+				}
+				render(state, $app);
+			}).fail(function (xhr) {
+				var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
+				rt.state = 'error';
+				rt.message = trimNonEmpty(payload.message) || copy.errorMessage;
+				discounts.gift_card_runtime = rt;
+				state.frontendStore.discounts = discounts;
+				if (payload.flow || payload.cart) {
+					syncFromFlow(state, payload.flow || {}, payload.cart || {});
+				}
+				render(state, $app);
+				notify(rt.message, 'error');
 			});
 		});
 

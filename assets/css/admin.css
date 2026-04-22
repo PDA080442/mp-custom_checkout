@@ -936,3 +936,79 @@
 	font-size: 12px;
 	color: #4b5563;
 }
+
+/* Step 4 — gift card peer preview (21.2) */
+.mp-cc-admin-gift-peer-preview__mock {
+	margin-top: 10px;
+	border-radius: 10px;
+	overflow: hidden;
+	border: 1px solid #e5e7eb;
+	max-width: 320px;
+	background: #fff;
+	box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
+}
+
+.mp-cc-admin-gift-peer-preview__shell {
+	position: relative;
+	padding: 12px 14px 10px;
+	color: #fdf2f8;
+	background: linear-gradient(125deg, #be185d 0%, #831843 45%, #4c0519 100%);
+}
+
+.mp-cc-admin-gift-peer-preview__badge {
+	display: inline-block;
+	font-size: 10px;
+	font-weight: 800;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	opacity: 0.95;
+}
+
+.mp-cc-admin-gift-peer-preview__t {
+	margin: 6px 0 0;
+	font-size: 14px;
+	font-weight: 700;
+	line-height: 1.25;
+}
+
+.mp-cc-admin-gift-peer-preview__s {
+	margin: 4px 0 0;
+	font-size: 12px;
+	line-height: 1.35;
+	opacity: 0.9;
+}
+
+.mp-cc-admin-gift-peer-preview__inlay {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 10px 12px;
+	background: #f9fafb;
+	border-top: 1px solid #e5e7eb;
+}
+
+.mp-cc-admin-gift-peer-preview__ph {
+	flex: 1;
+	height: 30px;
+	border-radius: 6px;
+	border: 1px dashed #cbd5e1;
+	background: #fff;
+}
+
+.mp-cc-admin-gift-peer-preview__btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 6px 12px;
+	border-radius: 6px;
+	font-size: 12px;
+	font-weight: 600;
+	color: #fff;
+	background: #4f46e5;
+}
+
+.mp-cc-admin-preview__muted {
+	margin: 8px 0 0;
+	font-size: 12px;
+	color: #6b7280;
+}
