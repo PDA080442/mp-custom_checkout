@@ -2286,6 +2286,62 @@ body.mp-custom-checkout form.checkout.woocommerce-checkout {
 	animation: mp-cc-step-screen-in 240ms ease;
 }
 
+.mp-cc-shipping-catalog {
+	margin-top: 1rem;
+}
+
+.mp-cc-shipping-catalog__title {
+	margin: 0 0 0.65rem;
+	font-size: 1rem;
+	font-weight: 700;
+}
+
+.mp-cc-shipping-catalog__list {
+	display: grid;
+	gap: 0.55rem;
+}
+
+.mp-cc-shipping-card,
+.mp-cc-shipping-tariff {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 0.55rem;
+	width: 100%;
+	padding: 0.7rem 0.8rem;
+	border: 1px solid var(--mp-cc-color-border);
+	border-radius: 0.8rem;
+	background: #fff;
+	text-align: left;
+	cursor: pointer;
+}
+
+.mp-cc-shipping-card.is-active,
+.mp-cc-shipping-tariff.is-active {
+	border-color: var(--mp-cc-color-accent);
+	box-shadow: 0 0 0 1px rgba(73, 104, 255, 0.15);
+}
+
+.mp-cc-shipping-card__title,
+.mp-cc-shipping-tariff__title {
+	display: block;
+	font-weight: 600;
+}
+
+.mp-cc-shipping-card__meta,
+.mp-cc-shipping-tariff__meta {
+	display: block;
+	font-size: 0.9rem;
+	color: var(--mp-cc-color-text-muted);
+	white-space: nowrap;
+}
+
+.mp-cc-shipping-card__tariffs {
+	margin: 0.4rem 0 0.7rem 0.8rem;
+	display: grid;
+	gap: 0.45rem;
+}
+
 @media (max-width: 767px) {
 	.mp-cc-v2-shell-head {
 		align-items: flex-start;
