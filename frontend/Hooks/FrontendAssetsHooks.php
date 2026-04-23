@@ -13,6 +13,7 @@ use MP\CustomCheckout\Integrations\WooCommerce\GiftCardIntegration;
 use MP\CustomCheckout\Routing\CheckoutScenarioRules;
 use MP\CustomCheckout\Settings\DefaultLabelsRegistry;
 use MP\CustomCheckout\Settings\FeatureFlagResolver;
+use MP\CustomCheckout\Settings\MotionSettingsResolver;
 use MP\CustomCheckout\Settings\OptionKeys;
 use MP\CustomCheckout\Settings\SafeSettingsResolver;
 use MP\CustomCheckout\Settings\ScenarioStepRegistry;
@@ -277,100 +278,16 @@ final class FrontendAssetsHooks {
 	 */
 	private static function motion_config_for_runtime(): array {
 		$raw = SafeSettingsResolver::get_section( OptionKeys::SECTION_MOTION );
-		if ( empty( $raw ) || ! is_array( $raw ) ) {
+		if ( ! is_array( $raw ) ) {
 			$raw = array();
 		}
-		$defaults = \MP\CustomCheckout\Settings\DefaultMotionSettingsRegistry::all();
-		$merged   = array_replace_recursive( $defaults, $raw );
-
-		$durations = isset( $merged['durations_ms'] ) && is_array( $merged['durations_ms'] ) ? $merged['durations_ms'] : array();
-		$ease      = isset( $merged['ease'] ) && is_array( $merged['ease'] ) ? $merged['ease'] : array();
-		$delay     = isset( $merged['delay_ms'] ) && is_array( $merged['delay_ms'] ) ? $merged['delay_ms'] : array();
-		$throttle  = isset( $merged['throttle'] ) && is_array( $merged['throttle'] ) ? $merged['throttle'] : array();
-		$toggles   = isset( $merged['toggles'] ) && is_array( $merged['toggles'] ) ? $merged['toggles'] : array();
-
-		$san_durations = array();
-		foreach ( array( 'step_transition', 'rail', 'step_screen', 'field_state', 'summary_numbers', 'skeleton_shimmer' ) as $key ) {
-			$san_durations[ $key ] = self::clamp_int( isset( $durations[ $key ] ) ? (int) $durations[ $key ] : 0, 0, 4000 );
-		}
-
-		return array(
-			'respect_prefers_reduced_motion' => ! empty( $merged['respect_prefers_reduced_motion'] ),
-			'force_reduced_motion'           => ! empty( $merged['force_reduced_motion'] ),
-			'instrumentation_enabled'        => ! empty( $merged['instrumentation_enabled'] ),
-			'throttle'                       => array(
-				'enabled'           => ! isset( $throttle['enabled'] ) || ! empty( $throttle['enabled'] ),
-				'min_interval_ms' => self::clamp_int( isset( $throttle['min_interval_ms'] ) ? (int) $throttle['min_interval_ms'] : 120, 0, 2000 ),
-			),
-			'durations_ms'                   => $san_durations,
-			'ease'                           => array(
-				'standard'   => self::sanitize_motion_easing( isset( $ease['standard'] ) ? (string) $ease['standard'] : '' ),
-				'emphasized' => self::sanitize_motion_easing( isset( $ease['emphasized'] ) ? (string) $ease['emphasized'] : '' ),
-			),
-			'delay_ms'                       => array(
-				'summary_stagger_base' => self::clamp_int( isset( $delay['summary_stagger_base'] ) ? (int) $delay['summary_stagger_base'] : 0, 0, 2000 ),
-			),
-			'toggles'                        => array(
-				'rail'                    => ! isset( $toggles['rail'] ) || ! empty( $toggles['rail'] ),
-				'step_reveal'             => ! isset( $toggles['step_reveal'] ) || ! empty( $toggles['step_reveal'] ),
-				'field_state'             => ! isset( $toggles['field_state'] ) || ! empty( $toggles['field_state'] ),
-				'summary_numbers'         => ! isset( $toggles['summary_numbers'] ) || ! empty( $toggles['summary_numbers'] ),
-				'step_transition_overlay' => ! isset( $toggles['step_transition_overlay'] ) || ! empty( $toggles['step_transition_overlay'] ),
-			),
-		);
+		return MotionSettingsResolver::runtime_payload( $raw );
 	}
 
 	/**
 	 * CSS custom properties для #mp-cc-checkout (длительности и easing в безопасном виде).
 	 */
 	private static function build_motion_runtime_css(): string {
-		$cfg = self::motion_config_for_runtime();
-		$dur = isset( $cfg['durations_ms'] ) && is_array( $cfg['durations_ms'] ) ? $cfg['durations_ms'] : array();
-		$ease = isset( $cfg['ease'] ) && is_array( $cfg['ease'] ) ? $cfg['ease'] : array();
-
-		$ms_to_s = static function ( int $ms ): string {
-			$ms = max( 0, $ms );
-			return (string) round( $ms / 1000, 4 ) . 's';
-		};
-
-		$rules   = array();
-		$rules[] = '--mp-cc-motion-duration-step_transition:' . $ms_to_s( (int) ( $dur['step_transition'] ?? 180 ) ) . ';';
-		$rules[] = '--mp-cc-motion-duration-rail:' . $ms_to_s( (int) ( $dur['rail'] ?? 420 ) ) . ';';
-		$rules[] = '--mp-cc-motion-duration-step_screen:' . $ms_to_s( (int) ( $dur['step_screen'] ?? 200 ) ) . ';';
-		$rules[] = '--mp-cc-motion-duration-field:' . $ms_to_s( (int) ( $dur['field_state'] ?? 220 ) ) . ';';
-		$rules[] = '--mp-cc-motion-duration-summary:' . $ms_to_s( (int) ( $dur['summary_numbers'] ?? 340 ) ) . ';';
-		$rules[] = '--mp-cc-mobile-motion-duration:' . $ms_to_s( (int) ( $dur['step_screen'] ?? 200 ) ) . ';';
-		$rules[] = '--mp-cc-motion-ease-standard:' . self::sanitize_motion_easing( (string) ( $ease['standard'] ?? '' ) ) . ';';
-		$rules[] = '--mp-cc-motion-ease-emphasized:' . self::sanitize_motion_easing( (string) ( $ease['emphasized'] ?? '' ) ) . ';';
-		$rules[] = '--mp-cc-skeleton-shimmer-duration:' . $ms_to_s( (int) ( $dur['skeleton_shimmer'] ?? 1100 ) ) . ';';
-
-		return '#mp-cc-checkout{' . implode( '', $rules ) . '}';
-	}
-
-	/**
-	 * @param int $value Value.
-	 * @param int $min   Min.
-	 * @param int $max   Max.
-	 */
-	private static function clamp_int( int $value, int $min, int $max ): int {
-		if ( $value < $min ) {
-			return $min;
-		}
-		if ( $value > $max ) {
-			return $max;
-		}
-		return $value;
-	}
-
-	private static function sanitize_motion_easing( string $value ): string {
-		$value = trim( wp_strip_all_tags( $value ) );
-		$value = str_replace( array( ';', '{', '}', '"', "'", "\n", "\r", "\t" ), '', $value );
-		if ( '' === $value ) {
-			return 'ease';
-		}
-		if ( ! preg_match( '/^[a-z0-9%,.\\s()\\-]+$/i', $value ) ) {
-			return 'ease';
-		}
-		return $value;
+		return MotionSettingsResolver::build_inline_css( self::motion_config_for_runtime() );
 	}
 }

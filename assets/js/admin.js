@@ -2054,6 +2054,60 @@
 			applyDefaultsToForm(defaultsMap);
 			rerender();
 		});
+		function validateMotionFormBeforeSave() {
+			var errs = [];
+			var keys = ['step_transition', 'rail', 'step_screen', 'field_state', 'summary_numbers', 'skeleton_shimmer'];
+			keys.forEach(function (k) {
+				var el = document.getElementsByName('mp_custom_checkout_settings[motion][durations_ms][' + k + ']')[0];
+				if (!el) {
+					return;
+				}
+				var n = parseInt(String(el.value || ''), 10);
+				if (!Number.isFinite(n) || n < 0 || n > 4000) {
+					errs.push('durations_ms.' + k + ': 0–4000 мс');
+				}
+			});
+			var useDesk = document.getElementsByName('mp_custom_checkout_settings[motion][mobile][use_desktop_durations]')[0];
+			if (!useDesk || !useDesk.checked) {
+				keys.forEach(function (k) {
+					var el = document.getElementsByName('mp_custom_checkout_settings[motion][mobile][durations_ms][' + k + ']')[0];
+					if (!el) {
+						return;
+					}
+					var n = parseInt(String(el.value || ''), 10);
+					if (!Number.isFinite(n) || n < 0 || n > 4000) {
+						errs.push('mobile.durations_ms.' + k + ': 0–4000 мс');
+					}
+				});
+			}
+			var profEl = document.getElementsByName('mp_custom_checkout_settings[motion][ease_profile]')[0];
+			if (profEl) {
+				var p = String(profEl.value || '').trim().toLowerCase();
+				var allowed = (window.mpCcAdmin && window.mpCcAdmin.motionEasePresetIds) ? window.mpCcAdmin.motionEasePresetIds.concat(['custom']) : ['snappy', 'balanced', 'smooth', 'custom'];
+				if (allowed.indexOf(p) < 0) {
+					errs.push('ease_profile: допустимо ' + allowed.join(', '));
+				}
+				if (p === 'custom') {
+					var s = document.getElementsByName('mp_custom_checkout_settings[motion][ease][standard]')[0];
+					var e = document.getElementsByName('mp_custom_checkout_settings[motion][ease][emphasized]')[0];
+					if (!s || !String(s.value || '').trim()) {
+						errs.push('ease.standard обязателен для custom');
+					}
+					if (!e || !String(e.value || '').trim()) {
+						errs.push('ease.emphasized обязателен для custom');
+					}
+				}
+			}
+			var thEl = document.getElementsByName('mp_custom_checkout_settings[motion][throttle][min_interval_ms]')[0];
+			if (thEl) {
+				var t = parseInt(String(thEl.value || ''), 10);
+				if (!Number.isFinite(t) || t < 0 || t > 2000) {
+					errs.push('throttle.min_interval_ms: 0–2000');
+				}
+			}
+			return errs;
+		}
+
 		$(document).on('submit', 'form', function (event) {
 			var activeSection = detectActiveSettingsSection();
 			if (activeSection === 'delivery') {
@@ -2061,6 +2115,14 @@
 				if (deliveryErrors.length) {
 					event.preventDefault();
 					window.alert('Проверьте конфигурацию доставки:\n- ' + deliveryErrors.join('\n- '));
+					return;
+				}
+			}
+			if ($('[name^="mp_custom_checkout_settings[motion]"]').length) {
+				var motionErrors = validateMotionFormBeforeSave();
+				if (motionErrors.length) {
+					event.preventDefault();
+					window.alert('Проверьте раздел «Анимации»:\n- ' + motionErrors.join('\n- '));
 					return;
 				}
 			}
@@ -2077,5 +2139,126 @@
 		$(document).on('click', '.mp-cc-admin-shell__tab', function () {
 			window.setTimeout(refreshDeliveryAdminUi, 0);
 		});
+	});
+
+	$(function () {
+		var $preview = $('[data-mp-cc-motion-preview="1"]');
+		if (!$preview.length) {
+			return;
+		}
+		var $stage = $preview.find('[data-mp-cc-motion-stage="1"]');
+		var $rail = $preview.find('[data-mp-cc-motion-rail-fill="1"]');
+		var $panel = $preview.find('[data-mp-cc-motion-panel="1"]');
+		var $amount = $preview.find('[data-mp-cc-motion-amount="1"]');
+		var durationKeys = ['step_transition', 'rail', 'step_screen', 'field_state', 'summary_numbers', 'skeleton_shimmer'];
+
+		function motionInputName(branch, key) {
+			return 'mp_custom_checkout_settings[motion][' + branch + '][' + key + ']';
+		}
+
+		function readIntByName(name, fallback) {
+			var el = document.getElementsByName(name)[0];
+			var n = parseInt(String(el && el.value != null ? el.value : ''), 10);
+			if (!Number.isFinite(n)) {
+				return fallback;
+			}
+			return Math.max(0, Math.min(4000, n));
+		}
+
+		function resolveEaseFromForm() {
+			var profileEl = document.getElementsByName('mp_custom_checkout_settings[motion][ease_profile]')[0];
+			var profile = profileEl ? String(profileEl.value || '').trim().toLowerCase() : 'balanced';
+			var map = (window.mpCcAdmin && window.mpCcAdmin.motionEasePresetsMap) ? window.mpCcAdmin.motionEasePresetsMap : {};
+			if (profile !== 'custom' && map[profile] && map[profile].standard) {
+				return String(map[profile].standard || 'ease');
+			}
+			var stdEl = document.getElementsByName('mp_custom_checkout_settings[motion][ease][standard]')[0];
+			return String(stdEl && stdEl.value ? stdEl.value : 'ease');
+		}
+
+		function applyPreviewCssFromForm() {
+			if (!$stage.length) {
+				return;
+			}
+			var railMs = readIntByName(motionInputName('durations_ms', 'rail'), 420);
+			var panelMs = readIntByName(motionInputName('durations_ms', 'step_screen'), 200);
+			var fieldMs = readIntByName(motionInputName('durations_ms', 'field_state'), 220);
+			var sumMs = readIntByName(motionInputName('durations_ms', 'summary_numbers'), 340);
+			var ease = resolveEaseFromForm();
+			var railS = Math.max(0, railMs / 1000).toFixed(4) + 's';
+			var panelS = Math.max(0, panelMs / 1000).toFixed(4) + 's';
+			var sumS = Math.max(0, sumMs / 1000).toFixed(4) + 's';
+			$stage[0].style.setProperty('--mp-cc-ap-rail', railS);
+			$stage[0].style.setProperty('--mp-cc-ap-panel', panelS);
+			$stage[0].style.setProperty('--mp-cc-ap-field', Math.max(0, fieldMs / 1000).toFixed(4) + 's');
+			$stage[0].style.setProperty('--mp-cc-ap-sum', sumS);
+			$stage[0].style.setProperty('--mp-cc-ap-ease', ease);
+		}
+
+		function applyDesktopPreset(presetId) {
+			var raw = $preview.attr('data-motion-duration-presets') || '{}';
+			var presets = {};
+			try {
+				presets = JSON.parse(raw) || {};
+			} catch (e0) {
+				presets = {};
+			}
+			var pack = presets[presetId];
+			if (!pack || typeof pack !== 'object') {
+				return;
+			}
+			durationKeys.forEach(function (key) {
+				if (!Object.prototype.hasOwnProperty.call(pack, key)) {
+					return;
+				}
+				var el = document.getElementsByName(motionInputName('durations_ms', key))[0];
+				if (el) {
+					el.value = String(pack[key]);
+				}
+			});
+			applyPreviewCssFromForm();
+		}
+
+		function playPreview() {
+			applyPreviewCssFromForm();
+			$rail.removeClass('is-mp-cc-ap-play');
+			$panel.removeClass('is-mp-cc-ap-play');
+			$amount.removeClass('is-mp-cc-ap-play');
+			window.requestAnimationFrame(function () {
+				$rail.addClass('is-mp-cc-ap-play');
+				$panel.addClass('is-mp-cc-ap-play');
+				$amount.addClass('is-mp-cc-ap-play');
+			});
+			var railMs = readIntByName(motionInputName('durations_ms', 'rail'), 420);
+			var panelMs = readIntByName(motionInputName('durations_ms', 'step_screen'), 200);
+			var sumMs = readIntByName(motionInputName('durations_ms', 'summary_numbers'), 340);
+			var resetMs = Math.max(railMs, panelMs, sumMs) + 80;
+			window.setTimeout(function () {
+				$rail.removeClass('is-mp-cc-ap-play');
+				$panel.removeClass('is-mp-cc-ap-play');
+				$amount.removeClass('is-mp-cc-ap-play');
+			}, resetMs);
+		}
+
+		$preview.on('click', '[data-mp-cc-motion-preset]', function () {
+			var id = String($(this).attr('data-mp-cc-motion-preset') || '');
+			if (!id) {
+				return;
+			}
+			applyDesktopPreset(id);
+		});
+		$preview.on('click', '[data-mp-cc-motion-play]', function () {
+			playPreview();
+		});
+
+		$(document).on('input change', '.mp-cc-admin-shell input, .mp-cc-admin-shell textarea', function () {
+			var n = String(this.name || '');
+			if (n.indexOf('[motion]') < 0) {
+				return;
+			}
+			applyPreviewCssFromForm();
+		});
+
+		applyPreviewCssFromForm();
 	});
 })(jQuery);

@@ -24,6 +24,7 @@ final class DefaultMotionSettingsRegistry {
 			'respect_prefers_reduced_motion' => true,
 			'force_reduced_motion'           => false,
 			'instrumentation_enabled'        => false,
+			'ease_profile'                   => 'balanced',
 			'throttle'                       => array(
 				'enabled'           => true,
 				'min_interval_ms' => 120,
@@ -35,6 +36,17 @@ final class DefaultMotionSettingsRegistry {
 				'field_state'     => 220,
 				'summary_numbers' => 340,
 				'skeleton_shimmer'=> 1100,
+			),
+			'mobile'                         => array(
+				'use_desktop_durations' => true,
+				'durations_ms'          => array(
+					'step_transition' => 140,
+					'rail'            => 320,
+					'step_screen'     => 160,
+					'field_state'     => 180,
+					'summary_numbers' => 280,
+					'skeleton_shimmer'=> 900,
+				),
 			),
 			'ease'                           => array(
 				'standard'   => 'cubic-bezier(0.22, 1, 0.36, 1)',
