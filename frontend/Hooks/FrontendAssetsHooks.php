@@ -13,6 +13,8 @@ use MP\CustomCheckout\Integrations\WooCommerce\GiftCardIntegration;
 use MP\CustomCheckout\Routing\CheckoutScenarioRules;
 use MP\CustomCheckout\Settings\DefaultLabelsRegistry;
 use MP\CustomCheckout\Settings\FeatureFlagResolver;
+use MP\CustomCheckout\Settings\MotionSettingsResolver;
+use MP\CustomCheckout\Settings\OptionKeys;
 use MP\CustomCheckout\Settings\SafeSettingsResolver;
 use MP\CustomCheckout\Settings\ScenarioStepRegistry;
 
@@ -43,6 +45,7 @@ final class FrontendAssetsHooks {
 
 		wp_enqueue_style( self::HANDLE_STYLE, MP_CUSTOM_CHECKOUT_URL . 'assets/css/checkout-frontend.css', array(), $version );
 		wp_add_inline_style( self::HANDLE_STYLE, self::build_design_tokens_css() );
+		wp_add_inline_style( self::HANDLE_STYLE, self::build_motion_runtime_css() );
 
 		wp_enqueue_script( self::HANDLE_SCRIPT, MP_CUSTOM_CHECKOUT_URL . 'assets/js/checkout-frontend.js', self::script_dependencies(), $version, true );
 		$initial_context = isset( $GLOBALS['mp_cc_checkout_context'] ) && is_array( $GLOBALS['mp_cc_checkout_context'] )
@@ -78,6 +81,7 @@ final class FrontendAssetsHooks {
 				'pickupConfig' => PickupPointRegistry::config(),
 				'scenarioStepMap' => self::scenario_step_map(),
 				'designTokens' => self::design_tokens_for_runtime(),
+				'motion'       => self::motion_config_for_runtime(),
 				'paymentCardArt' => self::payment_card_art_urls(),
 				'giftCardIntegrationAvailable' => ( new GiftCardIntegration() )->is_pw_gift_cards_available(),
 			)
@@ -265,5 +269,25 @@ final class FrontendAssetsHooks {
 		$value = trim( wp_strip_all_tags( $value ) );
 		$value = str_replace( array( ';', '{', '}', "\n", "\r", "\t" ), '', $value );
 		return $value;
+	}
+
+	/**
+	 * Motion-конфиг для checkout SPA (валидированный снимок раздела motion).
+	 *
+	 * @return array<string, mixed>
+	 */
+	private static function motion_config_for_runtime(): array {
+		$raw = SafeSettingsResolver::get_section( OptionKeys::SECTION_MOTION );
+		if ( ! is_array( $raw ) ) {
+			$raw = array();
+		}
+		return MotionSettingsResolver::runtime_payload( $raw );
+	}
+
+	/**
+	 * CSS custom properties для #mp-cc-checkout (длительности и easing в безопасном виде).
+	 */
+	private static function build_motion_runtime_css(): string {
+		return MotionSettingsResolver::build_inline_css( self::motion_config_for_runtime() );
 	}
 }

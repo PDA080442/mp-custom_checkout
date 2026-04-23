@@ -11,6 +11,7 @@ use MP\CustomCheckout\Admin\Config\AdminTabRegistry;
 use MP\CustomCheckout\Diagnostics\CheckoutHealthChecks;
 use MP\CustomCheckout\Logging\CheckoutLogStore;
 use MP\CustomCheckout\Settings\AdminSectionsRegistry;
+use MP\CustomCheckout\Settings\MotionSettingsResolver;
 use MP\CustomCheckout\Settings\OptionKeys;
 use MP\CustomCheckout\Settings\SafeSettingsResolver;
 
@@ -59,7 +60,25 @@ final class AdminMenuHooks {
 		$incoming = is_array( $value ) ? $value : array();
 		$defaults = SafeSettingsResolver::get_defaults_tree();
 		$sanitized = self::sanitize_by_shape( $incoming, $defaults, '' );
-		return self::normalize_delivery_settings( $sanitized );
+		$sanitized = self::normalize_delivery_settings( $sanitized );
+		return self::normalize_motion_settings( $sanitized );
+	}
+
+	/**
+	 * @param array<string, mixed> $settings
+	 * @return array<string, mixed>
+	 */
+	private static function normalize_motion_settings( array $settings ): array {
+		if ( ! isset( $settings[ OptionKeys::SECTION_MOTION ] ) || ! is_array( $settings[ OptionKeys::SECTION_MOTION ] ) ) {
+			return $settings;
+		}
+		$defaults = SafeSettingsResolver::get_defaults_tree();
+		$def_m    = isset( $defaults[ OptionKeys::SECTION_MOTION ] ) && is_array( $defaults[ OptionKeys::SECTION_MOTION ] )
+			? $defaults[ OptionKeys::SECTION_MOTION ]
+			: array();
+		$merged   = array_replace_recursive( $def_m, $settings[ OptionKeys::SECTION_MOTION ] );
+		$settings[ OptionKeys::SECTION_MOTION ] = MotionSettingsResolver::sanitize_section( $merged );
+		return $settings;
 	}
 
 	/**
@@ -397,6 +416,9 @@ final class AdminMenuHooks {
 		}
 		echo '<div class="mp-cc-admin-shell__fields">';
 		self::render_field_group( OptionKeys::MAIN . '[' . $tab_id . ']', $section_value, $tab_id );
+		if ( OptionKeys::SECTION_MOTION === $tab_id ) {
+			self::render_motion_admin_preview_block();
+		}
 		self::render_supplemental_groups_for_tab( $tab_id, $settings );
 		echo '</div>';
 	}
@@ -540,6 +562,38 @@ final class AdminMenuHooks {
 		}
 	}
 
+	private static function render_motion_admin_preview_block(): void {
+		$presets = MotionSettingsResolver::duration_presets_desktop_ms();
+		$json     = wp_json_encode( $presets, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES );
+		if ( ! is_string( $json ) ) {
+			$json = '{}';
+		}
+		echo '<div class="mp-cc-admin-motion-preview" data-mp-cc-motion-preview="1" data-motion-duration-presets="' . esc_attr( $json ) . '">';
+		echo '<details class="mp-cc-admin-shell__fieldset" open>';
+		echo '<summary><span>' . esc_html__( 'Live preview анимаций', 'mp-custom-checkout' ) . '</span><em class="mp-cc-admin-shell__type-badge mp-cc-admin-shell__type-badge--styles">' . esc_html__( 'стили', 'mp-custom-checkout' ) . '</em></summary>';
+		echo '<p class="description">' . esc_html__( 'Значения подхватываются из полей формы выше (включая mobile). Кнопки пресетов заполняют только длительности desktop; «Проиграть» не сохраняет настройки.', 'mp-custom-checkout' ) . '</p>';
+		echo '<div class="mp-cc-admin-motion-preview__toolbar">';
+		echo '<span class="mp-cc-admin-motion-preview__label">' . esc_html__( 'Пресеты desktop (мс)', 'mp-custom-checkout' ) . '</span>';
+		echo '<button type="button" class="button button-small" data-mp-cc-motion-preset="fast">' . esc_html__( 'Быстро', 'mp-custom-checkout' ) . '</button>';
+		echo '<button type="button" class="button button-small" data-mp-cc-motion-preset="balanced">' . esc_html__( 'Сбалансировано', 'mp-custom-checkout' ) . '</button>';
+		echo '<button type="button" class="button button-small" data-mp-cc-motion-preset="smooth">' . esc_html__( 'Плавно', 'mp-custom-checkout' ) . '</button>';
+		echo '<button type="button" class="button button-primary" data-mp-cc-motion-play="1">' . esc_html__( 'Проиграть', 'mp-custom-checkout' ) . '</button>';
+		echo '</div>';
+		echo '<div class="mp-cc-admin-motion-preview__stage" data-mp-cc-motion-stage="1">';
+		echo '<div class="mp-cc-admin-motion-preview__col mp-cc-admin-motion-preview__col--rail">';
+		echo '<div class="mp-cc-admin-motion-preview__rail-track" aria-hidden="true"></div>';
+		echo '<div class="mp-cc-admin-motion-preview__rail-fill" data-mp-cc-motion-rail-fill="1"></div>';
+		echo '</div>';
+		echo '<div class="mp-cc-admin-motion-preview__col mp-cc-admin-motion-preview__col--main">';
+		echo '<div class="mp-cc-admin-motion-preview__panel" data-mp-cc-motion-panel="1"><span class="mp-cc-admin-motion-preview__panel-title">' . esc_html__( 'Шаг', 'mp-custom-checkout' ) . '</span></div>';
+		echo '<div class="mp-cc-admin-motion-preview__amount"><span class="mp-cc-admin-motion-preview__amount-label">' . esc_html__( 'Итого', 'mp-custom-checkout' ) . '</span> ';
+		echo '<span class="mp-cc-admin-motion-preview__amount-val" data-mp-cc-motion-amount="1">12 900 ₽</span></div>';
+		echo '</div>';
+		echo '</div>';
+		echo '<p class="mp-cc-admin-motion-preview__hint description">' . esc_html__( 'ease_profile: snappy | balanced | smooth | custom (при custom используются поля ease.standard / ease.emphasized).', 'mp-custom-checkout' ) . '</p>';
+		echo '</details></div>';
+	}
+
 	private static function render_health_checks_group(): void {
 		$checks = CheckoutHealthChecks::collect();
 		$summary = CheckoutHealthChecks::summary();
@@ -665,6 +719,9 @@ final class AdminMenuHooks {
 		if ( false !== strpos( $p, 'mobile' ) || false !== strpos( $p, 'tablet' ) || false !== strpos( $p, 'responsive' ) ) {
 			$filters[] = 'mobile';
 		}
+		if ( false !== strpos( $p, 'motion.' ) || false !== strpos( $p, 'durations_ms' ) || false !== strpos( $p, 'ease_profile' ) ) {
+			$filters[] = 'styles';
+		}
 		return array_values( array_unique( $filters ) );
 	}
 
@@ -713,6 +770,21 @@ final class AdminMenuHooks {
 		if ( false !== strpos( $p, 'payment_block' ) && false !== strpos( $p, 'decorative_card_fields' ) ) {
 			return __( 'Устаревший флаг: декоративный PAN в checkout не используется; ввод только через шлюз WooCommerce.', 'mp-custom-checkout' );
 		}
+		if ( false !== strpos( $p, 'motion.ease_profile' ) ) {
+			return __( 'Пресет кривых easing: snappy, balanced, smooth или custom (тогда используются строки ease.standard / ease.emphasized).', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'motion.mobile.use_desktop_durations' ) ) {
+			return __( 'Если включено, на узких экранах используются те же длительности, что и для desktop.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'motion.mobile.durations_ms' ) ) {
+			return __( 'Длительности для viewport ≤767px (мс). Игнорируются, если включено «как desktop».', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'motion.durations_ms' ) ) {
+			return __( 'Длительности анимаций в миллисекундах (0–4000). Сохраняются с clamp на сервере.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'motion.throttle' ) ) {
+			return __( 'Ограничение частоты второстепенных анимаций на слабых устройствах / при лавине событий.', 'mp-custom-checkout' );
+		}
 		return '';
 	}
 
@@ -726,6 +798,9 @@ final class AdminMenuHooks {
 
 	private static function detect_group_type( string $key, string $path ): string {
 		$haystack = strtolower( $key . ' ' . $path );
+		if ( false !== strpos( $haystack, 'motion' ) || false !== strpos( $haystack, 'duration' ) || false !== strpos( $haystack, 'ease' ) ) {
+			return 'styles';
+		}
 		if ( false !== strpos( $haystack, 'valid' ) || false !== strpos( $haystack, 'error' ) || false !== strpos( $haystack, 'required' ) ) {
 			return 'validation';
 		}

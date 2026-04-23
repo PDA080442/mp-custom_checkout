@@ -1099,3 +1099,115 @@
 	font-weight: 600;
 	color: #4b5563;
 }
+
+/* Motion tab — live preview (23.2) */
+.mp-cc-admin-motion-preview {
+	margin-top: 12px;
+}
+
+.mp-cc-admin-motion-preview__toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 12px;
+}
+
+.mp-cc-admin-motion-preview__label {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--mp-cc-admin-muted, #57606a);
+	margin-right: 4px;
+}
+
+.mp-cc-admin-motion-preview__stage {
+	display: grid;
+	grid-template-columns: 28px minmax(0, 1fr);
+	gap: 12px;
+	align-items: start;
+	padding: 14px;
+	border-radius: 10px;
+	border: 1px solid var(--mp-cc-admin-border, #d0d7de);
+	background: var(--mp-cc-admin-bg, #fff);
+	--mp-cc-ap-rail: 0.42s;
+	--mp-cc-ap-panel: 0.2s;
+	--mp-cc-ap-field: 0.22s;
+	--mp-cc-ap-sum: 0.34s;
+	--mp-cc-ap-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mp-cc-admin-motion-preview__col--rail {
+	position: relative;
+	min-height: 120px;
+}
+
+.mp-cc-admin-motion-preview__rail-track {
+	position: absolute;
+	left: 10px;
+	top: 6px;
+	bottom: 6px;
+	width: 3px;
+	border-radius: 3px;
+	background: #e5e7eb;
+}
+
+.mp-cc-admin-motion-preview__rail-fill {
+	position: absolute;
+	left: 10px;
+	top: 6px;
+	width: 3px;
+	height: calc(100% - 12px);
+	border-radius: 3px;
+	background: #2563eb;
+	transform-origin: top center;
+	transform: scaleY(0.35);
+	transition: transform var(--mp-cc-ap-rail) var(--mp-cc-ap-ease);
+}
+
+.mp-cc-admin-motion-preview__rail-fill.is-mp-cc-ap-play {
+	transform: scaleY(1);
+}
+
+.mp-cc-admin-motion-preview__panel {
+	padding: 10px 12px;
+	border-radius: 8px;
+	border: 1px solid #e5e7eb;
+	background: #fafafa;
+	opacity: 0.75;
+	transform: translateY(4px);
+	transition:
+		opacity var(--mp-cc-ap-panel) var(--mp-cc-ap-ease),
+		transform var(--mp-cc-ap-panel) var(--mp-cc-ap-ease);
+}
+
+.mp-cc-admin-motion-preview__panel.is-mp-cc-ap-play {
+	opacity: 1;
+	transform: translateY(0);
+}
+
+.mp-cc-admin-motion-preview__panel-title {
+	font-weight: 700;
+	font-size: 13px;
+}
+
+.mp-cc-admin-motion-preview__amount {
+	margin-top: 10px;
+	font-size: 13px;
+}
+
+.mp-cc-admin-motion-preview__amount-val {
+	display: inline-block;
+	font-weight: 700;
+	transition:
+		color var(--mp-cc-ap-sum) var(--mp-cc-ap-ease),
+		transform var(--mp-cc-ap-sum) var(--mp-cc-ap-ease);
+}
+
+.mp-cc-admin-motion-preview__amount-val.is-mp-cc-ap-play {
+	color: #15803d;
+	transform: translateY(-1px);
+}
+
+.mp-cc-admin-motion-preview__hint {
+	margin-top: 8px;
+}
