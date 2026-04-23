@@ -748,6 +748,10 @@ final class SafeSettingsResolver {
 				);
 				continue;
 			}
+			if ( OptionKeys::SECTION_MOTION === $section_key ) {
+				$tree[ $section_key ] = DefaultMotionSettingsRegistry::all();
+				continue;
+			}
 
 			$tree[ $section_key ] = array();
 		}

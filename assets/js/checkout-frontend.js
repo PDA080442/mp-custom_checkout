@@ -38,6 +38,7 @@
 	};
 	var pickupMapScriptPromise = null;
 	var pickupMapLogCache = {};
+	var motionThrottleLast = {};
 
 	function getUiText(path, fallback) {
 		var source = (window.mpCcCheckout && window.mpCcCheckout.uiText) ? window.mpCcCheckout.uiText : {};
@@ -1901,10 +1902,116 @@
 		return $();
 	}
 
+	function getMotionConfig() {
+		var m = (window.mpCcCheckout && window.mpCcCheckout.motion && typeof window.mpCcCheckout.motion === 'object')
+			? window.mpCcCheckout.motion
+			: {};
+		return m;
+	}
+
+	function prefersReducedMotionOs() {
+		return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+	}
+
+	function useCheckoutReducedMotion() {
+		var m = getMotionConfig();
+		if (m.force_reduced_motion) {
+			return true;
+		}
+		if (m.respect_prefers_reduced_motion === false) {
+			return false;
+		}
+		return prefersReducedMotionOs();
+	}
+
+	function shouldThrottleMotion(category) {
+		var m = getMotionConfig();
+		var th = m.throttle || {};
+		if (!th.enabled) {
+			return false;
+		}
+		var minInt = Math.max(0, parseInt(String(th.min_interval_ms == null ? 120 : th.min_interval_ms), 10) || 0);
+		if (!minInt) {
+			return false;
+		}
+		var key = String(category || 'default');
+		var now = Date.now();
+		var last = motionThrottleLast[key] || 0;
+		if (now - last < minInt) {
+			return true;
+		}
+		motionThrottleLast[key] = now;
+		return false;
+	}
+
+	function logMotionInstrumentation(label, durationMs) {
+		var m = getMotionConfig();
+		var flags = (window.mpCcCheckout && window.mpCcCheckout.flags) ? window.mpCcCheckout.flags : {};
+		if (!m.instrumentation_enabled && !flags.checkout_testing_mode) {
+			return;
+		}
+		var ms = Math.round(Number(durationMs) || 0);
+		if (window.console && window.console.info) {
+			window.console.info('[mp-cc-motion]', String(label || 'motion'), ms + 'ms');
+		}
+		try {
+			document.dispatchEvent(new CustomEvent('mp_cc_motion_metric', { detail: { label: String(label || 'motion'), durationMs: ms } }));
+		} catch (e0) {
+			// ignore
+		}
+		try {
+			window.__mpCcMotionMetrics = window.__mpCcMotionMetrics || [];
+			window.__mpCcMotionMetrics.push({ t: Date.now(), label: String(label || ''), ms: ms });
+			if (window.__mpCcMotionMetrics.length > 60) {
+				window.__mpCcMotionMetrics.shift();
+			}
+		} catch (e1) {
+			// ignore
+		}
+	}
+
+	function syncMotionRuntimeVars() {
+		var root = document.querySelector(selectors.root);
+		var m = getMotionConfig();
+		var d = m.durations_ms || {};
+		if (typeof d.step_transition === 'number' && !Number.isNaN(d.step_transition)) {
+			animationDurationMs = Math.max(0, Math.round(Number(d.step_transition)));
+		}
+		if (!root) {
+			return;
+		}
+		var toggles = m.toggles || {};
+		root.classList.toggle('mp-cc-motion-rail-off', toggles.rail === false);
+		root.classList.toggle('mp-cc-motion-step-reveal-off', toggles.step_reveal === false);
+		var reduced = useCheckoutReducedMotion();
+		root.classList.toggle('mp-cc-motion-reduced', reduced);
+		var fieldOn = toggles.field_state !== false && !reduced;
+		if (fieldOn) {
+			root.setAttribute('data-mp-cc-field-motion', '1');
+		} else {
+			root.removeAttribute('data-mp-cc-field-motion');
+		}
+	}
+
+	function bindReducedMotionMediaListener() {
+		if (!window.matchMedia) {
+			return;
+		}
+		var mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+		var fn = function () {
+			syncMotionRuntimeVars();
+		};
+		if (mq.addEventListener) {
+			mq.addEventListener('change', fn);
+		} else if (mq.addListener) {
+			mq.addListener(fn);
+		}
+	}
+
 	function scrollToFirstInvalidField($app) {
 		var $root = $(selectors.root);
 		var $el = findFirstInvalidFieldElement($root);
-		var behavior = prefersReducedMotion() ? 'auto' : 'smooth';
+		var behavior = useCheckoutReducedMotion() ? 'auto' : 'smooth';
 		var blockPos = 'center';
 		if (window.matchMedia && window.matchMedia('(max-width: 767px)').matches) {
 			blockPos = 'nearest';
@@ -1936,7 +2043,7 @@
 					// ignore
 				}
 			}
-		}, prefersReducedMotion() ? 0 : 80);
+		}, useCheckoutReducedMotion() ? 0 : 80);
 	}
 
 	function logValidationFailure(state, stepId, errorsMap) {
@@ -3933,6 +4040,73 @@
 		return -1;
 	}
 
+	function getRailProgress01(state) {
+		if (!state) {
+			return 1;
+		}
+		ensureV2ScreenState(state);
+		var total = 1;
+		var idx = 0;
+		if (isV2CheckoutUiEnabled(state)) {
+			total = Math.max(1, state.v2Screens && state.v2Screens.length ? state.v2Screens.length : 1);
+			idx = typeof state.v2CurrentIndex === 'number' ? state.v2CurrentIndex : 0;
+			idx = Math.max(0, Math.min(total - 1, idx));
+		} else {
+			total = Math.max(1, state.visibleSteps && state.visibleSteps.length ? state.visibleSteps.length : 1);
+			idx = Math.max(0, getStepIndex(state.visibleSteps, state.currentStepId));
+		}
+		var raw = (idx + 1) / total;
+		return Math.min(1, Math.max(0.08, raw));
+	}
+
+	function applyMotionFromState(state) {
+		var root = document.querySelector(selectors.root);
+		if (!root) {
+			return;
+		}
+		syncMotionRuntimeVars();
+		var m = getMotionConfig();
+		var toggles = m.toggles || {};
+		if (toggles.rail === false) {
+			return;
+		}
+		var next = getRailProgress01(state);
+		var snap = shouldThrottleMotion('rail');
+		if (snap) {
+			root.classList.add('mp-cc-motion-rail-snap');
+		}
+		root.style.setProperty('--mp-cc-rail-progress', String(next));
+		if (snap) {
+			window.requestAnimationFrame(function () {
+				root.classList.remove('mp-cc-motion-rail-snap');
+			});
+		}
+	}
+
+	function initFieldErrorMotion($root) {
+		var root = document.querySelector(selectors.root);
+		if (!root || root.getAttribute('data-mp-cc-field-motion') !== '1' || !$root || !$root.length) {
+			return;
+		}
+		var m = getMotionConfig();
+		if (!m.toggles || m.toggles.field_state === false || useCheckoutReducedMotion()) {
+			return;
+		}
+		var $errs = $root.find('.mp-cc-field-error').filter(function () {
+			return $.trim($(this).text()) !== '';
+		});
+		if (!$errs.length) {
+			return;
+		}
+		$errs.removeClass('mp-cc-field-error--entering mp-cc-field-error--enter-active');
+		window.requestAnimationFrame(function () {
+			$errs.addClass('mp-cc-field-error--entering');
+			window.requestAnimationFrame(function () {
+				$errs.addClass('mp-cc-field-error--enter-active');
+			});
+		});
+	}
+
 	function postCheckout(subAction, payload) {
 		var localized = window.mpCcCheckout || {};
 		if (!localized.ajaxUrl || !localized.nonce) {
@@ -5340,27 +5514,27 @@
 			html += '<div class="mp-cc-summary-card__scenario" data-summary-financials="1">';
 			html += '<p class="mp-cc-summary-card__scenario-title"><strong>' + escapeHtml(getUiText('order_review.financial', 'Итоги')) + '</strong></p>';
 			if (trimNonEmpty(subtotalText)) {
-				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(subtotalLineLabel) + ': ' + wcPriceHtmlFragment(subtotalText) + '</p>';
+				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(subtotalLineLabel) + ': <span class="mp-cc-summary-card__amount--inline" data-summary-amount="1">' + wcPriceHtmlFragment(subtotalText) + '</span></p>';
 			}
 			if (trimNonEmpty(shippingText)) {
-				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(shippingLabel) + ': ' + wcPriceHtmlFragment(shippingText) + '</p>';
+				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(shippingLabel) + ': <span class="mp-cc-summary-card__amount--inline" data-summary-amount="1">' + wcPriceHtmlFragment(shippingText) + '</span></p>';
 			}
 			for (var fi = 0; fi < feeLines.length; fi += 1) {
 				var feeRow = feeLines[fi] || {};
 				var feeLabel = trimNonEmpty(feeRow.label) ? String(feeRow.label) : getUiText('order_review.fee_line', 'Сбор');
-				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(feeLabel) + ': ' + wcPriceHtmlFragment(String(feeRow.amount || '')) + '</p>';
+				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(feeLabel) + ': <span class="mp-cc-summary-card__amount--inline" data-summary-amount="1">' + wcPriceHtmlFragment(String(feeRow.amount || '')) + '</span></p>';
 			}
 			if (trimNonEmpty(cartSummary.discount)) {
-				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(discountLabel) + ': ' + wcPriceHtmlFragment(String(cartSummary.discount)) + '</p>';
+				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(discountLabel) + ': <span class="mp-cc-summary-card__amount--inline" data-summary-amount="1">' + wcPriceHtmlFragment(String(cartSummary.discount)) + '</span></p>';
 			}
 			if (giftCardCodes.length || trimNonEmpty(giftCardTotal)) {
-				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(giftCardPrefixText) + ': ' + wcPriceHtmlFragment(giftCardTotal || '—') + '</p>';
+				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(giftCardPrefixText) + ': <span class="mp-cc-summary-card__amount--inline" data-summary-amount="1">' + wcPriceHtmlFragment(giftCardTotal || '—') + '</span></p>';
 			}
 			if (trimNonEmpty(taxText)) {
-				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(taxLabel) + ': ' + wcPriceHtmlFragment(taxText) + '</p>';
+				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(taxLabel) + ': <span class="mp-cc-summary-card__amount--inline" data-summary-amount="1">' + wcPriceHtmlFragment(taxText) + '</span></p>';
 			}
 			if (trimNonEmpty(totalText)) {
-				html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(totalLabel) + ':</strong> ' + wcPriceHtmlFragment(totalText) + '</p>';
+				html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(totalLabel) + ':</strong> <span class="mp-cc-summary-card__amount--inline" data-summary-amount="1">' + wcPriceHtmlFragment(totalText) + '</span></p>';
 			}
 			html += '</div>';
 		}
@@ -5573,21 +5747,29 @@
 		apply();
 	}
 
-	function prefersReducedMotion() {
-		return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-	}
-
 	function runStepTransitionAnimation($app) {
-		if (prefersReducedMotion()) {
+		var m = getMotionConfig();
+		if (m.toggles && m.toggles.step_transition_overlay === false) {
 			return;
 		}
+		if (useCheckoutReducedMotion()) {
+			return;
+		}
+		if (shouldThrottleMotion('step_transition')) {
+			return;
+		}
+		var t0 = (window.performance && performance.now) ? performance.now() : Date.now();
 		window.clearTimeout(stepTransitionTimer);
 		window.requestAnimationFrame(function () {
 			$app.addClass('is-step-transition');
 		});
+		var d = (getMotionConfig().durations_ms || {}).step_transition;
+		var ms = typeof d === 'number' && !Number.isNaN(d) ? Math.max(0, Math.round(Number(d))) : animationDurationMs;
 		stepTransitionTimer = window.setTimeout(function () {
 			$app.removeClass('is-step-transition');
-		}, animationDurationMs);
+			var t1 = (window.performance && performance.now) ? performance.now() : Date.now();
+			logMotionInstrumentation('step_transition_overlay', t1 - t0);
+		}, ms);
 	}
 
 	function applyStepOnePresentation(state) {
@@ -5763,6 +5945,7 @@
 		ensureDateSelection(state);
 		ensureContactDefaults(state);
 		ensureDiscountDefaults(state);
+		applyMotionFromState(state);
 
 		var nextParcelHtml = '';
 		var nextStepHtml = '';
@@ -5846,6 +6029,7 @@
 		}
 		if (isStepChanged) {
 			scheduleFocusAndA11yAnnouncement($app, true);
+			initFieldErrorMotion($app);
 		}
 
 		window.setTimeout(function () {
@@ -6888,10 +7072,23 @@
 		if (!prevSignature || prevSignature === signature) {
 			return;
 		}
+		var m = getMotionConfig();
+		if (!m.toggles || m.toggles.summary_numbers === false) {
+			return;
+		}
+		if (useCheckoutReducedMotion()) {
+			return;
+		}
+		if (shouldThrottleMotion('summary_numbers')) {
+			return;
+		}
+		var d = (m.durations_ms || {}).summary_numbers;
+		var ms = typeof d === 'number' && !Number.isNaN(d) ? Math.max(120, Math.round(Number(d))) : 320;
 		$summary.find('[data-summary-amount]').addClass('is-updated');
 		window.setTimeout(function () {
 			$summary.find('[data-summary-amount]').removeClass('is-updated');
-		}, 320);
+			logMotionInstrumentation('summary_numbers_pulse', ms);
+		}, ms);
 	}
 
 	function isFlagEnabled(state, flag, fallback) {
@@ -6931,6 +7128,8 @@
 		bindClientErrorLogging();
 		applyThemeVariant(context);
 		bindVisualViewportKeyboardInset();
+		syncMotionRuntimeVars();
+		bindReducedMotionMediaListener();
 		var state = buildState(context);
 		patchPaymentFieldsFromContext(state, context);
 		// Сервер уже передал снимок корзины в data-mp-cc-context; createFrontendStore иначе оставляет items пустыми до AJAX.
