@@ -101,7 +101,7 @@ final class CheckoutAjaxHooks {
 				wp_send_json_error( array( 'code' => 'invalid_step_id', 'message' => __( 'Не указан шаг checkout.', 'mp-custom-checkout' ) ), 400 );
 			}
 			$answers = self::sanitize_payload_shape( is_array( $answers ) ? $answers : array(), 4, 80 );
-			if ( in_array( $step_id, array( 'date', 'conditions' ), true ) ) {
+			if ( in_array( $step_id, array( 'address_delivery', 'date', 'conditions' ), true ) ) {
 				$flow          = CheckoutSessionService::get_flow();
 				$existing_date = array();
 				if ( is_array( $flow ) && isset( $flow['answers']['date_conditions'] ) && is_array( $flow['answers']['date_conditions'] ) ) {
@@ -312,7 +312,7 @@ final class CheckoutAjaxHooks {
 		$contact                = isset( $answers['contact_billing'] ) && is_array( $answers['contact_billing'] ) ? $answers['contact_billing'] : array();
 		$contact['payment_gateway'] = $gateway;
 		$contact['gateway']     = $gateway;
-		CheckoutSessionService::set_step_answers( 'contact_payment', $contact );
+		CheckoutSessionService::set_step_answers( 'payment', $contact );
 		$fields_payload = self::build_payment_fields_payload_from_session();
 		wp_send_json_success(
 			array_merge(

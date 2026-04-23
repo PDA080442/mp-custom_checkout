@@ -17,7 +17,7 @@ final class OptionKeys {
 	/**
 	 * Версия схемы настроек в коде (миграции).
 	 */
-	public const SETTINGS_SCHEMA_VERSION = '1';
+	public const SETTINGS_SCHEMA_VERSION = '2';
 
 	/**
 	 * Основной массив настроек (все вкладки и служебные данные).

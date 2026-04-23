@@ -29,9 +29,9 @@ get_header();
 			</div>
 			<div id="mp-cc-shell-parcel-badge" class="mp-cc-v2-shell-head__parcel-slot" aria-live="polite"></div>
 		</header>
-		<section id="mp-cc-parcel-header" class="mp-cc-region mp-cc-region--parcel" aria-live="polite" aria-label="<?php echo esc_attr__( 'Order parcel header', 'mp-custom-checkout' ); ?>"></section>
+		<section id="mp-cc-parcel-header" class="mp-cc-region mp-cc-region--parcel mp-cc-region--hero" aria-live="polite" aria-label="<?php echo esc_attr__( 'Order parcel header', 'mp-custom-checkout' ); ?>"></section>
 		<section id="mp-cc-notifications" class="mp-cc-region mp-cc-region--notifications" role="status" aria-live="polite" aria-atomic="true"></section>
-		<div class="mp-cc-layout" role="group" aria-label="<?php echo esc_attr__( 'Checkout layout', 'mp-custom-checkout' ); ?>">
+		<div class="mp-cc-layout mp-cc-layout--stacked-timeline" role="group" aria-label="<?php echo esc_attr__( 'Checkout layout', 'mp-custom-checkout' ); ?>">
 			<div class="mp-cc-layout__main">
 				<nav id="mp-cc-progress-container" class="mp-cc-region mp-cc-region--progress" aria-label="<?php echo esc_attr__( 'Checkout progress', 'mp-custom-checkout' ); ?>"></nav>
 				<section id="mp-cc-step-content-container" class="mp-cc-region mp-cc-region--content" role="region" aria-label="<?php echo esc_attr__( 'Checkout step content', 'mp-custom-checkout' ); ?>" tabindex="-1">

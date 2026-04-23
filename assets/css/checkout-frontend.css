@@ -1917,6 +1917,104 @@
 	}
 }
 
+/* Stacked timeline checkout shell */
+.mp-cc-layout--stacked-timeline .mp-cc-layout__main {
+	display: block;
+}
+
+.mp-cc-layout--stacked-timeline .mp-cc-region--progress,
+.mp-cc-layout--stacked-timeline .mp-cc-region--actions {
+	display: none;
+}
+
+.mp-cc-layout--stacked-timeline .mp-cc-region--content {
+	position: relative;
+	padding-left: 2.5rem;
+}
+
+.mp-cc-layout--stacked-timeline .mp-cc-region--content::before {
+	content: '';
+	position: absolute;
+	left: 0.75rem;
+	top: 0.9rem;
+	bottom: 1rem;
+	width: 2px;
+	background: var(--mp-cc-color-border);
+}
+
+.mp-cc-step-card {
+	position: relative;
+	margin-bottom: 1rem;
+}
+
+.mp-cc-step-card__head {
+	width: 100%;
+	display: flex;
+	align-items: center;
+	gap: 0.7rem;
+	padding: 0.45rem 0;
+	border: 0;
+	background: transparent;
+	text-align: left;
+	cursor: pointer;
+}
+
+.mp-cc-step-card__head[disabled] {
+	cursor: default;
+	opacity: 0.72;
+}
+
+.mp-cc-step-card__index {
+	width: 1.6rem;
+	height: 1.6rem;
+	border-radius: 999px;
+	border: 2px solid var(--mp-cc-color-border);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 0.72rem;
+	font-weight: 700;
+	background: #fff;
+	position: absolute;
+	left: -2.5rem;
+	top: 0.38rem;
+}
+
+.mp-cc-step-card--active .mp-cc-step-card__index {
+	background: var(--mp-cc-color-accent);
+	border-color: var(--mp-cc-color-accent);
+	color: #fff;
+}
+
+.mp-cc-step-card--done .mp-cc-step-card__index {
+	background: var(--mp-cc-color-success);
+	border-color: var(--mp-cc-color-success);
+	color: #fff;
+}
+
+.mp-cc-step-card__title {
+	font-size: 1.03rem;
+	font-weight: 700;
+}
+
+.mp-cc-step-card__actions {
+	margin-top: 0.85rem;
+}
+
+.mp-cc-layout--stacked-timeline .mp-cc-summary-card {
+	background: #f8f8f8;
+}
+
+@media (max-width: 959px) {
+	.mp-cc-layout--stacked-timeline {
+		grid-template-columns: 1fr;
+	}
+	.mp-cc-layout--stacked-timeline .mp-cc-summary-card {
+		position: static;
+		max-height: none;
+	}
+}
+
 /* Шаг контактов и оплаты */
 .mp-cc-visually-hidden {
 	position: absolute;
@@ -3354,5 +3452,130 @@ body.mp-custom-checkout form.checkout.woocommerce-checkout {
 	100% {
 		opacity: 1;
 		transform: translateY(0);
+	}
+}
+
+.mp-cc-address-form {
+	display: grid;
+	row-gap: 1.4rem;
+}
+
+.mp-cc-address-form__row {
+	display: grid;
+	grid-template-columns: 10rem minmax(0, 1fr);
+	column-gap: 1.5rem;
+	align-items: start;
+}
+
+.mp-cc-address-form__label {
+	color: #8a8a8a;
+	font-size: 0.92rem;
+	text-transform: lowercase;
+}
+
+.mp-cc-address-form__control {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem 1rem;
+	align-items: center;
+}
+
+.mp-cc-address-form__value {
+	color: #2a2a2a;
+	font-size: 0.95rem;
+}
+
+.mp-cc-address-form__edit {
+	align-self: start;
+	padding: 0.45rem 1rem;
+	border: 1px solid #d0d0d0;
+	background: #fff;
+	border-radius: 2px;
+	font-size: 0.85rem;
+	cursor: pointer;
+}
+
+.mp-cc-address-form__input {
+	min-width: 16rem;
+	padding: 0.52rem 0.62rem;
+	border: 1px solid #d6d6d6;
+	border-radius: 2px;
+	font-size: 0.9rem;
+}
+
+.mp-cc-address-form__methods {
+	display: grid;
+	row-gap: 0.8rem;
+}
+
+.mp-cc-ship-option {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	column-gap: 0.75rem;
+	align-items: baseline;
+	cursor: pointer;
+}
+
+.mp-cc-ship-option__title {
+	font-weight: 700;
+	text-transform: lowercase;
+}
+
+.mp-cc-ship-option__hint {
+	grid-column: 2;
+	color: #8a8a8a;
+	font-size: 0.85rem;
+}
+
+.mp-cc-ship-option__tariffs {
+	grid-column: 2;
+	margin-top: 0.6rem;
+	padding: 0.7rem 0.9rem;
+	border: 1px solid #d8d8d8;
+	border-radius: 4px;
+	display: grid;
+	row-gap: 0.4rem;
+}
+
+.mp-cc-ship-option__tariffs-label {
+	font-size: 0.85rem;
+	color: #2a2a2a;
+}
+
+.mp-cc-ship-option__tariff-item {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	font-size: 0.88rem;
+}
+
+.mp-cc-address-form__pvz-list {
+	display: grid;
+	row-gap: 0.4rem;
+}
+
+.mp-cc-address-form__pvz-item {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	font-size: 0.88rem;
+}
+
+.mp-cc-step-card[data-step-id="address_delivery"] .mp-cc-fulfillment,
+.mp-cc-step-card[data-step-id="address_delivery"] .mp-cc-shipping-catalog,
+.mp-cc-step-card[data-step-id="address_delivery"] .mp-cc-date-step,
+.mp-cc-step-card[data-step-id="address_delivery"] .mp-cc-pickup-point {
+	display: none;
+}
+
+@media (max-width: 959px) {
+	.mp-cc-address-form__row {
+		grid-template-columns: 1fr;
+		row-gap: 0.45rem;
+	}
+
+	.mp-cc-address-form__input {
+		min-width: 0;
+		width: 100%;
 	}
 }

@@ -20,13 +20,13 @@ final class ScenarioStepRegistry {
 
 	public const SCENARIO_OTHER_CITY_DELIVERY = 'other_city_delivery';
 
-	public const STEP_CART = 'cart';
+	public const STEP_ADDRESS_DELIVERY = 'address_delivery';
 
-	public const STEP_DATE = 'date';
+	public const STEP_RECIPIENT = 'recipient';
 
-	public const STEP_CONDITIONS = 'conditions';
+	public const STEP_PAYMENT = 'payment';
 
-	public const STEP_CONTACT_PAYMENT = 'contact_payment';
+	public const STEP_CONFIRM = 'confirm';
 
 	/**
 	 * Сценарии получения заказа: id => человекочитаемый ключ для настроек.
@@ -48,10 +48,10 @@ final class ScenarioStepRegistry {
 	 */
 	public static function default_step_order(): array {
 		return array(
-			self::STEP_CART,
-			self::STEP_DATE,
-			self::STEP_CONDITIONS,
-			self::STEP_CONTACT_PAYMENT,
+			self::STEP_ADDRESS_DELIVERY,
+			self::STEP_RECIPIENT,
+			self::STEP_PAYMENT,
+			self::STEP_CONFIRM,
 		);
 	}
 
@@ -62,9 +62,9 @@ final class ScenarioStepRegistry {
 	 */
 	public static function step_definitions(): array {
 		return array(
-			self::STEP_CART => array(
-				'id'                 => self::STEP_CART,
-				'label'              => 'Товары и способ получения',
+			self::STEP_ADDRESS_DELIVERY => array(
+				'id'                 => self::STEP_ADDRESS_DELIVERY,
+				'label'              => 'Адрес и способ доставки',
 				'order'              => 10,
 				'enabled'            => true,
 				'visibility_mode'    => 'scenario',
@@ -76,9 +76,9 @@ final class ScenarioStepRegistry {
 				'validation_mode'    => 'server',
 				'discount_step_ready' => true,
 			),
-			self::STEP_DATE => array(
-				'id'                 => self::STEP_DATE,
-				'label'              => 'Дата',
+			self::STEP_RECIPIENT => array(
+				'id'                 => self::STEP_RECIPIENT,
+				'label'              => 'Получатель',
 				'order'              => 20,
 				'enabled'            => true,
 				'visibility_mode'    => 'scenario',
@@ -90,9 +90,9 @@ final class ScenarioStepRegistry {
 				'validation_mode'    => 'server',
 				'discount_step_ready' => true,
 			),
-			self::STEP_CONDITIONS => array(
-				'id'                 => self::STEP_CONDITIONS,
-				'label'              => 'Условия получения',
+			self::STEP_PAYMENT => array(
+				'id'                 => self::STEP_PAYMENT,
+				'label'              => 'Способ оплаты',
 				'order'              => 30,
 				'enabled'            => true,
 				'visibility_mode'    => 'scenario',
@@ -101,12 +101,12 @@ final class ScenarioStepRegistry {
 					self::SCENARIO_KRASNOYARSK_DELIVERY,
 					self::SCENARIO_OTHER_CITY_DELIVERY,
 				),
-				'validation_mode'    => 'strict',
+				'validation_mode'    => 'server',
 				'discount_step_ready' => true,
 			),
-			self::STEP_CONTACT_PAYMENT => array(
-				'id'                 => self::STEP_CONTACT_PAYMENT,
-				'label'              => 'Контакты и оплата',
+			self::STEP_CONFIRM => array(
+				'id'                 => self::STEP_CONFIRM,
+				'label'              => 'Подтвердить',
 				'order'              => 40,
 				'enabled'            => true,
 				'visibility_mode'    => 'scenario',
@@ -115,7 +115,7 @@ final class ScenarioStepRegistry {
 					self::SCENARIO_KRASNOYARSK_DELIVERY,
 					self::SCENARIO_OTHER_CITY_DELIVERY,
 				),
-				'validation_mode'    => 'strict',
+				'validation_mode'    => 'server',
 				'discount_step_ready' => true,
 			),
 		);

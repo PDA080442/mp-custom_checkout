@@ -1420,15 +1420,15 @@
 			step4: getUiText('common.confirm', 'Подтверждение')
 		};
 		return [
-			{ id: 'delivery_screen', label: labels.step1, legacyStep: 'date' },
-			{ id: 'recipient_screen', label: labels.step2, legacyStep: 'contact_payment' },
-			{ id: 'payment_screen', label: labels.step3, legacyStep: 'contact_payment' },
-			{ id: 'confirm_screen', label: labels.step4, legacyStep: 'contact_payment' }
+			{ id: 'delivery_screen', label: labels.step1, legacyStep: 'address_delivery' },
+			{ id: 'recipient_screen', label: labels.step2, legacyStep: 'recipient' },
+			{ id: 'payment_screen', label: labels.step3, legacyStep: 'payment' },
+			{ id: 'confirm_screen', label: labels.step4, legacyStep: 'confirm' }
 		];
 	}
 
 	function getV2LegacyStepId(screen) {
-		return screen && screen.legacyStep ? String(screen.legacyStep) : 'contact_payment';
+		return screen && screen.legacyStep ? String(screen.legacyStep) : 'confirm';
 	}
 
 	function ensureV2ScreenState(state) {
@@ -1437,7 +1437,7 @@
 		}
 		state.v2Screens = getV2StepScreens(state);
 		if (typeof state.v2CurrentIndex !== 'number' || state.v2CurrentIndex < 0 || state.v2CurrentIndex >= state.v2Screens.length) {
-			if (state.currentStepId === 'contact_payment') {
+			if (state.currentStepId === 'confirm') {
 				state.v2CurrentIndex = 1;
 			} else {
 				state.v2CurrentIndex = 0;
@@ -4251,13 +4251,13 @@
 	}
 
 	function stepKeyById(stepId) {
-		if (stepId === 'cart') {
+		if (stepId === 'address_delivery') {
 			return 'step_one';
 		}
 		if (stepId === 'date' || stepId === 'conditions') {
 			return 'date_conditions';
 		}
-		if (stepId === 'contact_payment') {
+		if (stepId === 'recipient' || stepId === 'payment' || stepId === 'confirm' || stepId === 'contact_payment') {
 			return 'contact_billing';
 		}
 		return stepId;
@@ -4757,17 +4757,17 @@
 			return;
 		}
 		if (currentIndex >= state.visibleSteps.length - 1) {
-			if (state.currentStepId === 'contact_payment') {
+			if (state.currentStepId === 'confirm') {
 				ensureContactDefaults(state);
 				if (!validateContactPaymentStep(state)) {
-					setStepInvalidState(state, 'contact_payment', true);
-					logValidationFailure(state, 'contact_payment', state.frontendStore.form.errors ? state.frontendStore.form.errors.contact : {});
+					setStepInvalidState(state, 'confirm', true);
+					logValidationFailure(state, 'confirm', state.frontendStore.form.errors ? state.frontendStore.form.errors.contact : {});
 					notify(getUiText('step_4.contact_error_all_required', 'Не все обязательные поля заполнены.'), 'error');
 					render(state, $app);
 					scrollToFirstInvalidField($app);
 					return;
 				}
-				setStepInvalidState(state, 'contact_payment', false);
+				setStepInvalidState(state, 'confirm', false);
 				saveCurrentStepDraft(state).fail(function () {
 					notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
 				});
@@ -4786,11 +4786,7 @@
 		}
 		var target = state.visibleSteps[currentIndex + 1];
 		var cartSummary = state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart.summary || {} : {};
-		if (state.currentStepId === 'cart' && Number(cartSummary.items_count || 0) <= 0) {
-			notify(getUiText('step_1.empty_cart', 'Cart is empty'), 'error');
-			return;
-		}
-		if (state.currentStepId === 'date') {
+		if (state.currentStepId === 'address_delivery') {
 			var selectedDate = state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.date
 				? String(state.frontendStore.fulfillment.date.selected_date || '')
 				: '';
@@ -4798,8 +4794,8 @@
 			if (!selectedDate) {
 				state.frontendStore.form.errors = state.frontendStore.form.errors || {};
 				state.frontendStore.form.errors.date = 'required';
-				setStepInvalidState(state, 'date', true);
-				logValidationFailure(state, 'date', { selected_date: 'required' });
+				setStepInvalidState(state, 'address_delivery', true);
+				logValidationFailure(state, 'address_delivery', { selected_date: 'required' });
 				notify(getStepThreeErrorCopy('empty_date', 'Выберите дату, чтобы продолжить.'), 'error');
 				render(state, $app);
 				scrollToFirstInvalidField($app);
@@ -4808,8 +4804,8 @@
 			if (!parsedSelected) {
 				state.frontendStore.form.errors = state.frontendStore.form.errors || {};
 				state.frontendStore.form.errors.date = 'invalid';
-				setStepInvalidState(state, 'date', true);
-				logValidationFailure(state, 'date', { selected_date: 'invalid' });
+				setStepInvalidState(state, 'address_delivery', true);
+				logValidationFailure(state, 'address_delivery', { selected_date: 'invalid' });
 				notify(getStepThreeErrorCopy('invalid_date', 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.'), 'error');
 				render(state, $app);
 				scrollToFirstInvalidField($app);
@@ -4817,7 +4813,33 @@
 			}
 			state.frontendStore.form.errors = state.frontendStore.form.errors || {};
 			state.frontendStore.form.errors.date = '';
-			setStepInvalidState(state, 'date', false);
+			setStepInvalidState(state, 'address_delivery', false);
+		}
+		if (state.currentStepId === 'recipient') {
+			ensureContactDefaults(state);
+			if (!validateContactPaymentStep(state)) {
+				setStepInvalidState(state, 'recipient', true);
+				logValidationFailure(state, 'recipient', state.frontendStore.form.errors ? state.frontendStore.form.errors.contact : {});
+				notify(getUiText('step_4.contact_error_all_required', 'Не все обязательные поля заполнены.'), 'error');
+				render(state, $app);
+				scrollToFirstInvalidField($app);
+				return;
+			}
+			setStepInvalidState(state, 'recipient', false);
+		}
+		if (state.currentStepId === 'payment') {
+			var selectedGateway = trimNonEmpty(state.frontendStore && state.frontendStore.payment ? state.frontendStore.payment.gateway : '');
+			if (!selectedGateway) {
+				state.frontendStore.form.errors = state.frontendStore.form.errors || {};
+				state.frontendStore.form.errors.contact = state.frontendStore.form.errors.contact || {};
+				state.frontendStore.form.errors.contact.payment_gateway = 'required';
+				setStepInvalidState(state, 'payment', true);
+				notify(getUiText('step_4.payment_error_required', 'Выберите способ оплаты.'), 'error');
+				render(state, $app);
+				scrollToFirstInvalidField($app);
+				return;
+			}
+			setStepInvalidState(state, 'payment', false);
 		}
 		requestForwardValidation(state.currentStepId).then(function (valid) {
 			if (!valid) {
@@ -4909,76 +4931,7 @@
 	}
 
 	function buildProgressHtml(state) {
-		if (isV2CheckoutUiEnabled(state)) {
-			ensureV2ScreenState(state);
-			var invalidV2Map = state.frontendStore && state.frontendStore.runtime && state.frontendStore.runtime.invalid_v2_steps
-				? state.frontendStore.runtime.invalid_v2_steps
-				: {};
-			var v2html = '<ol class="mp-cc-progress" role="list" aria-label="' + escapeHtml(getUiText('checkout.progress_label', 'Checkout steps')) + '">';
-			for (var vi = 0; vi < state.v2Screens.length; vi += 1) {
-				var s = state.v2Screens[vi];
-				var canGoV2 = vi <= state.v2MaxReachedIndex;
-				var isCurrentV2 = vi === state.v2CurrentIndex;
-				var v2classes = ['mp-cc-progress__item'];
-				if (isCurrentV2) {
-					v2classes.push('is-active');
-				}
-				if (vi < state.v2CurrentIndex) {
-					v2classes.push('is-complete');
-				}
-				if (invalidV2Map[s.id]) {
-					v2classes.push('is-invalid');
-				}
-				v2html += '<li class="' + v2classes.join(' ') + '">';
-				v2html += '<button type="button" class="mp-cc-progress__btn" data-v2-step="1" data-step="' + escapeHtml(s.id) + '" data-step-index="' + vi + '"';
-				v2html += ' aria-controls="mp-cc-step-content-container" aria-expanded="' + (isCurrentV2 ? 'true' : 'false') + '"';
-				v2html += (canGoV2 ? '' : ' disabled') + (isCurrentV2 ? ' aria-current="step"' : '') + '>';
-				v2html += '<span class="mp-cc-progress__index">' + (vi + 1) + '</span>';
-				v2html += '<span class="mp-cc-progress__label">' + escapeHtml(s.label) + '</span>';
-				v2html += '</button>';
-				v2html += '</li>';
-			}
-			v2html += '</ol>';
-			return v2html;
-		}
-		var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
-		var invalidMap = state.frontendStore && state.frontendStore.runtime && state.frontendStore.runtime.invalid_steps
-			? state.frontendStore.runtime.invalid_steps
-			: {};
-		var html = '';
-		var i;
-
-		html += '<ol class="mp-cc-progress" role="list" aria-label="' + escapeHtml(getUiText('checkout.progress_label', 'Checkout steps')) + '">';
-		for (i = 0; i < state.visibleSteps.length; i += 1) {
-			var step = state.visibleSteps[i];
-			var canGo = i <= state.maxReachedIndex;
-			var isCurrent = i === currentIndex;
-			var classes = ['mp-cc-progress__item'];
-
-			if (isCurrent) {
-				classes.push('is-active');
-			}
-			if (i < currentIndex) {
-				classes.push('is-complete');
-			}
-			if (invalidMap[step.id]) {
-				classes.push('is-invalid');
-			}
-
-			html += '<li class="' + classes.join(' ') + '">';
-			html += '<button type="button" class="mp-cc-progress__btn" data-step="' + step.id + '" data-step-index="' + i + '"';
-			html += ' aria-controls="mp-cc-step-content-container" aria-expanded="' + (isCurrent ? 'true' : 'false') + '"';
-			html += canGo ? '' : ' disabled';
-			html += isCurrent ? ' aria-current="step"' : '';
-			html += '>';
-			html += '<span class="mp-cc-progress__index">' + (i + 1) + '</span>';
-			html += '<span class="mp-cc-progress__label">' + escapeHtml(step.label || step.id) + '</span>';
-			html += '</button>';
-			html += '</li>';
-		}
-		html += '</ol>';
-
-		return html;
+		return '';
 	}
 
 	function buildParcelHeaderHtml(state) {
@@ -5053,54 +5006,51 @@
 			v2html += '</section>';
 			return v2html;
 		}
-		var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
-		var step = currentIndex >= 0 ? state.visibleSteps[currentIndex] : null;
-		var label = step ? (step.label || step.id) : '';
-		if (step && step.id === 'cart') {
-			label = getStepOneLabel(state, 'title', 'step_1.title', label || 'Cart');
-		}
-		if (step && step.id === 'conditions') {
-			label = getConditionsStepPanelTitle(state);
-		}
-		if (step && step.id === 'contact_payment') {
-			var s4 = getStepFourConfig();
-			var s4t = s4.contact_block && trimNonEmpty(s4.contact_block.title) ? String(s4.contact_block.title) : '';
-			label = s4t || getUiText('step_4.title', label || 'Контакты и оплата');
-		}
 		var html = '';
-
-		html += '<section class="mp-cc-step-panel mp-cc-step-screen" data-step-panel="' + escapeHtml(step ? step.id : '') + '">';
-		html += '<header class="mp-cc-step-panel__header">';
-		html += '<p class="mp-cc-step-panel__meta">' + escapeHtml(formatCheckoutStepMeta(currentIndex + 1, state.visibleSteps.length)) + '</p>';
-		html += '<h2 class="mp-cc-step-panel__title" id="mp-cc-step-heading" tabindex="-1">' + escapeHtml(label) + '</h2>';
-		html += '</header>';
-		html += '<div class="mp-cc-step-panel__content" data-mp-cc-step-slot="' + escapeHtml(step ? step.id : '') + '">';
-		if (step && step.id === 'cart') {
-			html += buildCartItemsHtml(state);
-			html += buildDiscountToolsHtml(state, { cartStep: true });
+		var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
+		for (var i = 0; i < state.visibleSteps.length; i += 1) {
+			var step = state.visibleSteps[i];
+			var isActive = i === currentIndex;
+			var isDone = i < currentIndex;
+			var cardState = isActive ? 'active' : (isDone ? 'done' : 'future');
+			var canOpen = isDone || isActive;
+			var stepLabel = step ? (step.label || step.id) : '';
+			html += '<article class="mp-cc-step-card mp-cc-step-card--' + cardState + '" data-step-id="' + escapeHtml(step.id) + '" data-step-state="' + cardState + '">';
+			html += '<button type="button" class="mp-cc-step-card__head" data-step-open="' + escapeHtml(step.id) + '"' + (canOpen ? '' : ' disabled') + '>';
+			html += '<span class="mp-cc-step-card__index">' + (i + 1) + '</span>';
+			html += '<span class="mp-cc-step-card__title">' + escapeHtml(stepLabel) + '</span>';
+			html += '</button>';
+			if (isActive) {
+				html += '<section class="mp-cc-step-panel mp-cc-step-screen" data-step-panel="' + escapeHtml(step.id) + '">';
+				html += '<div class="mp-cc-step-panel__content" data-mp-cc-step-slot="' + escapeHtml(step.id) + '">';
+				if (step.id === 'address_delivery') {
+					html += buildAddressDeliveryFormHtml(state);
+				}
+				if (step.id === 'recipient') {
+					html += buildContactPaymentHtml(state, { includePayment: false });
+					html += buildAddressBlockHtml(state);
+				}
+				if (step.id === 'payment') {
+					html += buildPaymentGatewaysHtml(state);
+					html += buildDiscountToolsHtml(state, {});
+				}
+				if (step.id === 'confirm') {
+					html += buildConfirmationScreenHtml(state);
+				}
+				html += '</div>';
+				if (step.id === 'recipient' || step.id === 'payment' || step.id === 'confirm') {
+					html += '<div class="mp-cc-step-card__actions">';
+					if (step.id === 'confirm') {
+						html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--next mp-cc-step-card__cta" data-nav="next">' + escapeHtml(getUiText('common.confirm', 'Оформить заказ')) + '</button>';
+					} else {
+						html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--next mp-cc-step-card__cta" data-nav="next">' + escapeHtml(getUiText('common.next', 'Далее')) + '</button>';
+					}
+					html += '</div>';
+				}
+				html += '</section>';
+			}
+			html += '</article>';
 		}
-		if (step && step.id === 'date') {
-			html += buildFulfillmentChoiceHtml(state);
-		}
-		if (step && step.id === 'conditions') {
-			html += buildConditionsStepHtml(state);
-		}
-		if (step && step.id === 'contact_payment') {
-			html += buildContactPaymentHtml(state);
-			html += buildAddressBlockHtml(state);
-			html += buildDiscountToolsHtml(state, {});
-		}
-		html += '</div>';
-		if (!isFlagEnabled(state, flagNames.discountPlacement, true)) {
-			html += '<p class="mp-cc-step-panel__hint">Discount tools are rendered inline in payment step.</p>';
-		}
-		if (!isFlagEnabled(state, flagNames.multiPickupPoints, false)) {
-			html += '<p class="mp-cc-step-panel__hint">Single pickup point mode is active.</p>';
-		}
-		if (isFlagEnabled(state, flagNames.checkoutTestingMode, false)) {
-			html += '<p class="mp-cc-step-panel__hint">Checkout testing mode is enabled.</p>';
-		}
-		html += '</section>';
 
 		return html;
 	}
@@ -5203,6 +5153,167 @@
 		}
 		html += buildShippingMethodsHtml(state);
 		html += buildDateCalendarHtml(state);
+		html += '</section>';
+		return html;
+	}
+
+	function isAddressDeliveryStepReady(state) {
+		var methods = getV2ShippingCatalog(state);
+		var dateBox = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.date || {}) : {};
+		var methodId = String(dateBox.shipping_method_id || '');
+		var tariffId = String(dateBox.shipping_tariff_id || '');
+		if (!methodId) {
+			return false;
+		}
+		var selected = null;
+		var i;
+		for (i = 0; i < methods.length; i += 1) {
+			if (String(methods[i].id || '') === methodId) {
+				selected = methods[i];
+				break;
+			}
+		}
+		if (!selected) {
+			return false;
+		}
+		var tariffs = Array.isArray(selected.tariffs) ? selected.tariffs : [];
+		if (tariffs.length && !tariffId) {
+			return false;
+		}
+		if (tariffs.length) {
+			var hasTariff = false;
+			for (i = 0; i < tariffs.length; i += 1) {
+				if (String(tariffs[i].id || '') === tariffId) {
+					hasTariff = true;
+					break;
+				}
+			}
+			if (!hasTariff) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	function tryAutoAdvanceAddressStep(state, $app) {
+		if (!state || state.currentStepId !== 'address_delivery' || !isAddressDeliveryStepReady(state)) {
+			return;
+		}
+		var recipientIdx = getStepIndex(state.visibleSteps, 'recipient');
+		if (recipientIdx < 0) {
+			return;
+		}
+		setStepInvalidState(state, 'address_delivery', false);
+		setCurrentStep(state, $app, 'recipient');
+	}
+
+	function buildAddressDeliveryFormHtml(state) {
+		var dateBox = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.date || {}) : {};
+		var methods = getV2ShippingCatalog(state);
+		var methodOrder = ['pickup', 'post_russia', 'pvz', 'courier'];
+		var selectedMethodId = String(dateBox.shipping_method_id || '');
+		var selectedTariffId = String(dateBox.shipping_tariff_id || '');
+		var runtime = state.frontendStore && state.frontendStore.runtime && typeof state.frontendStore.runtime === 'object'
+			? state.frontendStore.runtime
+			: {};
+		var contact = state.frontendStore && state.frontendStore.form ? (state.frontendStore.form.contact || {}) : {};
+		var scenarioData = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenarioData || {}) : {};
+		var point = scenarioData.pickup_point && typeof scenarioData.pickup_point === 'object' ? scenarioData.pickup_point : getPickupPointById('');
+		var cityLabel = trimNonEmpty(contact.city) || (point && point.city ? String(point.city) : '') || 'Не выбрано';
+		var pointAddress = point && point.address ? String(point.address) : 'Не выбран';
+		var showPvzRow = selectedMethodId === 'pickup' || selectedMethodId === 'pvz';
+		var cityEditMode = Boolean(runtime.step1_city_editing);
+		var pvzEditMode = Boolean(runtime.step1_pvz_editing);
+		var html = '';
+		var i;
+
+		html += '<section class="mp-cc-address-form">';
+		html += '<div class="mp-cc-address-form__row" data-row="city">';
+		html += '<span class="mp-cc-address-form__label">населённый пункт</span>';
+		html += '<div class="mp-cc-address-form__control">';
+		if (cityEditMode) {
+			html += '<input type="text" class="mp-cc-address-form__input" data-city-input value="' + escapeHtml(cityLabel) + '" placeholder="Введите город">';
+		} else {
+			html += '<span class="mp-cc-address-form__value">' + escapeHtml(cityLabel) + '</span>';
+			html += '<button type="button" class="mp-cc-address-form__edit" data-city-edit>другой</button>';
+		}
+		html += '</div>';
+		html += '</div>';
+
+		html += '<div class="mp-cc-address-form__row" data-row="method">';
+		html += '<span class="mp-cc-address-form__label">способ доставки</span>';
+		html += '<div class="mp-cc-address-form__methods">';
+		for (i = 0; i < methodOrder.length; i += 1) {
+			var methodId = methodOrder[i];
+			var method = null;
+			for (var m = 0; m < methods.length; m += 1) {
+				if (String(methods[m].id || '') === methodId) {
+					method = methods[m];
+					break;
+				}
+			}
+			if (!method) {
+				continue;
+			}
+			var isMethodActive = selectedMethodId === methodId;
+			var methodHint = trimNonEmpty(method.description) || trimNonEmpty(method.eta) || '';
+			html += '<label class="mp-cc-ship-option">';
+			html += '<input type="radio" name="mp-cc-ship-method" data-ship-method="' + escapeHtml(methodId) + '"' + (isMethodActive ? ' checked' : '') + '>';
+			html += '<span class="mp-cc-ship-option__title">' + escapeHtml(String(method.title || methodId)) + '</span>';
+			if (methodHint) {
+				html += '<span class="mp-cc-ship-option__hint">' + escapeHtml(methodHint) + '</span>';
+			}
+			html += '</label>';
+			var tariffs = Array.isArray(method.tariffs) ? method.tariffs : [];
+			if (isMethodActive && tariffs.length) {
+				html += '<div class="mp-cc-ship-option__tariffs">';
+				html += '<span class="mp-cc-ship-option__tariffs-label">Выбрать вариант:</span>';
+				for (var t = 0; t < tariffs.length; t += 1) {
+					var tariff = tariffs[t] || {};
+					var tariffId = String(tariff.id || '');
+					var tariffChecked = selectedTariffId === tariffId || (!selectedTariffId && t === 0);
+					var tariffMeta = String(Math.round(Number(tariff.price || 0))) + ' ₽';
+					if (tariff.eta) {
+						tariffMeta += ' · ' + String(tariff.eta);
+					}
+					html += '<label class="mp-cc-ship-option__tariff-item">';
+					html += '<input type="radio" name="mp-cc-ship-tariff-' + escapeHtml(methodId) + '" data-ship-tariff="' + escapeHtml(tariffId) + '" data-ship-tariff-method="' + escapeHtml(methodId) + '"' + (tariffChecked ? ' checked' : '') + '>';
+					html += '<span>' + escapeHtml(String(tariff.title || tariffId)) + ' (' + escapeHtml(tariffMeta) + ')</span>';
+					html += '</label>';
+				}
+				html += '</div>';
+			}
+		}
+		html += '</div>';
+		html += '</div>';
+
+		html += '<div class="mp-cc-address-form__row" data-row="pvz"' + (showPvzRow ? '' : ' hidden') + '>';
+		html += '<span class="mp-cc-address-form__label">адрес пвз</span>';
+		html += '<div class="mp-cc-address-form__control">';
+		if (pvzEditMode) {
+			var pickupCfg = getPickupConfig();
+			var points = pickupCfg.points || [];
+			if (points.length > 1) {
+				html += '<div class="mp-cc-address-form__pvz-list">';
+				for (i = 0; i < points.length; i += 1) {
+					var item = points[i] || {};
+					var itemId = String(item.id || '');
+					var isPointChecked = point && String(point.id || '') === itemId;
+					html += '<label class="mp-cc-address-form__pvz-item">';
+					html += '<input type="radio" name="mp-cc-pvz-point" data-pvz-point="' + escapeHtml(itemId) + '"' + (isPointChecked ? ' checked' : '') + '>';
+					html += '<span>' + escapeHtml(String(item.address || item.title || itemId)) + '</span>';
+					html += '</label>';
+				}
+				html += '</div>';
+			} else {
+				html += '<span class="mp-cc-address-form__value">' + escapeHtml(pointAddress) + '</span>';
+			}
+		} else {
+			html += '<span class="mp-cc-address-form__value">' + escapeHtml(pointAddress) + '</span>';
+			html += '<button type="button" class="mp-cc-address-form__edit" data-pvz-edit>другой</button>';
+		}
+		html += '</div>';
+		html += '</div>';
 		html += '</section>';
 		return html;
 	}
@@ -5425,54 +5536,7 @@
 	}
 
 	function buildNavHtml(state) {
-		if (!isFlagEnabled(state, flagNames.multiStepFlow, true)) {
-			return '';
-		}
-		if (isV2CheckoutUiEnabled(state)) {
-			ensureV2ScreenState(state);
-			var isV2First = state.v2CurrentIndex <= 0;
-			var isV2Last = state.v2CurrentIndex >= state.v2Screens.length - 1;
-			var isV2Loading = !!(state.frontendStore && state.frontendStore.runtime && state.frontendStore.runtime.loading);
-			var isV2PaymentSubmitting = isPaymentSubmissionLocked(state);
-			var backText = getUiText('common.back', 'Back');
-			var nextTextV2 = isV2Last ? getUiText('common.confirm', 'Оформить заказ') : getUiText('common.next', 'Далее');
-			var nav = '';
-			nav += '<nav class="mp-cc-nav" aria-label="Step navigation">';
-			nav += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--back" data-nav="back"' + (isV2First || isV2Loading || isV2PaymentSubmitting ? ' disabled' : '') + '>' + escapeHtml(backText) + '</button>';
-			nav += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--next" data-nav="next"' + (isV2Loading || isV2PaymentSubmitting ? ' disabled' : '') + '>' + escapeHtml(nextTextV2) + '</button>';
-			nav += '</nav>';
-			return nav;
-		}
-		var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
-		var isFirst = currentIndex <= 0;
-		var isLast = currentIndex >= state.visibleSteps.length - 1;
-		var isLoading = !!(state.frontendStore && state.frontendStore.runtime && state.frontendStore.runtime.loading);
-		var isPaymentSubmitting = isPaymentSubmissionLocked(state);
-		var isDirty = !!(state.frontendStore && state.frontendStore.runtime && state.frontendStore.runtime.dirty);
-		var cartSummary = state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart.summary || {} : {};
-		var isCartEmpty = (state.currentStepId === 'cart') && Number(cartSummary.items_count || 0) <= 0;
-		var backLabel = getUiText('common.back', 'Back');
-		var nextLabel = getUiText('common.next', 'Next');
-		var payLabel = getUiText('common.pay', 'Proceed to payment');
-		var confirmLabel = getUiText('common.confirm', 'Confirm');
-		var currentStepId = state.currentStepId || '';
-		var nextText = nextLabel;
-		if (isLast && currentStepId === 'contact_payment') {
-			nextText = state.frontendStore && state.frontendStore.payment && state.frontendStore.payment.gateway ? confirmLabel : payLabel;
-		}
-		var html = '';
-
-		html += '<nav class="mp-cc-nav" aria-label="Step navigation">';
-		html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--back" data-nav="back"' + (isFirst || isLoading || isPaymentSubmitting ? ' disabled' : '') + '>' + escapeHtml(backLabel) + '</button>';
-		html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--next" data-nav="next"' + (isLoading || isCartEmpty || isPaymentSubmitting ? ' disabled' : '') + '>' + escapeHtml(nextText) + '</button>';
-		html += '</nav>';
-		if (isPaymentSubmitting) {
-			html += '<p class="mp-cc-nav__review-mode" role="status" aria-live="polite">' + escapeHtml(getUiText('order_review.payment_loading', 'Отправляем оплату, пожалуйста подождите...')) + '</p>';
-		}
-		if (isDirty) {
-			html += '<p class="mp-cc-nav__dirty" role="status" aria-live="polite">' + escapeHtml('Unsaved changes') + '</p>';
-		}
-		return html;
+		return '';
 	}
 
 	function buildSummaryHtml(state) {
@@ -5486,10 +5550,10 @@
 		var itemsCount = cartSummary.items_count || snapshot.items_count || 0;
 		var subtotalText = cartSummary.subtotal || '';
 		var totalText = cartSummary.total || snapshot.total || subtotalText || '';
-		var displayAmount = state.currentStepId === 'cart' ? subtotalText : totalText;
+		var displayAmount = state.currentStepId === 'address_delivery' ? subtotalText : totalText;
 		var subtotalLineLabel = getStepOneLabel(state, 'subtotal_label', 'step_1.subtotal', 'Подытог');
 		var totalLineLabel = getStepOneLabel(state, 'total_label', 'order_review.total', 'Итого');
-		var amountLabel = state.currentStepId === 'cart' ? subtotalLineLabel : totalLineLabel;
+		var amountLabel = state.currentStepId === 'address_delivery' ? subtotalLineLabel : totalLineLabel;
 		var returnUrl = cartSummary.catalog_url ? String(cartSummary.catalog_url) : '/';
 		var scenario = String(state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenario || '') : '');
 		var scenarioRules = getScenarioRulesById(scenario);
@@ -5539,13 +5603,13 @@
 				html += '<p class="mp-cc-summary-card__meta"><span class="mp-cc-summary-card__amount-label">' + escapeHtml(amountLabel) + ':</span> <span class="mp-cc-summary-card__amount" data-summary-amount="1">' + wcPriceHtmlFragment(displayAmount) + '</span></p>';
 			}
 		}
-		if (state.currentStepId === 'cart') {
+		if (state.currentStepId === 'address_delivery') {
 			html += '<div class="mp-cc-summary-card__actions">';
 			html += '<button type="button" class="mp-cc-summary-card__btn mp-cc-summary-card__btn--primary" data-summary-action="continue">' + escapeHtml(getStepOneLabel(state, 'continue_label', 'step_1.continue', 'Continue')) + '</button>';
 			html += '<a href="' + escapeHtml(returnUrl) + '" class="mp-cc-summary-card__btn mp-cc-summary-card__btn--ghost">' + escapeHtml(getStepOneLabel(state, 'return_label', 'step_1.return_to_shop', 'Return to shop')) + '</a>';
 			html += '</div>';
 		}
-		if (state.currentStepId !== 'contact_payment') {
+		if (state.currentStepId !== 'confirm') {
 			html += '<div class="mp-cc-summary-card__scenario" data-summary-financials="1">';
 			html += '<p class="mp-cc-summary-card__scenario-title"><strong>' + escapeHtml(getUiText('order_review.financial', 'Итоги')) + '</strong></p>';
 			if (trimNonEmpty(subtotalText)) {
@@ -5573,7 +5637,7 @@
 			}
 			html += '</div>';
 		}
-		if (state.currentStepId === 'contact_payment') {
+		if (state.currentStepId === 'confirm') {
 			html += '<div class="mp-cc-summary-card__scenario mp-cc-summary-card__scenario--final-review" data-final-review-block="1">';
 			html += '<p class="mp-cc-summary-card__scenario-title"><strong>' + escapeHtml(getUiText('order_review.final_review_title', 'Сводка заказа')) + '</strong></p>';
 			html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(getUiText('order_review.final_review_lead', 'Проверьте данные и нажмите кнопку оплаты.')) + '</p>';
@@ -5665,7 +5729,7 @@
 				html += '</div>';
 			}
 		}
-		if (state.currentStepId === 'contact_payment' && scenarioLabel) {
+		if (state.currentStepId === 'confirm' && scenarioLabel) {
 			html += '<div class="mp-cc-summary-card__scenario" data-final-review-scenario="1">';
 			html += '<p class="mp-cc-summary-card__scenario-title"><strong>' + escapeHtml(getUiText('step_2.title', 'Способ получения')) + ':</strong> ' + escapeHtml(scenarioLabel) + '</p>';
 			var selectedDate = state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.date
@@ -6160,6 +6224,23 @@
 			return;
 		}
 
+		$app.find('.mp-cc-step-card__cta').off('click').on('click', function () {
+			saveCurrentStepDraft(state).always(function () {
+				moveForward(state, $app);
+			});
+		});
+		$app.find('.mp-cc-step-card__head[data-step-open]').off('click').on('click', function () {
+			var targetStep = String($(this).attr('data-step-open') || '');
+			if (!targetStep) {
+				return;
+			}
+			var targetIndex = getStepIndex(state.visibleSteps, targetStep);
+			if (targetIndex < 0 || targetIndex > state.maxReachedIndex) {
+				return;
+			}
+			setCurrentStep(state, $app, targetStep);
+		});
+
 		$actions.find('[data-nav="back"]').off('click').on('click', function () {
 			moveBackward(state, $app);
 		});
@@ -6314,14 +6395,30 @@
 			}
 		});
 
-		$app.find('[data-shipping-method]').off('click').on('click', function () {
-			var methodId = String($(this).data('shipping-method') || '');
+		$app.find('[data-shipping-method], [data-ship-method]').off('click change').on('click change', function () {
+			var methodId = String($(this).data('shipping-method') || $(this).data('ship-method') || '');
 			if (!methodId) {
 				return;
 			}
 			var methods = getV2ShippingCatalog(state);
 			var dateBox = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.date || {}) : {};
-			var selection = resolveShippingSelection(methods, methodId, String(dateBox.shipping_tariff_id || ''));
+			var selectedMethod = null;
+			for (var mi = 0; mi < methods.length; mi += 1) {
+				if (String(methods[mi].id || '') === methodId) {
+					selectedMethod = methods[mi];
+					break;
+				}
+			}
+			var preferredTariffId = '';
+			if (selectedMethod && Array.isArray(selectedMethod.tariffs) && selectedMethod.tariffs.length) {
+				if (String(dateBox.shipping_method_id || '') === methodId) {
+					preferredTariffId = String(dateBox.shipping_tariff_id || '');
+				}
+				if (!preferredTariffId && selectedMethod.tariffs[0]) {
+					preferredTariffId = String(selectedMethod.tariffs[0].id || '');
+				}
+			}
+			var selection = resolveShippingSelection(methods, methodId, preferredTariffId);
 			if (!selection) {
 				notify(getShippingErrorCopy().methodUnavailable, 'error');
 				return;
@@ -6344,12 +6441,20 @@
 				scenario: nextScenario,
 				context_id: state.flowContextId
 			});
+			postCheckout('session_set_answers', {
+				step_id: 'address_delivery',
+				context_id: state.flowContextId,
+				answers: state.frontendStore.fulfillment.date || {}
+			}).fail(function () {
+				notify('Не удалось сохранить шаг доставки.', 'error');
+			});
+			tryAutoAdvanceAddressStep(state, $app);
 			syncStoreWithBackend(state, $app);
 		});
 
-		$app.find('[data-shipping-tariff]').off('click').on('click', function () {
-			var methodId = String($(this).data('shipping-method-owner') || '');
-			var tariffId = String($(this).data('shipping-tariff') || '');
+		$app.find('[data-shipping-tariff], [data-ship-tariff]').off('click change').on('click change', function () {
+			var methodId = String($(this).data('shipping-method-owner') || $(this).data('ship-tariff-method') || '');
+			var tariffId = String($(this).data('shipping-tariff') || $(this).data('ship-tariff') || '');
 			if (!methodId || !tariffId) {
 				return;
 			}
@@ -6365,7 +6470,101 @@
 			scheduleCurrentStepDraftSave(state, function () {
 				notify('Не удалось сохранить выбор тарифа.', 'error');
 			});
+			postCheckout('session_set_answers', {
+				step_id: 'address_delivery',
+				context_id: state.flowContextId,
+				answers: state.frontendStore.fulfillment.date || {}
+			}).fail(function () {
+				notify('Не удалось сохранить тариф доставки.', 'error');
+			});
+			tryAutoAdvanceAddressStep(state, $app);
 			syncStoreWithBackend(state, $app);
+		});
+
+		$app.find('[data-city-edit]').off('click').on('click', function () {
+			state.frontendStore.runtime = state.frontendStore.runtime || {};
+			state.frontendStore.runtime.step1_city_editing = true;
+			render(state, $app);
+			$app.find('[data-city-input]').trigger('focus');
+		});
+
+		$app.find('[data-city-input]').off('keydown blur change').on('keydown blur change', function (event) {
+			if (event.type === 'keydown' && event.key !== 'Enter') {
+				return;
+			}
+			if (event.type === 'keydown') {
+				event.preventDefault();
+			}
+			var rawCity = trimNonEmpty($(this).val());
+			var city = rawCity || '';
+			state.frontendStore.form = state.frontendStore.form || {};
+			state.frontendStore.form.contact = state.frontendStore.form.contact || {};
+			if (city) {
+				state.frontendStore.form.contact.city = city;
+			} else {
+				delete state.frontendStore.form.contact.city;
+			}
+			state.frontendStore.fulfillment = state.frontendStore.fulfillment || {};
+			state.frontendStore.fulfillment.scenarioData = state.frontendStore.fulfillment.scenarioData || {};
+			var scenarioData = state.frontendStore.fulfillment.scenarioData;
+			var pickupPoint = scenarioData.pickup_point && typeof scenarioData.pickup_point === 'object' ? scenarioData.pickup_point : getPickupPointById('');
+			if (pickupPoint && city) {
+				pickupPoint = $.extend({}, pickupPoint, { city: city });
+				scenarioData.pickup_point = pickupPoint;
+			}
+			state.frontendStore.runtime = state.frontendStore.runtime || {};
+			state.frontendStore.runtime.step1_city_editing = false;
+			render(state, $app);
+			postCheckout('session_set_answers', {
+				step_id: 'contact_payment',
+				context_id: state.flowContextId,
+				answers: state.frontendStore.form.contact || {}
+			}).fail(function () {
+				notify('Не удалось сохранить город.', 'error');
+			});
+			postCheckout('session_set_answers', {
+				step_id: 'scenario',
+				context_id: state.flowContextId,
+				answers: scenarioData
+			}).fail(function () {
+				notify('Не удалось сохранить город пункта выдачи.', 'error');
+			});
+		});
+
+		$app.find('[data-pvz-edit]').off('click').on('click', function () {
+			var pickupCfg = getPickupConfig();
+			var points = pickupCfg.points || [];
+			if (points.length <= 1) {
+				return;
+			}
+			state.frontendStore.runtime = state.frontendStore.runtime || {};
+			state.frontendStore.runtime.step1_pvz_editing = true;
+			render(state, $app);
+		});
+
+		$app.find('[data-pvz-point]').off('change').on('change', function () {
+			var pointId = String($(this).data('pvz-point') || '');
+			if (!pointId) {
+				return;
+			}
+			var point = getPickupPointById(pointId);
+			if (!point) {
+				return;
+			}
+			state.frontendStore.fulfillment = state.frontendStore.fulfillment || {};
+			state.frontendStore.fulfillment.scenarioData = state.frontendStore.fulfillment.scenarioData || {};
+			state.frontendStore.fulfillment.scenarioData.pickup_point = point;
+			state.frontendStore.runtime = state.frontendStore.runtime || {};
+			state.frontendStore.runtime.step1_pvz_editing = false;
+			render(state, $app);
+			postCheckout('session_set_answers', {
+				step_id: 'scenario',
+				context_id: state.flowContextId,
+				answers: state.frontendStore.fulfillment.scenarioData || {}
+			}).fail(function () {
+				notify('Не удалось сохранить адрес ПВЗ.', 'error');
+			});
+			tryAutoAdvanceAddressStep(state, $app);
 		});
 
 		$app.find('[data-pickup-point]').off('click').on('click', function () {
@@ -6412,10 +6611,10 @@
 			invalidateV2DownstreamFrom(state, 0);
 			state.frontendStore.form.errors = state.frontendStore.form.errors || {};
 			state.frontendStore.form.errors.date = '';
-			setStepInvalidState(state, 'date', false);
+			setStepInvalidState(state, 'address_delivery', false);
 			render(state, $app);
 			postCheckout('session_set_answers', {
-				step_id: 'date',
+				step_id: 'address_delivery',
 				context_id: state.flowContextId,
 				answers: dateBox
 			}).then(function (response) {
@@ -6460,7 +6659,7 @@
 			state.frontendStore.fulfillment.date = dateBox;
 			render(state, $app);
 			postCheckout('session_set_answers', {
-				step_id: 'date',
+				step_id: 'address_delivery',
 				context_id: state.flowContextId,
 				answers: dateBox
 			}).fail(function () {

@@ -48,7 +48,7 @@ final class DefaultLabelsRegistry {
 				'title' => 'Адрес и способ доставки',
 			),
 			'step_3' => array(
-				'title'                 => 'Условия получения',
+				'title'                 => 'Получатель',
 				'confirm_checkbox'      => 'Я ознакомился с условиями',
 				'conditions_title'      => 'Условия получения',
 				'conditions_intro'      => 'Условия для выбранного способа получения.',
@@ -72,7 +72,7 @@ final class DefaultLabelsRegistry {
 				'pickup_multi_office_hint'  => 'Дополнительные точки самовывоза будут отображаться здесь при подключении.',
 			),
 			'step_4' => array(
-				'title' => 'Контакты и оплата',
+				'title' => 'Способ оплаты',
 				'contact_title' => 'Получатель',
 				'contact_last_name' => 'Фамилия',
 				'contact_first_name' => 'Имя',
