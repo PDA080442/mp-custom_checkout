@@ -63,6 +63,12 @@ final class AdminSectionsRegistry {
 				'type'        => 'tab',
 				'sort'        => 70,
 			),
+			OptionKeys::SECTION_MOTION => array(
+				'label'       => 'Анимации',
+				'storage_key' => OptionKeys::SECTION_MOTION,
+				'type'        => 'tab',
+				'sort'        => 75,
+			),
 			OptionKeys::SECTION_SERVICE => array(
 				'label'       => 'Служебное',
 				'storage_key' => OptionKeys::SECTION_SERVICE,

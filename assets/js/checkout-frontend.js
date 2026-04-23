@@ -1909,6 +1909,21 @@
 		return m;
 	}
 
+	function isCheckoutMotionMobileViewport() {
+		return !!(window.matchMedia && window.matchMedia('(max-width: 767px)').matches);
+	}
+
+	/** Десктоп: `durations_ms`; узкий экран: эффективные mobile-длительности (совпадают с desktop при use_desktop_durations). */
+	function getEffectiveMotionDurations() {
+		var m = getMotionConfig();
+		var desk = m.durations_ms && typeof m.durations_ms === 'object' ? m.durations_ms : {};
+		var mob = m.durations_ms_mobile_effective && typeof m.durations_ms_mobile_effective === 'object' ? m.durations_ms_mobile_effective : null;
+		if (isCheckoutMotionMobileViewport() && mob) {
+			return mob;
+		}
+		return desk;
+	}
+
 	function prefersReducedMotionOs() {
 		return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 	}
@@ -1973,7 +1988,7 @@
 	function syncMotionRuntimeVars() {
 		var root = document.querySelector(selectors.root);
 		var m = getMotionConfig();
-		var d = m.durations_ms || {};
+		var d = getEffectiveMotionDurations();
 		if (typeof d.step_transition === 'number' && !Number.isNaN(d.step_transition)) {
 			animationDurationMs = Math.max(0, Math.round(Number(d.step_transition)));
 		}
@@ -2006,6 +2021,26 @@
 		} else if (mq.addListener) {
 			mq.addListener(fn);
 		}
+	}
+
+	function bindMotionViewportMediaListener() {
+		if (!window.matchMedia) {
+			return;
+		}
+		var mq = window.matchMedia('(max-width: 767px)');
+		var fn = function () {
+			syncMotionRuntimeVars();
+		};
+		if (mq.addEventListener) {
+			mq.addEventListener('change', fn);
+		} else if (mq.addListener) {
+			mq.addListener(fn);
+		}
+		var resizeTimer;
+		window.addEventListener('resize', function () {
+			window.clearTimeout(resizeTimer);
+			resizeTimer = window.setTimeout(fn, 120);
+		}, { passive: true });
 	}
 
 	function scrollToFirstInvalidField($app) {
@@ -5763,7 +5798,7 @@
 		window.requestAnimationFrame(function () {
 			$app.addClass('is-step-transition');
 		});
-		var d = (getMotionConfig().durations_ms || {}).step_transition;
+		var d = getEffectiveMotionDurations().step_transition;
 		var ms = typeof d === 'number' && !Number.isNaN(d) ? Math.max(0, Math.round(Number(d))) : animationDurationMs;
 		stepTransitionTimer = window.setTimeout(function () {
 			$app.removeClass('is-step-transition');
@@ -7082,7 +7117,7 @@
 		if (shouldThrottleMotion('summary_numbers')) {
 			return;
 		}
-		var d = (m.durations_ms || {}).summary_numbers;
+		var d = getEffectiveMotionDurations().summary_numbers;
 		var ms = typeof d === 'number' && !Number.isNaN(d) ? Math.max(120, Math.round(Number(d))) : 320;
 		$summary.find('[data-summary-amount]').addClass('is-updated');
 		window.setTimeout(function () {
@@ -7130,6 +7165,7 @@
 		bindVisualViewportKeyboardInset();
 		syncMotionRuntimeVars();
 		bindReducedMotionMediaListener();
+		bindMotionViewportMediaListener();
 		var state = buildState(context);
 		patchPaymentFieldsFromContext(state, context);
 		// Сервер уже передал снимок корзины в data-mp-cc-context; createFrontendStore иначе оставляет items пустыми до AJAX.
