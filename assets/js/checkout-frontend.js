@@ -39,6 +39,10 @@
 	var pickupMapScriptPromise = null;
 	var pickupMapLogCache = {};
 	var motionThrottleLast = {};
+	/** Монотонный счётчик syncStoreWithBackend: отбрасываем устаревший session_get_state при гонках. */
+	var syncStoreGeneration = 0;
+	/** Защита от параллельных кликов по способу/тарифу доставки на шаге 1. */
+	var shippingMutationInFlight = false;
 
 	function getUiText(path, fallback) {
 		var source = (window.mpCcCheckout && window.mpCcCheckout.uiText) ? window.mpCcCheckout.uiText : {};
@@ -117,7 +121,17 @@
 				items_label: '',
 				continue_label: '',
 				return_label: '',
-				empty_title: ''
+				empty_title: '',
+				address_form: {
+					city_row: '',
+					city_placeholder: '',
+					city_empty_hint: '',
+					change_button: '',
+					method_row: '',
+					tariff_intro: '',
+					office_row: '',
+					office_not_set: ''
+				}
 			},
 			product_meta_visibility: {
 				show_image: true,
@@ -157,10 +171,29 @@
 		}, source);
 	}
 
-	function getStepOneLabel(state, key, fallbackPath, fallbackText) {
+	function resolveStepOneLabelsPath(labels, keyPath) {
+		if (!labels || !keyPath) {
+			return '';
+		}
+		var parts = String(keyPath).split('.');
+		var node = labels;
+		var i;
+		for (i = 0; i < parts.length; i += 1) {
+			if (!node || typeof node !== 'object' || !Object.prototype.hasOwnProperty.call(node, parts[i])) {
+				return '';
+			}
+			node = node[parts[i]];
+		}
+		if (typeof node === 'string' || typeof node === 'number') {
+			return String(node);
+		}
+		return '';
+	}
+
+	function getStepOneLabel(state, keyPath, fallbackPath, fallbackText) {
 		var configLabels = state && state.stepOneConfig && state.stepOneConfig.labels ? state.stepOneConfig.labels : {};
-		var value = configLabels && configLabels[key] ? String(configLabels[key]) : '';
-		if (value) {
+		var value = resolveStepOneLabelsPath(configLabels, keyPath);
+		if (value !== '') {
 			return value;
 		}
 		return getUiText(fallbackPath, fallbackText);
@@ -1238,8 +1271,18 @@
 		var cart = state && state.frontendStore ? state.frontendStore.cart : null;
 		var items = cart && Array.isArray(cart.items) ? cart.items : [];
 		var summary = cart && cart.summary ? cart.summary : {};
-		var count = Number(summary.items_count || 0);
-		if (count !== items.length) {
+		// items_count в summary — это суммарное количество товаров (get_cart_contents_count),
+		// а не число строк корзины. Сравниваем с суммой qty локальных items.
+		var backendCount = Number(summary.items_count || 0);
+		var localCount = 0;
+		for (var i = 0; i < items.length; i += 1) {
+			var qty = Number(items[i] && items[i].quantity != null ? items[i].quantity : 0);
+			if (!isFinite(qty) || qty < 0) {
+				qty = 0;
+			}
+			localCount += qty;
+		}
+		if (backendCount > 0 && localCount > 0 && backendCount !== localCount) {
 			recoverFromCartDesync(state, $app);
 			return false;
 		}
@@ -1511,6 +1554,9 @@
 		var sortOrder = Array.isArray(source.sort_order) ? source.sort_order : Object.keys(mapMethods);
 		var methods = [];
 		var currentScenario = normalizeScenarioId(state && state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenario || '') : '');
+		// На шаге «Адрес и доставка» покупатель ещё выбирает способ: фильтр по сценарию скрывает
+		// курьер/ПВЗ/почту после выбора «Самовывоз» (сценарий pickup у них не в visibility_scenarios).
+		var skipScenarioFilter = !!(state && state.currentStepId === 'address_delivery');
 		var i;
 		for (i = 0; i < sortOrder.length; i += 1) {
 			var methodId = String(sortOrder[i] || '');
@@ -1519,7 +1565,12 @@
 				continue;
 			}
 			var scenarios = Array.isArray(raw.visibility_scenarios) ? raw.visibility_scenarios : [];
-			if (scenarios.length && currentScenario && scenarios.indexOf(currentScenario) === -1) {
+			// Исторически "pickup" мог быть ограничен только сценарием pickup.
+			// Для шага 1 оставляем его доступным во всех сценариях, чтобы метод не "пропадал" после возврата.
+			if (methodId === 'pickup' && scenarios.length === 1 && String(scenarios[0]) === 'pickup') {
+				scenarios = ['pickup', 'krasnoyarsk_delivery', 'other_city_delivery'];
+			}
+			if (!skipScenarioFilter && scenarios.length && currentScenario && scenarios.indexOf(currentScenario) === -1) {
 				continue;
 			}
 			var normalized = {
@@ -1555,17 +1606,17 @@
 		}
 		if (!methods.length) {
 			methods = [
-				{ id: 'post_russia', title: 'Почта России', price: 453, eta: '3 дней', requires_address: true },
+				{ id: 'post_russia', title: 'Почта России', price: 321, eta: '', requires_address: true },
 				{
 					id: 'courier', title: 'Курьером до двери', requires_address: true, tariffs: [
-						{ id: 'express', title: 'Курьером до двери (экспресс)', price: 710, eta: '3 дней' },
-						{ id: 'standard', title: 'Курьером до двери (стандарт)', price: 580, eta: '3 дней' }
+						{ id: 'express', title: 'Курьером до двери (экспресс)', price: 550, eta: '2 дней' },
+						{ id: 'standard', title: 'Курьером до двери (стандарт)', price: 375, eta: '2 дней' }
 					]
 				},
 				{
 					id: 'pvz', title: 'Доставка до ПВЗ', requires_address: false, tariffs: [
-						{ id: 'express', title: 'Доставка до ПВЗ (экспресс)', price: 530, eta: '3 дней' },
-						{ id: 'standard', title: 'Доставка до ПВЗ (стандарт)', price: 330, eta: '3 дней' }
+						{ id: 'express', title: 'Доставка до ПВЗ (экспресс)', price: 360, eta: '2 дней' },
+						{ id: 'standard', title: 'Доставка до ПВЗ (стандарт)', price: 185, eta: '2 дней' }
 					]
 				},
 				{ id: 'krasnoyarsk_delivery', title: 'Доставка по Красноярску', price: 400, eta: 'в течение дня', requires_address: true },
@@ -1644,9 +1695,14 @@
 		if (dateBox.shipping_method_id === 'pickup' || dateBox.shipping_requires_address === false) {
 			contact.__address_visibility.hide_address_fields = true;
 			contact.__address_visibility.required_address_fields = false;
+			// На шаге 1 («Адрес и доставка») пользователь только что вводил город — его сохраняем,
+			// иначе при выборе самовывоза/ПВЗ он сбросится и UI перерисует пустой плейсхолдер.
+			var preserveCityOnStepOne = state && state.currentStepId === 'address_delivery';
 			delete contact.country;
 			delete contact.state;
-			delete contact.city;
+			if (!preserveCityOnStepOne) {
+				delete contact.city;
+			}
 			delete contact.address_1;
 			delete contact.address_2;
 			delete contact.postcode;
@@ -4419,9 +4475,12 @@
 		var fieldRules = rules.field_rules && typeof rules.field_rules === 'object' ? rules.field_rules : {};
 		if (fieldRules.hide_address_fields && state.frontendStore.form && state.frontendStore.form.contact) {
 			var contact = $.extend({}, state.frontendStore.form.contact);
+			var preserveCityOnAddressStep = state && state.currentStepId === 'address_delivery';
 			delete contact.address_1;
 			delete contact.address_2;
-			delete contact.city;
+			if (!preserveCityOnAddressStep) {
+				delete contact.city;
+			}
 			delete contact.state;
 			delete contact.postcode;
 			delete contact.country;
@@ -4452,7 +4511,11 @@
 	}
 
 	function syncStoreWithBackend(state, $app) {
+		var myGen = ++syncStoreGeneration;
 		return postCheckout('session_get_state', { context_id: state.flowContextId }).then(function (response) {
+			if (myGen !== syncStoreGeneration) {
+				return;
+			}
 			if (!response || !response.success || !response.data) {
 				return;
 			}
@@ -4787,32 +4850,19 @@
 		var target = state.visibleSteps[currentIndex + 1];
 		var cartSummary = state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart.summary || {} : {};
 		if (state.currentStepId === 'address_delivery') {
-			var selectedDate = state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.date
-				? String(state.frontendStore.fulfillment.date.selected_date || '')
-				: '';
-			var parsedSelected = parseIsoDate(selectedDate);
-			if (!selectedDate) {
+			if (!isAddressDeliveryStepReady(state)) {
 				state.frontendStore.form.errors = state.frontendStore.form.errors || {};
-				state.frontendStore.form.errors.date = 'required';
+				state.frontendStore.form.errors.shipping_method_id = 'required';
 				setStepInvalidState(state, 'address_delivery', true);
-				logValidationFailure(state, 'address_delivery', { selected_date: 'required' });
-				notify(getStepThreeErrorCopy('empty_date', 'Выберите дату, чтобы продолжить.'), 'error');
-				render(state, $app);
-				scrollToFirstInvalidField($app);
-				return;
-			}
-			if (!parsedSelected) {
-				state.frontendStore.form.errors = state.frontendStore.form.errors || {};
-				state.frontendStore.form.errors.date = 'invalid';
-				setStepInvalidState(state, 'address_delivery', true);
-				logValidationFailure(state, 'address_delivery', { selected_date: 'invalid' });
-				notify(getStepThreeErrorCopy('invalid_date', 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.'), 'error');
+				logValidationFailure(state, 'address_delivery', { shipping_method_id: 'required' });
+				notify(getShippingErrorCopy().methodRequired || 'Выберите способ доставки, чтобы продолжить.', 'error');
 				render(state, $app);
 				scrollToFirstInvalidField($app);
 				return;
 			}
 			state.frontendStore.form.errors = state.frontendStore.form.errors || {};
 			state.frontendStore.form.errors.date = '';
+			state.frontendStore.form.errors.shipping_method_id = '';
 			setStepInvalidState(state, 'address_delivery', false);
 		}
 		if (state.currentStepId === 'recipient') {
@@ -4936,32 +4986,37 @@
 
 	function buildParcelHeaderHtml(state) {
 		var cart = state && state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart : {};
-		var summary = cart.summary && typeof cart.summary === 'object' ? cart.summary : {};
 		var items = Array.isArray(cart.items) ? cart.items : [];
 		if (!items.length) {
 			return '';
 		}
-		var first = items[0] && typeof items[0] === 'object' ? items[0] : {};
-		var title = trimNonEmpty(first.name) || getUiText('step_1.title', 'Товар');
-		var qty = Number(first.quantity || 0);
-		var qtyLabel = qty > 0 ? String(qty) + ' шт' : '';
-		var imageUrl = first.image_url ? String(first.image_url) : '';
 		var html = '';
-		html += '<article class="mp-cc-parcel-head">';
-		html += '<div class="mp-cc-parcel-head__media" aria-hidden="true">';
-		if (imageUrl) {
-			html += '<img class="mp-cc-parcel-head__img" src="' + escapeHtml(imageUrl) + '" alt="" loading="lazy" decoding="async" />';
-		} else {
-			html += '<span class="mp-cc-parcel-head__ph" aria-hidden="true"></span>';
+		html += '<ul class="mp-cc-parcel-head-list" role="list">';
+		for (var i = 0; i < items.length; i += 1) {
+			var item = items[i] && typeof items[i] === 'object' ? items[i] : {};
+			var title = trimNonEmpty(item.name) || getUiText('step_1.title', 'Товар');
+			var qty = Number(item.quantity || 0);
+			var qtyLabel = qty > 0 ? String(qty) + ' шт' : '';
+			var imageUrl = item.image_url ? String(item.image_url) : '';
+			html += '<li class="mp-cc-parcel-head-list__item">';
+			html += '<article class="mp-cc-parcel-head">';
+			html += '<div class="mp-cc-parcel-head__media" aria-hidden="true">';
+			if (imageUrl) {
+				html += '<img class="mp-cc-parcel-head__img" src="' + escapeHtml(imageUrl) + '" alt="" loading="lazy" decoding="async" />';
+			} else {
+				html += '<span class="mp-cc-parcel-head__ph" aria-hidden="true"></span>';
+			}
+			html += '</div>';
+			html += '<div class="mp-cc-parcel-head__body">';
+			html += '<h3 class="mp-cc-parcel-head__title">' + escapeHtml(title) + '</h3>';
+			if (qtyLabel) {
+				html += '<p class="mp-cc-parcel-head__meta">' + escapeHtml(qtyLabel) + '</p>';
+			}
+			html += '</div>';
+			html += '</article>';
+			html += '</li>';
 		}
-		html += '</div>';
-		html += '<div class="mp-cc-parcel-head__body">';
-		html += '<h3 class="mp-cc-parcel-head__title">' + escapeHtml(title) + '</h3>';
-		if (qtyLabel) {
-			html += '<p class="mp-cc-parcel-head__meta">' + escapeHtml(qtyLabel) + '</p>';
-		}
-		html += '</div>';
-		html += '</article>';
+		html += '</ul>';
 		return html;
 	}
 
@@ -5199,18 +5254,23 @@
 		if (!state || state.currentStepId !== 'address_delivery' || !isAddressDeliveryStepReady(state)) {
 			return;
 		}
-		var recipientIdx = getStepIndex(state.visibleSteps, 'recipient');
-		if (recipientIdx < 0) {
+		var currentIdx = getStepIndex(state.visibleSteps, 'address_delivery');
+		if (currentIdx < 0) {
+			return;
+		}
+		var nextStep = state.visibleSteps[currentIdx + 1];
+		var nextStepId = nextStep && nextStep.id ? String(nextStep.id) : '';
+		if (!nextStepId) {
 			return;
 		}
 		setStepInvalidState(state, 'address_delivery', false);
-		setCurrentStep(state, $app, 'recipient');
+		setCurrentStep(state, $app, nextStepId);
 	}
 
 	function buildAddressDeliveryFormHtml(state) {
 		var dateBox = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.date || {}) : {};
 		var methods = getV2ShippingCatalog(state);
-		var methodOrder = ['pickup', 'post_russia', 'pvz', 'courier'];
+		var methodOrder = ['pickup', 'post_russia', 'pvz', 'courier', 'krasnoyarsk_delivery'];
 		var selectedMethodId = String(dateBox.shipping_method_id || '');
 		var selectedTariffId = String(dateBox.shipping_tariff_id || '');
 		var runtime = state.frontendStore && state.frontendStore.runtime && typeof state.frontendStore.runtime === 'object'
@@ -5219,8 +5279,12 @@
 		var contact = state.frontendStore && state.frontendStore.form ? (state.frontendStore.form.contact || {}) : {};
 		var scenarioData = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenarioData || {}) : {};
 		var point = scenarioData.pickup_point && typeof scenarioData.pickup_point === 'object' ? scenarioData.pickup_point : getPickupPointById('');
-		var cityLabel = trimNonEmpty(contact.city) || (point && point.city ? String(point.city) : '') || 'Не выбрано';
-		var pointAddress = point && point.address ? String(point.address) : 'Не выбран';
+		var savedCity = trimNonEmpty(contact.city);
+		var inferredCity = savedCity || (point && point.city ? String(point.city) : '');
+		var cityEmptyHint = getStepOneLabel(state, 'address_form.city_empty_hint', '', 'Укажите населённый пункт');
+		var cityPlaceholder = getStepOneLabel(state, 'address_form.city_placeholder', '', 'Укажите город');
+		var officeNotSet = getStepOneLabel(state, 'address_form.office_not_set', '', 'Не выбран');
+		var pointAddress = point && point.address ? String(point.address) : officeNotSet;
 		var showPvzRow = selectedMethodId === 'pickup' || selectedMethodId === 'pvz';
 		var cityEditMode = Boolean(runtime.step1_city_editing);
 		var pvzEditMode = Boolean(runtime.step1_pvz_editing);
@@ -5229,19 +5293,22 @@
 
 		html += '<section class="mp-cc-address-form">';
 		html += '<div class="mp-cc-address-form__row" data-row="city">';
-		html += '<span class="mp-cc-address-form__label">населённый пункт</span>';
+		html += '<span class="mp-cc-address-form__label">' + escapeHtml(getStepOneLabel(state, 'address_form.city_row', 'step_4.address_city', 'населённый пункт')) + '</span>';
 		html += '<div class="mp-cc-address-form__control">';
 		if (cityEditMode) {
-			html += '<input type="text" class="mp-cc-address-form__input" data-city-input value="' + escapeHtml(cityLabel) + '" placeholder="Введите город">';
+			html += '<input type="text" class="mp-cc-address-form__input" data-city-input value="' + escapeHtml(savedCity) + '" placeholder="' + escapeHtml(cityPlaceholder) + '">';
+		} else if (inferredCity) {
+			html += '<span class="mp-cc-address-form__value">' + escapeHtml(inferredCity) + '</span>';
+			html += '<button type="button" class="mp-cc-address-form__edit" data-city-edit>' + escapeHtml(getStepOneLabel(state, 'address_form.change_button', '', 'другой')) + '</button>';
 		} else {
-			html += '<span class="mp-cc-address-form__value">' + escapeHtml(cityLabel) + '</span>';
-			html += '<button type="button" class="mp-cc-address-form__edit" data-city-edit>другой</button>';
+			html += '<span class="mp-cc-address-form__value mp-cc-address-form__value--placeholder">' + escapeHtml(cityEmptyHint) + '</span>';
+			html += '<button type="button" class="mp-cc-address-form__edit" data-city-edit>' + escapeHtml(getStepOneLabel(state, 'address_form.change_button', '', 'другой')) + '</button>';
 		}
 		html += '</div>';
 		html += '</div>';
 
 		html += '<div class="mp-cc-address-form__row" data-row="method">';
-		html += '<span class="mp-cc-address-form__label">способ доставки</span>';
+		html += '<span class="mp-cc-address-form__label">' + escapeHtml(getStepOneLabel(state, 'address_form.method_row', '', 'способ доставки')) + '</span>';
 		html += '<div class="mp-cc-address-form__methods">';
 		for (i = 0; i < methodOrder.length; i += 1) {
 			var methodId = methodOrder[i];
@@ -5256,10 +5323,25 @@
 				continue;
 			}
 			var isMethodActive = selectedMethodId === methodId;
-			var methodHint = trimNonEmpty(method.description) || trimNonEmpty(method.eta) || '';
+			var hasTariffsForMethod = Array.isArray(method.tariffs) && method.tariffs.length > 0;
+			var methodTitle = String(method.title || methodId);
+			var methodPriceNum = Number(method.price || 0);
+			if (!hasTariffsForMethod && methodPriceNum > 0) {
+				methodTitle += ': ' + Math.round(methodPriceNum) + ' ₽';
+			}
+			var methodHint = '';
+			if (methodId === 'pickup') {
+				var pickupCfg = getPickupConfig();
+				var pickupPoints = pickupCfg.points || [];
+				if (pickupPoints.length && pickupPoints[0] && pickupPoints[0].address) {
+					methodHint = String(pickupPoints[0].address);
+				}
+			} else {
+				methodHint = trimNonEmpty(method.description) || trimNonEmpty(method.eta) || '';
+			}
 			html += '<label class="mp-cc-ship-option">';
 			html += '<input type="radio" name="mp-cc-ship-method" data-ship-method="' + escapeHtml(methodId) + '"' + (isMethodActive ? ' checked' : '') + '>';
-			html += '<span class="mp-cc-ship-option__title">' + escapeHtml(String(method.title || methodId)) + '</span>';
+			html += '<span class="mp-cc-ship-option__title">' + escapeHtml(methodTitle) + '</span>';
 			if (methodHint) {
 				html += '<span class="mp-cc-ship-option__hint">' + escapeHtml(methodHint) + '</span>';
 			}
@@ -5267,11 +5349,11 @@
 			var tariffs = Array.isArray(method.tariffs) ? method.tariffs : [];
 			if (isMethodActive && tariffs.length) {
 				html += '<div class="mp-cc-ship-option__tariffs">';
-				html += '<span class="mp-cc-ship-option__tariffs-label">Выбрать вариант:</span>';
+				html += '<span class="mp-cc-ship-option__tariffs-label">' + escapeHtml(getStepOneLabel(state, 'address_form.tariff_intro', '', 'Выбрать вариант:')) + '</span>';
 				for (var t = 0; t < tariffs.length; t += 1) {
 					var tariff = tariffs[t] || {};
 					var tariffId = String(tariff.id || '');
-					var tariffChecked = selectedTariffId === tariffId || (!selectedTariffId && t === 0);
+					var tariffChecked = selectedTariffId === tariffId;
 					var tariffMeta = String(Math.round(Number(tariff.price || 0))) + ' ₽';
 					if (tariff.eta) {
 						tariffMeta += ' · ' + String(tariff.eta);
@@ -5288,7 +5370,7 @@
 		html += '</div>';
 
 		html += '<div class="mp-cc-address-form__row" data-row="pvz"' + (showPvzRow ? '' : ' hidden') + '>';
-		html += '<span class="mp-cc-address-form__label">адрес пвз</span>';
+		html += '<span class="mp-cc-address-form__label">' + escapeHtml(getStepOneLabel(state, 'address_form.office_row', '', 'адрес офиса')) + '</span>';
 		html += '<div class="mp-cc-address-form__control">';
 		if (pvzEditMode) {
 			var pickupCfg = getPickupConfig();
@@ -5310,7 +5392,7 @@
 			}
 		} else {
 			html += '<span class="mp-cc-address-form__value">' + escapeHtml(pointAddress) + '</span>';
-			html += '<button type="button" class="mp-cc-address-form__edit" data-pvz-edit>другой</button>';
+			html += '<button type="button" class="mp-cc-address-form__edit" data-pvz-edit>' + escapeHtml(getStepOneLabel(state, 'address_form.change_button', '', 'другой')) + '</button>';
 		}
 		html += '</div>';
 		html += '</div>';
@@ -6145,15 +6227,125 @@
 		);
 	}
 
+	function applyShippingMethodUserChoice(state, $app, methodId) {
+		methodId = String(methodId || '');
+		if (!methodId) {
+			return;
+		}
+		// Защита от двойных кликов / параллельных AJAX-цепочек по способу доставки.
+		if (shippingMutationInFlight) {
+			return;
+		}
+		var methods = getV2ShippingCatalog(state);
+		var dateBox = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.date || {}) : {};
+		var selectedMethod = null;
+		for (var mi = 0; mi < methods.length; mi += 1) {
+			if (String(methods[mi].id || '') === methodId) {
+				selectedMethod = methods[mi];
+				break;
+			}
+		}
+		var hasTariffs = !!(selectedMethod && Array.isArray(selectedMethod.tariffs) && selectedMethod.tariffs.length);
+		var preferredTariffId = '';
+		var previousTariffForMethod = '';
+		if (hasTariffs && String(dateBox.shipping_method_id || '') === methodId) {
+			previousTariffForMethod = String(dateBox.shipping_tariff_id || '');
+			preferredTariffId = previousTariffForMethod;
+		}
+		var selection = resolveShippingSelection(methods, methodId, preferredTariffId);
+		if (!selection) {
+			notify(getShippingErrorCopy().methodUnavailable, 'error');
+			return;
+		}
+		if (hasTariffs && !previousTariffForMethod) {
+			selection.tariff_id = '';
+			selection.tariff_title = '';
+			selection.price = Number(selectedMethod.price || 0);
+			selection.eta = String(selectedMethod.eta || '');
+		}
+		var nextScenario = scenarioByShippingMethod(methodId);
+		var currentScenario = normalizeScenarioId(state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenario || '') : '');
+		if (nextScenario !== currentScenario) {
+			resetDependentStateForScenario(state, nextScenario);
+		}
+		state.frontendStore.fulfillment.date = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+			? state.frontendStore.fulfillment.date
+			: {};
+		applyShippingSelectionToState(state, selection);
+		invalidateV2DownstreamFrom(state, 0);
+		render(state, $app);
+
+		shippingMutationInFlight = true;
+		var release = function () { shippingMutationInFlight = false; };
+		var scenarioRequest = postCheckout('session_set_scenario', {
+			scenario: nextScenario,
+			context_id: state.flowContextId
+		});
+		if (!hasTariffs || selection.tariff_id) {
+			scenarioRequest.then(function () {
+				return postCheckout('session_set_answers', {
+					step_id: 'address_delivery',
+					context_id: state.flowContextId,
+					answers: state.frontendStore.fulfillment.date || {}
+				});
+			}).then(function () {
+				// Авто-переход выполняет setCurrentStep, который сам синхронизирует state из ответа.
+				// Параллельный syncStoreWithBackend здесь создаёт гонку (старый снапшот перезаписывает выбор).
+				tryAutoAdvanceAddressStep(state, $app);
+			}).fail(function () {
+				notify('Не удалось сохранить шаг доставки.', 'error');
+				// При ошибке восстанавливаем состояние из бэкенда, чтобы UI не остался рассинхронизированным.
+				syncStoreWithBackend(state, $app);
+			}).always(release);
+		} else {
+			// Метод требует выбора тарифа — ждём клика по тарифу, ничего больше не отправляем.
+			scenarioRequest.fail(function () {
+				notify('Не удалось сохранить способ доставки.', 'error');
+				syncStoreWithBackend(state, $app);
+			}).always(release);
+		}
+	}
+
+	function applyShippingTariffUserChoice(state, $app, methodId, tariffId) {
+		methodId = String(methodId || '');
+		tariffId = String(tariffId || '');
+		if (!methodId || !tariffId) {
+			return;
+		}
+		if (shippingMutationInFlight) {
+			return;
+		}
+		var methods = getV2ShippingCatalog(state);
+		var selection = resolveShippingSelection(methods, methodId, tariffId);
+		if (!selection) {
+			notify(getShippingErrorCopy().tariffUnavailable, 'error');
+			return;
+		}
+		applyShippingSelectionToState(state, selection);
+		invalidateV2DownstreamFrom(state, 0);
+		render(state, $app);
+		shippingMutationInFlight = true;
+		postCheckout('session_set_answers', {
+			step_id: 'address_delivery',
+			context_id: state.flowContextId,
+			answers: state.frontendStore.fulfillment.date || {}
+		}).then(function () {
+			tryAutoAdvanceAddressStep(state, $app);
+		}).fail(function () {
+			notify('Не удалось сохранить тариф доставки.', 'error');
+			syncStoreWithBackend(state, $app);
+		}).always(function () {
+			shippingMutationInFlight = false;
+		});
+	}
+
 	function bindHandlers(state, $app, $progress, $actions) {
 		$(selectors.exit).off('click').on('click', function () {
-			var summary = state.frontendStore && state.frontendStore.cart ? (state.frontendStore.cart.summary || {}) : {};
-			var fallback = trimNonEmpty(summary.catalog_url) || '/';
-			if (window.history && window.history.length > 1) {
-				window.history.back();
-				return;
+			var homeUrl = '/';
+			if (window.mpCcCheckout && window.mpCcCheckout.initialContext && window.mpCcCheckout.initialContext.home_url) {
+				homeUrl = String(window.mpCcCheckout.initialContext.home_url);
 			}
-			window.location.href = fallback;
+			window.location.href = homeUrl;
 		});
 		mountPickupMaps(state, $app);
 
@@ -6395,90 +6587,29 @@
 			}
 		});
 
-		$app.find('[data-shipping-method], [data-ship-method]').off('click change').on('click change', function () {
-			var methodId = String($(this).data('shipping-method') || $(this).data('ship-method') || '');
-			if (!methodId) {
-				return;
-			}
-			var methods = getV2ShippingCatalog(state);
-			var dateBox = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.date || {}) : {};
-			var selectedMethod = null;
-			for (var mi = 0; mi < methods.length; mi += 1) {
-				if (String(methods[mi].id || '') === methodId) {
-					selectedMethod = methods[mi];
-					break;
-				}
-			}
-			var preferredTariffId = '';
-			if (selectedMethod && Array.isArray(selectedMethod.tariffs) && selectedMethod.tariffs.length) {
-				if (String(dateBox.shipping_method_id || '') === methodId) {
-					preferredTariffId = String(dateBox.shipping_tariff_id || '');
-				}
-				if (!preferredTariffId && selectedMethod.tariffs[0]) {
-					preferredTariffId = String(selectedMethod.tariffs[0].id || '');
-				}
-			}
-			var selection = resolveShippingSelection(methods, methodId, preferredTariffId);
-			if (!selection) {
-				notify(getShippingErrorCopy().methodUnavailable, 'error');
-				return;
-			}
-			var nextScenario = scenarioByShippingMethod(methodId);
-			var currentScenario = normalizeScenarioId(state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenario || '') : '');
-			if (nextScenario !== currentScenario) {
-				resetDependentStateForScenario(state, nextScenario);
-			}
-			state.frontendStore.fulfillment.date = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
-				? state.frontendStore.fulfillment.date
-				: {};
-			applyShippingSelectionToState(state, selection);
-			invalidateV2DownstreamFrom(state, 0);
-			render(state, $app);
-			scheduleCurrentStepDraftSave(state, function () {
-				notify('Не удалось сохранить выбор доставки.', 'error');
-			});
-			postCheckout('session_set_scenario', {
-				scenario: nextScenario,
-				context_id: state.flowContextId
-			});
-			postCheckout('session_set_answers', {
-				step_id: 'address_delivery',
-				context_id: state.flowContextId,
-				answers: state.frontendStore.fulfillment.date || {}
-			}).fail(function () {
-				notify('Не удалось сохранить шаг доставки.', 'error');
-			});
-			tryAutoAdvanceAddressStep(state, $app);
-			syncStoreWithBackend(state, $app);
+		// Радио: только change (иначе click+change = двойной вызов и гонки AJAX).
+		$app.find('[data-ship-method]').off('change.mpCcShipMethod').on('change.mpCcShipMethod', function () {
+			applyShippingMethodUserChoice(state, $app, String($(this).data('ship-method') || ''));
+		});
+		$app.find('[data-shipping-method]').off('click.mpCcShipMethod').on('click.mpCcShipMethod', function () {
+			applyShippingMethodUserChoice(state, $app, String($(this).data('shipping-method') || ''));
 		});
 
-		$app.find('[data-shipping-tariff], [data-ship-tariff]').off('click change').on('click change', function () {
-			var methodId = String($(this).data('shipping-method-owner') || $(this).data('ship-tariff-method') || '');
-			var tariffId = String($(this).data('shipping-tariff') || $(this).data('ship-tariff') || '');
-			if (!methodId || !tariffId) {
-				return;
-			}
-			var methods = getV2ShippingCatalog(state);
-			var selection = resolveShippingSelection(methods, methodId, tariffId);
-			if (!selection) {
-				notify(getShippingErrorCopy().tariffUnavailable, 'error');
-				return;
-			}
-			applyShippingSelectionToState(state, selection);
-			invalidateV2DownstreamFrom(state, 0);
-			render(state, $app);
-			scheduleCurrentStepDraftSave(state, function () {
-				notify('Не удалось сохранить выбор тарифа.', 'error');
-			});
-			postCheckout('session_set_answers', {
-				step_id: 'address_delivery',
-				context_id: state.flowContextId,
-				answers: state.frontendStore.fulfillment.date || {}
-			}).fail(function () {
-				notify('Не удалось сохранить тариф доставки.', 'error');
-			});
-			tryAutoAdvanceAddressStep(state, $app);
-			syncStoreWithBackend(state, $app);
+		$app.find('[data-ship-tariff]').off('change.mpCcShipTariff').on('change.mpCcShipTariff', function () {
+			applyShippingTariffUserChoice(
+				state,
+				$app,
+				String($(this).data('ship-tariff-method') || ''),
+				String($(this).data('ship-tariff') || '')
+			);
+		});
+		$app.find('[data-shipping-tariff]').off('click.mpCcShipTariff').on('click.mpCcShipTariff', function () {
+			applyShippingTariffUserChoice(
+				state,
+				$app,
+				String($(this).data('shipping-method-owner') || ''),
+				String($(this).data('shipping-tariff') || '')
+			);
 		});
 
 		$app.find('[data-city-edit]').off('click').on('click', function () {

@@ -23,11 +23,11 @@ get_header();
 	<div class="mp-cc-checkout__inner" role="region" aria-label="<?php echo esc_attr__( 'Checkout shell', 'mp-custom-checkout' ); ?>">
 		<div id="mp-cc-a11y-announcer" class="mp-cc-visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
 		<header class="mp-cc-v2-shell-head" role="banner" aria-label="<?php echo esc_attr__( 'Checkout header', 'mp-custom-checkout' ); ?>">
-			<button type="button" class="mp-cc-v2-shell-head__exit" id="mp-cc-exit-checkout" aria-label="<?php echo esc_attr__( 'Закрыть оформление', 'mp-custom-checkout' ); ?>" data-exit-checkout="1">×</button>
 			<div class="mp-cc-v2-shell-head__title-wrap">
 				<h1 class="mp-cc-v2-shell-head__title"><?php esc_html_e( 'Оформление заказа', 'mp-custom-checkout' ); ?></h1>
+				<div id="mp-cc-shell-parcel-badge" class="mp-cc-v2-shell-head__parcel-slot" aria-live="polite"></div>
 			</div>
-			<div id="mp-cc-shell-parcel-badge" class="mp-cc-v2-shell-head__parcel-slot" aria-live="polite"></div>
+			<button type="button" class="mp-cc-v2-shell-head__exit" id="mp-cc-exit-checkout" aria-label="<?php echo esc_attr__( 'Закрыть оформление', 'mp-custom-checkout' ); ?>" data-exit-checkout="1">×</button>
 		</header>
 		<section id="mp-cc-parcel-header" class="mp-cc-region mp-cc-region--parcel mp-cc-region--hero" aria-live="polite" aria-label="<?php echo esc_attr__( 'Order parcel header', 'mp-custom-checkout' ); ?>"></section>
 		<section id="mp-cc-notifications" class="mp-cc-region mp-cc-region--notifications" role="status" aria-live="polite" aria-atomic="true"></section>

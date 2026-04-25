@@ -785,6 +785,30 @@ final class AdminMenuHooks {
 		if ( false !== strpos( $p, 'motion.throttle' ) ) {
 			return __( 'Ограничение частоты второстепенных анимаций на слабых устройствах / при лавине событий.', 'mp-custom-checkout' );
 		}
+		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, 'tariffs' ) && false !== strpos( $p, '.price' ) ) {
+			return __( 'Цена тарифа в рублях (целое). Показывается покупателю в выборе способа доставки.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, '.price' ) ) {
+			return __( 'Базовая цена метода доставки в рублях (целое). Используется, если у метода нет тарифов.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, '.eta' ) ) {
+			return __( 'Срок доставки (произвольный текст). Например: «2 дней», «в течение дня», пусто — не показывать.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, '.title' ) ) {
+			return __( 'Название метода/тарифа, которое увидит покупатель на шаге «Адрес и доставка».', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, '.active' ) ) {
+			return __( 'Включить метод/тариф. Выключенные в checkout не показываются.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, 'visibility_scenarios' ) ) {
+			return __( 'Сценарии, в которых метод доступен: pickup, krasnoyarsk_delivery, other_city_delivery.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'pickup.points' ) && false !== strpos( $p, 'address' ) ) {
+			return __( 'Адрес пункта самовывоза одной строкой. Отображается в карточке метода «Самовывоз».', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'step_1.labels.address_form' ) ) {
+			return __( 'Тексты полей формы «Адрес и доставка» на checkout (шаг 1): подписи строк, placeholder города, кнопка «другой», подпись к тарифам, строка адреса офиса.', 'mp-custom-checkout' );
+		}
 		return '';
 	}
 

@@ -120,6 +120,91 @@ final class SettingsMigrationManager {
 			$settings[ OptionKeys::KEY_REGISTRY ] = $registry;
 			return $settings;
 		};
+
+		self::$migrations['2'] = static function ( array $settings ): array {
+			$delivery = isset( $settings[ OptionKeys::SECTION_DELIVERY ] ) && is_array( $settings[ OptionKeys::SECTION_DELIVERY ] )
+				? $settings[ OptionKeys::SECTION_DELIVERY ]
+				: array();
+			$catalog = isset( $delivery['shipping_catalog'] ) && is_array( $delivery['shipping_catalog'] ) ? $delivery['shipping_catalog'] : array();
+			$methods = isset( $catalog['methods'] ) && is_array( $catalog['methods'] ) ? $catalog['methods'] : array();
+
+			$target_prices = array(
+				'post_russia' => array( 'price' => 321, 'eta' => '' ),
+				'courier'     => array( 'price' => 375, 'eta' => '2 дней', 'tariffs' => array(
+					'express'  => array( 'price' => 550, 'eta' => '2 дней' ),
+					'standard' => array( 'price' => 375, 'eta' => '2 дней' ),
+				) ),
+				'pvz'         => array( 'price' => 185, 'eta' => '2 дней', 'tariffs' => array(
+					'express'  => array( 'price' => 360, 'eta' => '2 дней' ),
+					'standard' => array( 'price' => 185, 'eta' => '2 дней' ),
+				) ),
+				'krasnoyarsk_delivery' => array( 'price' => 400 ),
+				'pickup'      => array( 'price' => 0 ),
+			);
+
+			foreach ( $target_prices as $method_id => $fields ) {
+				if ( ! isset( $methods[ $method_id ] ) || ! is_array( $methods[ $method_id ] ) ) {
+					continue;
+				}
+				foreach ( $fields as $field_key => $field_value ) {
+					if ( 'tariffs' === $field_key && is_array( $field_value ) ) {
+						$existing_tariffs = isset( $methods[ $method_id ]['tariffs'] ) && is_array( $methods[ $method_id ]['tariffs'] )
+							? $methods[ $method_id ]['tariffs']
+							: array();
+						foreach ( $field_value as $tariff_id => $tariff_fields ) {
+							if ( ! isset( $existing_tariffs[ $tariff_id ] ) || ! is_array( $existing_tariffs[ $tariff_id ] ) ) {
+								continue;
+							}
+							foreach ( $tariff_fields as $tkey => $tval ) {
+								$existing_tariffs[ $tariff_id ][ $tkey ] = $tval;
+							}
+						}
+						$methods[ $method_id ]['tariffs'] = $existing_tariffs;
+						continue;
+					}
+					$methods[ $method_id ][ $field_key ] = $field_value;
+				}
+			}
+
+			$catalog['methods'] = $methods;
+			$delivery['shipping_catalog'] = $catalog;
+			$settings[ OptionKeys::SECTION_DELIVERY ] = $delivery;
+
+			$pickup = isset( $settings[ OptionKeys::SECTION_PICKUP ] ) && is_array( $settings[ OptionKeys::SECTION_PICKUP ] )
+				? $settings[ OptionKeys::SECTION_PICKUP ]
+				: array();
+			$points = isset( $pickup['points'] ) && is_array( $pickup['points'] ) ? $pickup['points'] : array();
+			if ( isset( $points[0] ) && is_array( $points[0] ) ) {
+				$points[0]['address'] = 'г. Красноярск, ул. Маерчака, д. 10, оф. 17-13';
+			}
+			$pickup['points'] = $points;
+			$settings[ OptionKeys::SECTION_PICKUP ] = $pickup;
+
+			return $settings;
+		};
+
+		self::$migrations['3'] = static function ( array $settings ): array {
+			$delivery = isset( $settings[ OptionKeys::SECTION_DELIVERY ] ) && is_array( $settings[ OptionKeys::SECTION_DELIVERY ] )
+				? $settings[ OptionKeys::SECTION_DELIVERY ]
+				: array();
+			$catalog = isset( $delivery['shipping_catalog'] ) && is_array( $delivery['shipping_catalog'] ) ? $delivery['shipping_catalog'] : array();
+			$methods = isset( $catalog['methods'] ) && is_array( $catalog['methods'] ) ? $catalog['methods'] : array();
+			if ( isset( $methods['pickup'] ) && is_array( $methods['pickup'] ) ) {
+				$vis = isset( $methods['pickup']['visibility_scenarios'] ) && is_array( $methods['pickup']['visibility_scenarios'] )
+					? $methods['pickup']['visibility_scenarios']
+					: array();
+				$vis = array_values( array_filter( array_map( 'sanitize_key', $vis ) ) );
+				// Раньше самовывоз был только в сценарии pickup — на шаге «город» метод не показывался.
+				if ( array( 'pickup' ) === $vis ) {
+					$methods['pickup']['visibility_scenarios'] = array( 'pickup', 'krasnoyarsk_delivery', 'other_city_delivery' );
+				}
+			}
+			$catalog['methods'] = $methods;
+			$delivery['shipping_catalog'] = $catalog;
+			$settings[ OptionKeys::SECTION_DELIVERY ] = $delivery;
+
+			return $settings;
+		};
 	}
 
 	/**
@@ -129,7 +214,9 @@ final class SettingsMigrationManager {
 		$chain = array(
 			'0' => '1',
 			'1' => '2',
-			'2' => null,
+			'2' => '3',
+			'3' => '4',
+			'4' => null,
 		);
 
 		return array_key_exists( $current, $chain ) ? $chain[ $current ] : null;

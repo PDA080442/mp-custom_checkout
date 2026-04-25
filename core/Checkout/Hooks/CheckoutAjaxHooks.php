@@ -109,10 +109,13 @@ final class CheckoutAjaxHooks {
 				}
 				// Частичный payload (напр. только с шага «условия») дополняем сохранённым date_conditions.
 				$answers = array_replace_recursive( $existing_date, $answers );
-				if ( ! self::validate_date_answers_payload( $answers ) ) {
-					$message = SafeSettingsResolver::get( 'step_3.copy.errors.invalid_date', __( 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.', 'mp-custom-checkout' ) );
-					$message = is_string( $message ) && '' !== trim( $message ) ? $message : __( 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.', 'mp-custom-checkout' );
-					wp_send_json_error( array( 'code' => 'invalid_date_selection', 'message' => $message ), 422 );
+				// Дата выбирается на отдельном шаге (если включён). Для address_delivery валидируем только доставку.
+				if ( in_array( $step_id, array( 'date', 'conditions' ), true ) || ! empty( $answers['selected_date'] ) ) {
+					if ( ! self::validate_date_answers_payload( $answers ) ) {
+						$message = SafeSettingsResolver::get( 'step_3.copy.errors.invalid_date', __( 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.', 'mp-custom-checkout' ) );
+						$message = is_string( $message ) && '' !== trim( $message ) ? $message : __( 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.', 'mp-custom-checkout' );
+						wp_send_json_error( array( 'code' => 'invalid_date_selection', 'message' => $message ), 422 );
+					}
 				}
 				if ( ! self::validate_shipping_answers_payload( $answers ) ) {
 					wp_send_json_error(
@@ -638,7 +641,7 @@ final class CheckoutAjaxHooks {
 				'courier'              => array( 'tariffs' => array( 'express', 'standard' ), 'visibility_scenarios' => array( 'krasnoyarsk_delivery', 'other_city_delivery' ) ),
 				'pvz'                  => array( 'tariffs' => array( 'express', 'standard' ), 'visibility_scenarios' => array( 'krasnoyarsk_delivery', 'other_city_delivery' ) ),
 				'krasnoyarsk_delivery' => array( 'tariffs' => array(), 'visibility_scenarios' => array( 'krasnoyarsk_delivery' ) ),
-				'pickup'               => array( 'tariffs' => array(), 'visibility_scenarios' => array( 'pickup' ) ),
+				'pickup'               => array( 'tariffs' => array(), 'visibility_scenarios' => array( 'pickup', 'krasnoyarsk_delivery', 'other_city_delivery' ) ),
 			);
 		}
 		return $result;
