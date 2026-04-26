@@ -3970,6 +3970,7 @@
 
 			visible.push(found);
 		}
+		visible = normalizeVisibleCheckoutStepsOrder(visible);
 
 		if (!currentStep && visible.length) {
 			currentStep = visible[0].id;
@@ -3992,6 +3993,38 @@
 			featureFlags: $.extend({}, contextFlags, localizedFlags),
 			stepOneConfig: getStepOneConfig()
 		};
+	}
+
+	function normalizeVisibleCheckoutStepsOrder(visibleSteps) {
+		var steps = Array.isArray(visibleSteps) ? visibleSteps.slice() : [];
+		if (!steps.length) {
+			return steps;
+		}
+		var confirmIdx = -1;
+		var recipientIdx = -1;
+		var paymentIdx = -1;
+		for (var i = 0; i < steps.length; i += 1) {
+			var stepId = steps[i] && steps[i].id ? String(steps[i].id) : '';
+			if (stepId === 'confirm') {
+				confirmIdx = i;
+			} else if (stepId === 'recipient') {
+				recipientIdx = i;
+			} else if (stepId === 'payment') {
+				paymentIdx = i;
+			}
+		}
+		if (confirmIdx < 0) {
+			return steps;
+		}
+		var mustMove =
+			(recipientIdx >= 0 && confirmIdx < recipientIdx) ||
+			(paymentIdx >= 0 && confirmIdx < paymentIdx);
+		if (!mustMove) {
+			return steps;
+		}
+		var confirmStep = steps.splice(confirmIdx, 1)[0];
+		steps.push(confirmStep);
+		return steps;
 	}
 
 	function createFrontendStore(flow, visibleSteps, allSteps, currentStepId) {
@@ -5334,10 +5367,6 @@
 			var isMethodActive = selectedMethodId === methodId;
 			var hasTariffsForMethod = Array.isArray(method.tariffs) && method.tariffs.length > 0;
 			var methodTitle = String(method.title || methodId);
-			var methodPriceNum = Number(method.price || 0);
-			if (!hasTariffsForMethod && methodPriceNum > 0) {
-				methodTitle += ': ' + Math.round(methodPriceNum) + ' ₽';
-			}
 			var methodHint = '';
 			if (methodId === 'pickup') {
 				var pickupCfg = getPickupConfig();
@@ -5348,11 +5377,12 @@
 			} else {
 				methodHint = trimNonEmpty(method.description) || trimNonEmpty(method.eta) || '';
 			}
+			html += '<div class="mp-cc-ship-option-group' + (isMethodActive ? ' is-active' : '') + (hasTariffsForMethod ? ' has-tariffs' : '') + '">';
 			html += '<label class="mp-cc-ship-option' + (isMethodActive ? ' is-active' : '') + '">';
 			html += '<input type="radio" name="mp-cc-ship-method" data-ship-method="' + escapeHtml(methodId) + '"' + (isMethodActive ? ' checked' : '') + '>';
 			html += '<span class="mp-cc-ship-option__title">' + escapeHtml(methodTitle) + '</span>';
 			if (methodHint) {
-				html += '<span class="mp-cc-ship-option__hint">' + escapeHtml(methodHint) + '</span>';
+				html += '<span class="mp-cc-ship-option__hint">' + escapeHtml('(' + methodHint + ')') + '</span>';
 			}
 			html += '</label>';
 			var tariffs = Array.isArray(method.tariffs) ? method.tariffs : [];
@@ -5363,23 +5393,25 @@
 					var tariff = tariffs[t] || {};
 					var tariffId = String(tariff.id || '');
 					var tariffChecked = selectedTariffId === tariffId;
-					var tariffMeta = String(Math.round(Number(tariff.price || 0))) + ' ₽';
-					if (tariff.eta) {
-						tariffMeta += ' · ' + String(tariff.eta);
-					}
+					var tariffPriceText = String(Math.round(Number(tariff.price || 0))) + ' ₽';
+					var tariffEtaSuffix = tariff.eta ? ' (' + String(tariff.eta) + ')' : '';
+					var tariffLabel = String(tariff.title || tariffId) + tariffEtaSuffix + ': ';
 					html += '<label class="mp-cc-ship-option__tariff-item">';
 					html += '<input type="radio" name="mp-cc-ship-tariff-' + escapeHtml(methodId) + '" data-ship-tariff="' + escapeHtml(tariffId) + '" data-ship-tariff-method="' + escapeHtml(methodId) + '"' + (tariffChecked ? ' checked' : '') + '>';
-					html += '<span>' + escapeHtml(String(tariff.title || tariffId)) + ' (' + escapeHtml(tariffMeta) + ')</span>';
+					html += '<span>' + escapeHtml(tariffLabel) + '<strong>' + escapeHtml(tariffPriceText) + '</strong></span>';
 					html += '</label>';
 				}
 				html += '</div>';
 			}
+			html += '</div>';
 		}
 		html += '</div>';
 		html += '</div>';
 
 		html += '<div class="mp-cc-address-form__row" data-row="pvz"' + (showPvzRow ? '' : ' hidden') + '>';
-		html += '<span class="mp-cc-address-form__label">' + escapeHtml(getStepOneLabel(state, 'address_form.office_row', '', 'адрес офиса')) + '</span>';
+		var officeRowLabelKey = selectedMethodId === 'pvz' ? 'address_form.pvz_row' : 'address_form.office_row';
+		var officeRowLabelDefault = selectedMethodId === 'pvz' ? 'адрес пвз' : 'адрес офиса';
+		html += '<span class="mp-cc-address-form__label">' + escapeHtml(getStepOneLabel(state, officeRowLabelKey, '', officeRowLabelDefault)) + '</span>';
 		html += '<div class="mp-cc-address-form__control">';
 		if (pvzEditMode) {
 			var pickupCfg = getPickupConfig();
@@ -5809,15 +5841,7 @@
 				html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(totalLabel) + ':</strong> ' + wcPriceHtmlFragment(totalText) + '</p>';
 			}
 			html += '</div>';
-			var miniHtml = buildPaymentMiniReviewHtml(state);
-			if (trimNonEmpty(miniHtml)) {
-				html += miniHtml;
-			} else if (trimNonEmpty(gatewayTitle)) {
-				html += '<div class="mp-cc-summary-card__scenario" data-final-review-gateway="1">';
-				html += '<p class="mp-cc-summary-card__scenario-title"><strong>' + escapeHtml(getUiText('step_4.payment_title', 'Способ оплаты')) + '</strong></p>';
-				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(gatewayTitle) + '</p>';
-				html += '</div>';
-			}
+			// По UI-задаче из сводки заказа убираем блок «Способ оплаты».
 		}
 		if (state.currentStepId === 'confirm' && scenarioLabel) {
 			html += '<div class="mp-cc-summary-card__scenario" data-final-review-scenario="1">';

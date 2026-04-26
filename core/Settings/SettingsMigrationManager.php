@@ -205,6 +205,45 @@ final class SettingsMigrationManager {
 
 			return $settings;
 		};
+
+		self::$migrations['4'] = static function ( array $settings ): array {
+			$registry = isset( $settings[ OptionKeys::KEY_REGISTRY ] ) && is_array( $settings[ OptionKeys::KEY_REGISTRY ] )
+				? $settings[ OptionKeys::KEY_REGISTRY ]
+				: array();
+			$order = isset( $registry['step_order'] ) && is_array( $registry['step_order'] ) ? $registry['step_order'] : array();
+			$normalized = array();
+			foreach ( $order as $raw_step ) {
+				if ( ! is_string( $raw_step ) ) {
+					continue;
+				}
+				$step = sanitize_key( $raw_step );
+				if ( '' !== $step ) {
+					$normalized[] = $step;
+				}
+			}
+			$normalized = array_values( array_unique( $normalized ) );
+
+			$idx_confirm   = array_search( ScenarioStepRegistry::STEP_CONFIRM, $normalized, true );
+			$idx_recipient = array_search( ScenarioStepRegistry::STEP_RECIPIENT, $normalized, true );
+			$idx_payment   = array_search( ScenarioStepRegistry::STEP_PAYMENT, $normalized, true );
+
+			// Подтверждение должно быть после адреса получателя и оплаты.
+			$confirm_too_early =
+				false !== $idx_confirm
+				&& (
+					( false !== $idx_recipient && (int) $idx_confirm < (int) $idx_recipient )
+					|| ( false !== $idx_payment && (int) $idx_confirm < (int) $idx_payment )
+				);
+
+			if ( $confirm_too_early ) {
+				$normalized = ScenarioStepRegistry::default_step_order();
+			}
+
+			$registry['step_order'] = ! empty( $normalized ) ? $normalized : ScenarioStepRegistry::default_step_order();
+			$settings[ OptionKeys::KEY_REGISTRY ] = $registry;
+
+			return $settings;
+		};
 	}
 
 	/**
@@ -216,7 +255,8 @@ final class SettingsMigrationManager {
 			'1' => '2',
 			'2' => '3',
 			'3' => '4',
-			'4' => null,
+			'4' => '5',
+			'5' => null,
 		);
 
 		return array_key_exists( $current, $chain ) ? $chain[ $current ] : null;

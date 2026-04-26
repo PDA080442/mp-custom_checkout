@@ -14,6 +14,7 @@ use MP\CustomCheckout\Settings\AdminSectionsRegistry;
 use MP\CustomCheckout\Settings\MotionSettingsResolver;
 use MP\CustomCheckout\Settings\OptionKeys;
 use MP\CustomCheckout\Settings\SafeSettingsResolver;
+use MP\CustomCheckout\Settings\SettingsMigrationManager;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -26,6 +27,7 @@ final class AdminMenuHooks {
 		add_action( 'admin_menu', array( __CLASS__, 'register_menu' ) );
 		add_action( 'admin_init', array( __CLASS__, 'register_settings' ) );
 		add_action( 'admin_init', array( __CLASS__, 'handle_logs_actions' ) );
+		add_action( 'admin_init', array( __CLASS__, 'handle_config_actions' ) );
 	}
 
 	public static function register_menu(): void {
@@ -544,6 +546,7 @@ final class AdminMenuHooks {
 	 */
 	private static function render_supplemental_groups_for_tab( string $tab_id, array $settings ): void {
 		if ( OptionKeys::SECTION_SERVICE === $tab_id ) {
+			self::render_config_io_block();
 			self::render_supplemental_group(
 				__( 'Service Flags', 'mp-custom-checkout' ),
 				OptionKeys::MAIN . '[' . OptionKeys::KEY_FEATURE_FLAGS . ']',
@@ -560,6 +563,199 @@ final class AdminMenuHooks {
 			);
 			self::render_health_checks_group();
 		}
+	}
+
+	/**
+	 * Блок «Конфигурация: экспорт и импорт» во вкладке «Служебное».
+	 */
+	private static function render_config_io_block(): void {
+		$import_messages = array(
+			'no_file' => __( 'Файл не выбран.', 'mp-custom-checkout' ),
+			'upload'  => __( 'Ошибка загрузки файла.', 'mp-custom-checkout' ),
+			'size'    => __( 'Файл слишком большой (>5 МБ) или пустой.', 'mp-custom-checkout' ),
+			'read'    => __( 'Не удалось прочитать файл.', 'mp-custom-checkout' ),
+			'json'    => __( 'Файл не является валидным JSON.', 'mp-custom-checkout' ),
+			'format'  => __( 'Файл не похож на конфиг MP Custom Checkout (поле «format» не совпадает).', 'mp-custom-checkout' ),
+			'empty'   => __( 'В файле нет настроек для импорта.', 'mp-custom-checkout' ),
+		);
+
+		echo '<details class="mp-cc-admin-shell__fieldset" open>';
+		echo '<summary><span>' . esc_html__( 'Конфигурация: экспорт и импорт', 'mp-custom-checkout' ) . '</span><em class="mp-cc-admin-shell__type-badge mp-cc-admin-shell__type-badge--logic">' . esc_html__( 'перенос', 'mp-custom-checkout' ) . '</em></summary>';
+		echo '<p class="description">' . esc_html__( 'Скачайте JSON со всеми настройками плагина и загрузите его на другом сайте, чтобы перенести конфигурацию целиком.', 'mp-custom-checkout' ) . '</p>';
+
+		if ( isset( $_GET['mp_cc_config_imported'] ) ) {
+			echo '<div class="notice notice-success inline"><p>' . esc_html__( 'Конфигурация успешно импортирована. Все настройки плагина заменены значениями из файла.', 'mp-custom-checkout' ) . '</p></div>';
+		}
+		if ( isset( $_GET['mp_cc_config_exported'] ) ) {
+			// На случай блокировки скачивания, отдельная ветка обычно не нужна — экспорт сам отдаёт файл.
+			echo '<div class="notice notice-success inline"><p>' . esc_html__( 'Экспорт выполнен.', 'mp-custom-checkout' ) . '</p></div>';
+		}
+		if ( isset( $_GET['mp_cc_config_import_error'] ) ) {
+			$code    = sanitize_key( wp_unslash( (string) $_GET['mp_cc_config_import_error'] ) );
+			$message = isset( $import_messages[ $code ] ) ? $import_messages[ $code ] : __( 'Не удалось импортировать конфиг.', 'mp-custom-checkout' );
+			echo '<div class="notice notice-error inline"><p>' . esc_html( $message ) . '</p></div>';
+		}
+
+		echo '<div class="mp-cc-admin-shell__fieldset" style="margin-bottom:12px">';
+		echo '<p><strong>' . esc_html__( 'Экспорт', 'mp-custom-checkout' ) . '</strong></p>';
+		echo '<p class="description">' . esc_html(
+			sprintf(
+				/* translators: %s: schema version */
+				__( 'Сохранит все настройки в JSON-файл (версия схемы %s). Файл можно загрузить на другом сайте для воспроизведения конфигурации.', 'mp-custom-checkout' ),
+				OptionKeys::SETTINGS_SCHEMA_VERSION
+			)
+		) . '</p>';
+		echo '<form method="post">';
+		wp_nonce_field( 'mp_cc_config_actions', 'mp_cc_config_nonce' );
+		echo '<input type="hidden" name="mp_cc_config_action" value="export_config" />';
+		submit_button( __( 'Скачать конфиг (JSON)', 'mp-custom-checkout' ), 'secondary', '', false );
+		echo '</form>';
+		echo '</div>';
+
+		echo '<div class="mp-cc-admin-shell__fieldset">';
+		echo '<p><strong>' . esc_html__( 'Импорт', 'mp-custom-checkout' ) . '</strong></p>';
+		echo '<p class="description">' . esc_html__( 'Импорт ПОЛНОСТЬЮ перезапишет настройки плагина значениями из файла. Перед импортом рекомендуется сделать экспорт текущей конфигурации.', 'mp-custom-checkout' ) . '</p>';
+		$confirm_text = __( 'Импорт перезапишет ВСЕ настройки плагина. Продолжить?', 'mp-custom-checkout' );
+		echo '<form method="post" enctype="multipart/form-data" onsubmit="return confirm(\'' . esc_js( $confirm_text ) . '\');">';
+		wp_nonce_field( 'mp_cc_config_actions', 'mp_cc_config_nonce' );
+		echo '<input type="hidden" name="mp_cc_config_action" value="import_config" />';
+		echo '<p><label class="mp-cc-admin-shell__field"><span class="mp-cc-admin-shell__field-label">' . esc_html__( 'JSON-файл с настройками', 'mp-custom-checkout' ) . '</span><input type="file" name="mp_cc_config_file" accept="application/json,.json" required /></label></p>';
+		submit_button( __( 'Импортировать конфиг', 'mp-custom-checkout' ), 'primary', '', false );
+		echo '</form>';
+		echo '</div>';
+
+		echo '</details>';
+	}
+
+	/**
+	 * Обработчик POST-действий экспорта/импорта конфигурации.
+	 */
+	public static function handle_config_actions(): void {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+		if ( 'POST' !== strtoupper( (string) ( $_SERVER['REQUEST_METHOD'] ?? '' ) ) ) {
+			return;
+		}
+		$action = isset( $_POST['mp_cc_config_action'] ) ? sanitize_key( wp_unslash( (string) $_POST['mp_cc_config_action'] ) ) : '';
+		if ( 'export_config' !== $action && 'import_config' !== $action ) {
+			return;
+		}
+		$page = isset( $_REQUEST['page'] ) ? sanitize_key( wp_unslash( (string) $_REQUEST['page'] ) ) : '';
+		if ( self::PAGE_SLUG !== $page ) {
+			return;
+		}
+		check_admin_referer( 'mp_cc_config_actions', 'mp_cc_config_nonce' );
+
+		if ( 'export_config' === $action ) {
+			self::do_export_config();
+			return;
+		}
+		if ( 'import_config' === $action ) {
+			self::do_import_config();
+		}
+	}
+
+	private static function do_export_config(): void {
+		$settings = get_option( OptionKeys::MAIN, array() );
+		$settings = is_array( $settings ) ? $settings : array();
+
+		$payload = array(
+			'format'         => 'mp-custom-checkout/config',
+			'format_version' => 1,
+			'schema_version' => OptionKeys::SETTINGS_SCHEMA_VERSION,
+			'plugin_version' => defined( 'MP_CUSTOM_CHECKOUT_VERSION' ) ? (string) MP_CUSTOM_CHECKOUT_VERSION : '',
+			'exported_at'    => gmdate( 'c' ),
+			'site_url'       => (string) get_site_url(),
+			'settings'       => $settings,
+		);
+
+		$json = wp_json_encode( $payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT );
+		if ( ! is_string( $json ) ) {
+			$json = '{}';
+		}
+
+		nocache_headers();
+		header( 'Content-Type: application/json; charset=utf-8' );
+		header( 'Content-Disposition: attachment; filename="mp-cc-config-' . gmdate( 'Ymd-His' ) . '.json"' );
+		header( 'Content-Length: ' . (string) strlen( $json ) );
+		echo $json; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+		exit;
+	}
+
+	private static function do_import_config(): void {
+		$tab = isset( $_REQUEST['tab'] ) ? sanitize_key( wp_unslash( (string) $_REQUEST['tab'] ) ) : OptionKeys::SECTION_SERVICE;
+		if ( '' === $tab ) {
+			$tab = OptionKeys::SECTION_SERVICE;
+		}
+		$redirect_base = add_query_arg(
+			array(
+				'page' => self::PAGE_SLUG,
+				'tab'  => $tab,
+			),
+			admin_url( 'admin.php' )
+		);
+
+		$fail = static function ( string $code ) use ( $redirect_base ): void {
+			wp_safe_redirect( add_query_arg( 'mp_cc_config_import_error', $code, $redirect_base ) );
+			exit;
+		};
+
+		if ( ! isset( $_FILES['mp_cc_config_file'] ) || ! is_array( $_FILES['mp_cc_config_file'] ) ) {
+			$fail( 'no_file' );
+		}
+		$file = $_FILES['mp_cc_config_file'];
+		$err  = isset( $file['error'] ) ? (int) $file['error'] : UPLOAD_ERR_NO_FILE;
+		if ( UPLOAD_ERR_NO_FILE === $err ) {
+			$fail( 'no_file' );
+		}
+		if ( UPLOAD_ERR_OK !== $err ) {
+			$fail( 'upload' );
+		}
+		$tmp_name = isset( $file['tmp_name'] ) ? (string) $file['tmp_name'] : '';
+		if ( '' === $tmp_name || ! is_uploaded_file( $tmp_name ) ) {
+			$fail( 'upload' );
+		}
+		$size = isset( $file['size'] ) ? (int) $file['size'] : 0;
+		if ( $size <= 0 || $size > 5 * 1024 * 1024 ) {
+			$fail( 'size' );
+		}
+
+		$contents = file_get_contents( $tmp_name );
+		if ( false === $contents || '' === $contents ) {
+			$fail( 'read' );
+		}
+
+		$decoded = json_decode( $contents, true );
+		if ( ! is_array( $decoded ) ) {
+			$fail( 'json' );
+		}
+
+		$format = isset( $decoded['format'] ) ? (string) $decoded['format'] : '';
+		if ( 'mp-custom-checkout/config' !== $format ) {
+			$fail( 'format' );
+		}
+
+		$incoming = isset( $decoded['settings'] ) && is_array( $decoded['settings'] ) ? $decoded['settings'] : array();
+		if ( empty( $incoming ) ) {
+			$fail( 'empty' );
+		}
+
+		$sanitized = self::sanitize_settings( $incoming );
+
+		update_option( OptionKeys::MAIN, $sanitized, false );
+
+		$imported_version = isset( $decoded['schema_version'] ) ? (string) $decoded['schema_version'] : '0';
+		if ( '' === $imported_version ) {
+			$imported_version = '0';
+		}
+		update_option( OptionKeys::DB_VERSION, $imported_version, false );
+
+		SettingsMigrationManager::maybe_migrate();
+		SafeSettingsResolver::clear_cache();
+
+		wp_safe_redirect( add_query_arg( 'mp_cc_config_imported', '1', $redirect_base ) );
+		exit;
 	}
 
 	private static function render_motion_admin_preview_block(): void {
