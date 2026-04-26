@@ -3555,6 +3555,12 @@ body.mp-custom-checkout form.checkout.woocommerce-checkout {
 	column-gap: 0.75rem;
 	align-items: baseline;
 	cursor: pointer;
+	transition: opacity 180ms ease, filter 180ms ease;
+}
+
+.mp-cc-address-form__methods--focus-active .mp-cc-ship-option:not(.is-active) {
+	opacity: 0.52;
+	filter: saturate(0.8);
 }
 
 .mp-cc-ship-option__title {

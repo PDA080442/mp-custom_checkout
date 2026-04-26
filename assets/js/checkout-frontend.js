@@ -5290,6 +5290,15 @@
 		var pvzEditMode = Boolean(runtime.step1_pvz_editing);
 		var html = '';
 		var i;
+		var selectedMethodHasTariffs = false;
+		for (i = 0; i < methods.length; i += 1) {
+			var selectedMethodCandidate = methods[i] || {};
+			if (String(selectedMethodCandidate.id || '') !== selectedMethodId) {
+				continue;
+			}
+			selectedMethodHasTariffs = Array.isArray(selectedMethodCandidate.tariffs) && selectedMethodCandidate.tariffs.length > 0;
+			break;
+		}
 
 		html += '<section class="mp-cc-address-form">';
 		html += '<div class="mp-cc-address-form__row" data-row="city">';
@@ -5309,7 +5318,7 @@
 
 		html += '<div class="mp-cc-address-form__row" data-row="method">';
 		html += '<span class="mp-cc-address-form__label">' + escapeHtml(getStepOneLabel(state, 'address_form.method_row', '', 'способ доставки')) + '</span>';
-		html += '<div class="mp-cc-address-form__methods">';
+		html += '<div class="mp-cc-address-form__methods' + (selectedMethodHasTariffs ? ' mp-cc-address-form__methods--focus-active' : '') + '">';
 		for (i = 0; i < methodOrder.length; i += 1) {
 			var methodId = methodOrder[i];
 			var method = null;
@@ -5339,7 +5348,7 @@
 			} else {
 				methodHint = trimNonEmpty(method.description) || trimNonEmpty(method.eta) || '';
 			}
-			html += '<label class="mp-cc-ship-option">';
+			html += '<label class="mp-cc-ship-option' + (isMethodActive ? ' is-active' : '') + '">';
 			html += '<input type="radio" name="mp-cc-ship-method" data-ship-method="' + escapeHtml(methodId) + '"' + (isMethodActive ? ' checked' : '') + '>';
 			html += '<span class="mp-cc-ship-option__title">' + escapeHtml(methodTitle) + '</span>';
 			if (methodHint) {
