@@ -17,6 +17,7 @@ use MP\CustomCheckout\Checkout\Routing\CheckoutSessionService;
 use MP\CustomCheckout\Routing\CheckoutStepManager;
 use MP\CustomCheckout\Settings\DefaultFeatureFlagsRegistry;
 use MP\CustomCheckout\Settings\FeatureFlagResolver;
+use MP\CustomCheckout\Settings\OptionKeys;
 use MP\CustomCheckout\Settings\SafeSettingsResolver;
 
 defined( 'ABSPATH' ) || exit;
@@ -450,6 +451,15 @@ final class CheckoutAjaxHooks {
 		if ( ! isset( $available[ $gateway ] ) ) {
 			wp_send_json_error( array( 'code' => 'gateway_not_available', 'message' => __( 'Выбранный способ оплаты недоступен.', 'mp-custom-checkout' ) ), 422 );
 		}
+		if ( ! self::is_contact_phone_acceptable( $contact ) ) {
+			wp_send_json_error(
+				array(
+					'code'    => 'invalid_phone',
+					'message' => __( 'Проверьте номер телефона: для выбранной страны укажите нужное количество цифр без кода страны.', 'mp-custom-checkout' ),
+				),
+				422
+			);
+		}
 		$wc_session = WC()->session;
 		$lock_key   = 'mp_cc_payment_submit_lock';
 		if ( $wc_session instanceof \WC_Session ) {
@@ -493,6 +503,65 @@ final class CheckoutAjaxHooks {
 				$wc_session->set( $lock_key, 0 );
 			}
 		}
+	}
+
+	/**
+	 * Проверка длины национальной части телефона по настройкам шага 4 (совпадает с фронтенд-валидацией).
+	 *
+	 * @param array<string, mixed> $contact
+	 */
+	private static function is_contact_phone_acceptable( array $contact ): bool {
+		$merged = SafeSettingsResolver::get_merged();
+		$s4     = isset( $merged[ OptionKeys::SECTION_STEP_4 ] ) && is_array( $merged[ OptionKeys::SECTION_STEP_4 ] )
+			? $merged[ OptionKeys::SECTION_STEP_4 ]
+			: array();
+		$block  = isset( $s4['contact_block'] ) && is_array( $s4['contact_block'] ) ? $s4['contact_block'] : array();
+		$vis    = isset( $block['field_visibility']['phone'] ) ? (bool) $block['field_visibility']['phone'] : true;
+		if ( ! $vis ) {
+			return true;
+		}
+		$req = isset( $block['field_required']['phone'] ) ? (bool) $block['field_required']['phone'] : true;
+
+		$codes = isset( $block['phone_country_codes'] ) && is_array( $block['phone_country_codes'] ) ? $block['phone_country_codes'] : array();
+		$iso   = isset( $contact['phone_country_iso'] ) ? strtoupper( sanitize_text_field( (string) $contact['phone_country_iso'] ) ) : '';
+		if ( 2 !== strlen( $iso ) || 1 !== preg_match( '/^[A-Z]{2}$/', $iso ) ) {
+			$iso = 'RU';
+		}
+		$need = 10;
+		$dial = '+7';
+		foreach ( $codes as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+			$row_iso = isset( $row['iso'] ) ? strtoupper( (string) $row['iso'] ) : '';
+			if ( $row_iso === $iso ) {
+				$need = isset( $row['national_digits'] ) ? max( 1, min( 15, (int) $row['national_digits'] ) ) : 10;
+				$dial = isset( $row['dial'] ) ? (string) $row['dial'] : '+7';
+				break;
+			}
+		}
+		$constraints = isset( $block['validation_constraints'] ) && is_array( $block['validation_constraints'] )
+			? $block['validation_constraints']
+			: array();
+		$override = isset( $constraints['phone_digits_override'] ) ? (int) $constraints['phone_digits_override'] : 0;
+		if ( $override > 0 ) {
+			$need = max( 1, min( 20, $override ) );
+		}
+
+		$nat = isset( $contact['billing_phone_national'] ) ? preg_replace( '/\D+/', '', (string) $contact['billing_phone_national'] ) : '';
+		if ( '' === $nat && ! empty( $contact['billing_phone'] ) ) {
+			$full        = preg_replace( '/\D+/', '', (string) $contact['billing_phone'] );
+			$dial_digits = preg_replace( '/\D+/', '', $dial );
+			if ( '' !== $dial_digits && 0 === strpos( $full, $dial_digits ) ) {
+				$nat = substr( $full, strlen( $dial_digits ) );
+			}
+		}
+
+		if ( '' === $nat ) {
+			return ! $req;
+		}
+
+		return strlen( $nat ) === $need;
 	}
 
 	private static function create_order_from_cart_and_answers( array $contact, string $gateway ): ?\WC_Order {

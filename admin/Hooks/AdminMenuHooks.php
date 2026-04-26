@@ -147,6 +147,29 @@ final class AdminMenuHooks {
 			$node_path = '' === $path ? (string) $key : $path . '.' . (string) $key;
 			if ( is_array( $default_value ) ) {
 				if ( self::is_list_array( $default_value ) ) {
+					$first_template = $default_value[0] ?? null;
+					if ( is_array( $first_template ) && ! self::is_list_array( $first_template ) ) {
+						$raw_list = is_array( $raw ) ? array_values( $raw ) : array();
+						$out_rows = array();
+						foreach ( $raw_list as $idx => $item ) {
+							$item_array = is_array( $item ) ? $item : array();
+							$iso_guess  = isset( $item_array['iso'] ) ? strtoupper( sanitize_text_field( (string) $item_array['iso'] ) ) : '';
+							$row_shape  = $first_template;
+							foreach ( $default_value as $def_row ) {
+								if ( ! is_array( $def_row ) ) {
+									continue;
+								}
+								$def_iso = isset( $def_row['iso'] ) ? strtoupper( (string) $def_row['iso'] ) : '';
+								if ( '' !== $iso_guess && $def_iso === $iso_guess ) {
+									$row_shape = $def_row;
+									break;
+								}
+							}
+							$out_rows[] = self::sanitize_by_shape( $item_array, $row_shape, $node_path . '[' . (string) $idx . ']' );
+						}
+						$result[ $key ] = $out_rows;
+						continue;
+					}
 					if ( is_array( $raw ) ) {
 						$list = array_values( array_map( 'sanitize_text_field', array_map( 'strval', $raw ) ) );
 					} else {
@@ -1004,6 +1027,9 @@ final class AdminMenuHooks {
 		}
 		if ( false !== strpos( $p, 'step_1.labels.address_form' ) ) {
 			return __( 'Тексты полей формы «Адрес и доставка» на checkout (шаг 1): подписи строк, placeholder города, кнопка «другой», подпись к тарифам, строка адреса офиса.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'phone_country_codes' ) ) {
+			return __( 'Список стран для выбора кода телефона на шаге «Получатель»: dial, ISO, national_digits (сколько цифр без кода страны), label (подпись в списке, обычно код ISO: RU, KZ, …). Флаги на сайте — эмодзи по ISO.', 'mp-custom-checkout' );
 		}
 		return '';
 	}

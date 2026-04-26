@@ -336,23 +336,7 @@ final class SafeSettingsResolver {
 						'order_notes_counter'    => array(
 							'enabled' => true,
 						),
-						'phone_country_codes' => array(
-							array(
-								'dial'             => '+7',
-								'iso'              => 'RU',
-								'national_digits'  => 10,
-							),
-							array(
-								'dial'             => '+7',
-								'iso'              => 'KZ',
-								'national_digits'  => 10,
-							),
-							array(
-								'dial'             => '+375',
-								'iso'              => 'BY',
-								'national_digits'  => 9,
-							),
-						),
+						'phone_country_codes' => self::default_phone_country_codes(),
 						'default_phone_country_iso' => 'RU',
 						'layout'              => array(
 							'desktop_columns' => 3,
@@ -767,6 +751,70 @@ final class SafeSettingsResolver {
 		}
 
 		return $tree;
+	}
+
+	/**
+	 * Список стран для выбора кода телефона: dial, ISO, длина национальной части (без кода страны), label (подпись в списке, обычно код ISO).
+	 *
+	 * @return array<int, array{dial: string, iso: string, national_digits: int, label: string}>
+	 */
+	public static function default_phone_country_codes(): array {
+		return array(
+			array(
+				'dial'             => '+7',
+				'iso'              => 'RU',
+				'national_digits'  => 10,
+				'label'            => 'RU',
+			),
+			array(
+				'dial'             => '+7',
+				'iso'              => 'KZ',
+				'national_digits'  => 10,
+				'label'            => 'KZ',
+			),
+			array(
+				'dial'             => '+375',
+				'iso'              => 'BY',
+				'national_digits'  => 9,
+				'label'            => 'BY',
+			),
+			array(
+				'dial'             => '+994',
+				'iso'              => 'AZ',
+				'national_digits'  => 9,
+				'label'            => 'AZ',
+			),
+			array(
+				'dial'             => '+374',
+				'iso'              => 'AM',
+				'national_digits'  => 8,
+				'label'            => 'AM',
+			),
+			array(
+				'dial'             => '+995',
+				'iso'              => 'GE',
+				'national_digits'  => 9,
+				'label'            => 'GE',
+			),
+			array(
+				'dial'             => '+996',
+				'iso'              => 'KG',
+				'national_digits'  => 9,
+				'label'            => 'KG',
+			),
+			array(
+				'dial'             => '+992',
+				'iso'              => 'TJ',
+				'national_digits'  => 9,
+				'label'            => 'TJ',
+			),
+			array(
+				'dial'             => '+998',
+				'iso'              => 'UZ',
+				'national_digits'  => 9,
+				'label'            => 'UZ',
+			),
+		);
 	}
 
 	/**

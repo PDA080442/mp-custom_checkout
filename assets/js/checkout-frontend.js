@@ -441,9 +441,15 @@
 				order_notes_max_length: 500,
 				order_notes_counter: { enabled: true },
 				phone_country_codes: [
-					{ dial: '+7', iso: 'RU', national_digits: 10 },
-					{ dial: '+7', iso: 'KZ', national_digits: 10 },
-					{ dial: '+375', iso: 'BY', national_digits: 9 }
+					{ dial: '+7', iso: 'RU', national_digits: 10, label: 'RU' },
+					{ dial: '+7', iso: 'KZ', national_digits: 10, label: 'KZ' },
+					{ dial: '+375', iso: 'BY', national_digits: 9, label: 'BY' },
+					{ dial: '+994', iso: 'AZ', national_digits: 9, label: 'AZ' },
+					{ dial: '+374', iso: 'AM', national_digits: 8, label: 'AM' },
+					{ dial: '+995', iso: 'GE', national_digits: 9, label: 'GE' },
+					{ dial: '+996', iso: 'KG', national_digits: 9, label: 'KG' },
+					{ dial: '+992', iso: 'TJ', national_digits: 9, label: 'TJ' },
+					{ dial: '+998', iso: 'UZ', national_digits: 9, label: 'UZ' }
 				],
 				default_phone_country_iso: 'RU',
 				layout: {
@@ -891,49 +897,125 @@
 
 	function findPhoneCountryMeta(codes, iso) {
 		var list = Array.isArray(codes) ? codes : [];
+		var want = String(iso || '').toUpperCase();
 		var i;
 		for (i = 0; i < list.length; i++) {
 			var row = list[i];
-			if (row && String(row.iso || '') === String(iso || '')) {
+			if (row && String(row.iso || '').toUpperCase() === want) {
 				return {
 					dial: String(row.dial || '+7'),
 					national_digits: Number(row.national_digits || 10),
-					iso: String(row.iso || '')
+					iso: String(row.iso || ''),
+					label: trimNonEmpty(row.label) ? String(row.label) : String(row.iso || '')
 				};
 			}
 		}
 		if (list.length && list[0]) {
+			var z = list[0];
 			return {
-				dial: String(list[0].dial || '+7'),
-				national_digits: Number(list[0].national_digits || 10),
-				iso: String(list[0].iso || 'RU')
+				dial: String(z.dial || '+7'),
+				national_digits: Number(z.national_digits || 10),
+				iso: String(z.iso || 'RU'),
+				label: trimNonEmpty(z.label) ? String(z.label) : String(z.iso || 'RU')
 			};
 		}
-		return { dial: '+7', national_digits: 10, iso: 'RU' };
+		return { dial: '+7', national_digits: 10, iso: 'RU', label: 'RU' };
 	}
 
-	function formatNationalPhoneDisplay(dial, digits) {
+	function isoToFlagEmoji(iso) {
+		var u = String(iso || '').toUpperCase();
+		if (u.length !== 2) {
+			return '';
+		}
+		var a = u.charCodeAt(0);
+		var b = u.charCodeAt(1);
+		if (a < 65 || a > 90 || b < 65 || b > 90) {
+			return '';
+		}
+		return String.fromCodePoint(0x1F1E6 + (a - 65), 0x1F1E6 + (b - 65));
+	}
+
+	function ruDigitsWord(n) {
+		var x = Math.abs(Math.floor(Number(n))) % 100;
+		var x1 = x % 10;
+		if (x > 10 && x < 20) {
+			return 'цифр';
+		}
+		if (x1 > 1 && x1 < 5) {
+			return 'цифры';
+		}
+		if (x1 === 1) {
+			return 'цифра';
+		}
+		return 'цифр';
+	}
+
+	function formatNationalPhoneDisplay(dial, digits, iso) {
 		var d = String(digits || '').replace(/\D/g, '');
-		if (dial === '+375') {
+		var dialStr = String(dial || '');
+		var isoU = String(iso || '').toUpperCase();
+		if (dialStr === '+375' || isoU === 'BY') {
 			d = d.slice(0, 9);
 			var p1 = d.slice(0, 2);
 			var p2 = d.slice(2, 5);
 			var p3 = d.slice(5, 7);
 			var p4 = d.slice(7, 9);
-			var out = '';
+			var outBy = '';
 			if (p1) {
-				out += '(' + p1 + ')';
+				outBy += '(' + p1 + ')';
 			}
 			if (p2) {
-				out += (out ? ' ' : '') + p2;
+				outBy += (outBy ? ' ' : '') + p2;
 			}
 			if (p3) {
-				out += '-' + p3;
+				outBy += '-' + p3;
 			}
 			if (p4) {
-				out += '-' + p4;
+				outBy += '-' + p4;
 			}
-			return out;
+			return outBy;
+		}
+		if (dialStr === '+374' || isoU === 'AM') {
+			d = d.slice(0, 8);
+			var a8 = d.slice(0, 2);
+			var b8 = d.slice(2, 4);
+			var c8 = d.slice(4, 6);
+			var e8 = d.slice(6, 8);
+			if (!a8) {
+				return '';
+			}
+			var s8 = '(' + a8 + ')';
+			if (b8) {
+				s8 += ' ' + b8;
+			}
+			if (c8) {
+				s8 += '-' + c8;
+			}
+			if (e8) {
+				s8 += '-' + e8;
+			}
+			return s8;
+		}
+		if (dialStr === '+994' || dialStr === '+995' || dialStr === '+996' || dialStr === '+992' || dialStr === '+998') {
+			d = d.slice(0, 9);
+			var op2 = d.slice(0, 2);
+			var mid3 = d.slice(2, 5);
+			var x2 = d.slice(5, 7);
+			var y2 = d.slice(7, 9);
+			if (!op2) {
+				return '';
+			}
+			var s9 = '(' + op2 + ')';
+			if (mid3) {
+				s9 += ' ' + mid3;
+			}
+			if (x2) {
+				s9 += '-' + x2;
+			}
+			if (y2) {
+				s9 += '-' + y2;
+			}
+			return s9;
 		}
 		d = d.slice(0, 10);
 		var a = d.slice(0, 3);
@@ -2168,7 +2250,7 @@
 		var codes = Array.isArray(block.phone_country_codes) ? block.phone_country_codes : [];
 		var meta = findPhoneCountryMeta(codes, contact.phone_country_iso);
 		var nationalDigits = String(contact.billing_phone_national || '').replace(/\D/g, '');
-		var displayPhone = formatNationalPhoneDisplay(meta.dial, nationalDigits);
+		var displayPhone = formatNationalPhoneDisplay(meta.dial, nationalDigits, meta.iso);
 		var title = trimNonEmpty(block.title) || getUiText('step_4.title', 'Контакты и оплата');
 		var intro = trimNonEmpty(block.intro) || getUiText('step_4.contact_block_intro', 'Укажите данные для связи и оформления заказа.');
 		var errLast = getContactFieldError(state, 'billing_last_name');
@@ -2180,6 +2262,7 @@
 		var errEmail = getContactFieldError(state, 'billing_email');
 		var errPhone = getContactFieldError(state, 'billing_phone_national');
 		var vm = getStepFourValidationMessages();
+		var constraints = getFieldConstraintConfig();
 		var order = Array.isArray(block.field_order) ? block.field_order : ['last_name', 'first_name', 'patronymic', 'gender', 'birthdate', 'email', 'phone', 'order_notes'];
 		var seen = {};
 		var ordered = [];
@@ -2350,8 +2433,8 @@
 		html += '<div class="mp-cc-contact__phone-row" role="group" aria-labelledby="mp-cc-contact-phone-label">';
 		html += '<div class="mp-cc-contact__country">';
 		html += '<label class="mp-cc-visually-hidden" for="mp-cc-contact-phone-country">' + escapeHtml(getContactLabel('country_code')) + '</label>';
-		html += '<select id="mp-cc-contact-phone-country" class="mp-cc-select" data-contact-phone-country="1"';
-		html += ' aria-describedby="' + escapeHtml(errPhone ? 'mp-cc-contact-phone-hint mp-cc-contact-phone-err' : 'mp-cc-contact-phone-hint') + '"';
+		html += '<select id="mp-cc-contact-phone-country" class="mp-cc-select mp-cc-select--phone-country" data-contact-phone-country="1"';
+		html += ' aria-describedby="' + escapeHtml(errPhone ? 'mp-cc-contact-phone-hint mp-cc-contact-phone-digits-hint mp-cc-contact-phone-err' : 'mp-cc-contact-phone-hint mp-cc-contact-phone-digits-hint') + '"';
 		html += errPhone ? ' aria-invalid="true"' : '';
 		html += '>';
 		var ci;
@@ -2362,8 +2445,11 @@
 			}
 			var iso = String(opt.iso || '');
 			var dial = String(opt.dial || '');
-			var sel = iso === String(contact.phone_country_iso || '');
-			html += '<option value="' + escapeHtml(iso) + '"' + (sel ? ' selected' : '') + '>' + escapeHtml(dial + ' · ' + iso) + '</option>';
+			var sel = iso.toUpperCase() === String(contact.phone_country_iso || '').toUpperCase();
+			var flagEmoji = isoToFlagEmoji(iso);
+			var countryLabel = trimNonEmpty(opt.label) ? String(opt.label) : iso;
+			var optLabel = (flagEmoji ? flagEmoji + ' ' : '') + dial + ' ' + countryLabel;
+			html += '<option value="' + escapeHtml(iso) + '"' + (sel ? ' selected' : '') + '>' + escapeHtml(optLabel) + '</option>';
 		}
 		html += '</select>';
 		html += '</div>';
@@ -2374,12 +2460,15 @@
 		html += 'data-contact-phone-national="1"' + (isContactFieldRequired('phone') ? ' aria-required="true"' : '');
 		var pPhone = getContactPlaceholder('phone');
 		if (pPhone) { html += ' placeholder="' + escapeHtml(pPhone) + '"'; }
-		html += ' aria-describedby="' + escapeHtml(errPhone ? 'mp-cc-contact-phone-hint mp-cc-contact-phone-err' : 'mp-cc-contact-phone-hint') + '"';
+		html += ' aria-describedby="' + escapeHtml(errPhone ? 'mp-cc-contact-phone-hint mp-cc-contact-phone-digits-hint mp-cc-contact-phone-err' : 'mp-cc-contact-phone-hint mp-cc-contact-phone-digits-hint') + '"';
 		html += errPhone ? ' aria-invalid="true"' : '';
 		html += '/>';
 		html += '</div>';
 		html += '</div>';
+		var needHintDigits = constraints.phoneDigitsOverride > 0 ? constraints.phoneDigitsOverride : (meta.national_digits || 10);
+		var digitsHint = 'Для ' + (trimNonEmpty(meta.label) ? meta.label : meta.iso) + ': ' + String(needHintDigits) + ' ' + ruDigitsWord(needHintDigits) + ' без кода страны (' + meta.dial + ').';
 		html += '<p class="mp-cc-field-hint" id="mp-cc-contact-phone-hint">' + escapeHtml(getContactHint('phone')) + '</p>';
+		html += '<p class="mp-cc-field-hint mp-cc-field-hint--sub" id="mp-cc-contact-phone-digits-hint">' + escapeHtml(digitsHint) + '</p>';
 		if (errPhone) {
 			var phoneMsg = errPhone === 'required'
 				? (trimNonEmpty(vm.phone_required) || getUiText('step_4.contact_error_phone_required', 'Укажите номер телефона.'))
@@ -6918,7 +7007,7 @@
 			contact.billing_phone_national = raw;
 			contact.billing_phone = buildFullPhoneE164(contact);
 			state.frontendStore.form.contact = contact;
-			var display = formatNationalPhoneDisplay(meta.dial, raw);
+			var display = formatNationalPhoneDisplay(meta.dial, raw, meta.iso);
 			if ($inp.val() !== display) {
 				$inp.val(display);
 			}

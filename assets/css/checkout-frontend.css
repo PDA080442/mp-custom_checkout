@@ -2251,14 +2251,43 @@
 	align-items: stretch;
 }
 
+/* Узкий блок кода страны: не тянуть на всю ширину колонки (текст «+998 UZ» короткий). */
 .mp-cc-contact__country {
-	flex: 0 0 9.25rem;
+	flex: 0 0 auto;
+	width: fit-content;
+	max-width: 100%;
 	min-width: 0;
+}
+
+.mp-cc-contact__country .mp-cc-select--phone-country {
+	box-sizing: border-box;
+	width: auto;
+	min-width: 6.75rem;
+	max-width: 10.25rem;
+	min-height: 2.65rem;
+	padding: 0.35rem 1.55rem 0.35rem 0.45rem;
+	font-size: 0.94rem;
+	line-height: 1.25;
+	border-radius: var(--mp-cc-radius-sm, 10px);
+	-webkit-appearance: none;
+	appearance: none;
+	background-color: #fff;
+	background-repeat: no-repeat;
+	background-position: right 0.4rem center;
+	background-size: 0.55rem;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23666' d='M1 1.5L6 6l5-4.5'/%3E%3C/svg%3E");
+	text-overflow: ellipsis;
 }
 
 .mp-cc-contact__national {
 	flex: 1 1 12rem;
 	min-width: 0;
+}
+
+.mp-cc-field-hint--sub {
+	margin-top: 0.15rem;
+	font-size: 0.82rem;
+	color: var(--mp-cc-color-text-muted, #6b7280);
 }
 
 .mp-cc-payment {
@@ -2826,7 +2855,9 @@
 	}
 
 	.mp-cc-contact__country {
-		flex: 1 1 100%;
+		flex: 0 0 auto;
+		width: fit-content;
+		max-width: 100%;
 	}
 
 	.mp-cc-payment__grid {

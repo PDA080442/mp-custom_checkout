@@ -244,6 +244,77 @@ final class SettingsMigrationManager {
 
 			return $settings;
 		};
+
+		self::$migrations['5'] = static function ( array $settings ): array {
+			$s4 = isset( $settings[ OptionKeys::SECTION_STEP_4 ] ) && is_array( $settings[ OptionKeys::SECTION_STEP_4 ] )
+				? $settings[ OptionKeys::SECTION_STEP_4 ]
+				: array();
+			$cb = isset( $s4['contact_block'] ) && is_array( $s4['contact_block'] ) ? $s4['contact_block'] : array();
+			$cur = isset( $cb['phone_country_codes'] ) && is_array( $cb['phone_country_codes'] ) ? $cb['phone_country_codes'] : array();
+			$by_iso = array();
+			foreach ( $cur as $row ) {
+				if ( is_array( $row ) && isset( $row['iso'] ) ) {
+					$iso_key = strtoupper( (string) $row['iso'] );
+					if ( '' !== $iso_key ) {
+						$by_iso[ $iso_key ] = $row;
+					}
+				}
+			}
+			$defaults = SafeSettingsResolver::default_phone_country_codes();
+			$out        = array();
+			foreach ( $defaults as $def ) {
+				if ( ! is_array( $def ) ) {
+					continue;
+				}
+				$iso = strtoupper( (string) ( $def['iso'] ?? '' ) );
+				if ( isset( $by_iso[ $iso ] ) && is_array( $by_iso[ $iso ] ) ) {
+					$merged = array_merge( $def, $by_iso[ $iso ] );
+					if ( isset( $merged['national_digits'] ) ) {
+						$merged['national_digits'] = max( 1, min( 15, (int) $merged['national_digits'] ) );
+					} else {
+						$merged['national_digits'] = (int) ( $def['national_digits'] ?? 10 );
+					}
+					$dial = isset( $merged['dial'] ) ? trim( (string) $merged['dial'] ) : '';
+					if ( '' === $dial ) {
+						$merged['dial'] = (string) ( $def['dial'] ?? '' );
+					}
+					$lab = isset( $merged['label'] ) ? trim( (string) $merged['label'] ) : '';
+					if ( '' === $lab ) {
+						$merged['label'] = (string) ( $def['label'] ?? $iso );
+					}
+					$out[] = $merged;
+				} else {
+					$out[] = $def;
+				}
+			}
+			$cb['phone_country_codes'] = $out;
+			$s4['contact_block']       = $cb;
+			$settings[ OptionKeys::SECTION_STEP_4 ] = $s4;
+
+			return $settings;
+		};
+
+		self::$migrations['6'] = static function ( array $settings ): array {
+			$s4 = isset( $settings[ OptionKeys::SECTION_STEP_4 ] ) && is_array( $settings[ OptionKeys::SECTION_STEP_4 ] )
+				? $settings[ OptionKeys::SECTION_STEP_4 ]
+				: array();
+			$cb = isset( $s4['contact_block'] ) && is_array( $s4['contact_block'] ) ? $s4['contact_block'] : array();
+			$cur = isset( $cb['phone_country_codes'] ) && is_array( $cb['phone_country_codes'] ) ? $cb['phone_country_codes'] : array();
+			foreach ( $cur as $idx => $row ) {
+				if ( ! is_array( $row ) ) {
+					continue;
+				}
+				$iso = isset( $row['iso'] ) ? strtoupper( preg_replace( '/[^A-Za-z]/', '', (string) $row['iso'] ) ) : '';
+				if ( 2 === strlen( $iso ) ) {
+					$cur[ $idx ]['label'] = $iso;
+				}
+			}
+			$cb['phone_country_codes'] = $cur;
+			$s4['contact_block']       = $cb;
+			$settings[ OptionKeys::SECTION_STEP_4 ] = $s4;
+
+			return $settings;
+		};
 	}
 
 	/**
@@ -256,7 +327,9 @@ final class SettingsMigrationManager {
 			'2' => '3',
 			'3' => '4',
 			'4' => '5',
-			'5' => null,
+			'5' => '6',
+			'6' => '7',
+			'7' => null,
 		);
 
 		return array_key_exists( $current, $chain ) ? $chain[ $current ] : null;
