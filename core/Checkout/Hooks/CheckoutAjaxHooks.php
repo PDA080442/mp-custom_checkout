@@ -585,7 +585,8 @@ final class CheckoutAjaxHooks {
 		$order->set_billing_last_name( isset( $contact['billing_last_name'] ) ? (string) $contact['billing_last_name'] : '' );
 		$order->set_billing_email( isset( $contact['billing_email'] ) ? (string) $contact['billing_email'] : '' );
 		$order->set_billing_phone( isset( $contact['billing_phone'] ) ? (string) $contact['billing_phone'] : '' );
-		$order->set_billing_country( isset( $contact['country'] ) ? (string) $contact['country'] : '' );
+		$billing_country = isset( $contact['country'] ) ? sanitize_text_field( (string) $contact['country'] ) : '';
+		$order->set_billing_country( OrderMetaHooks::normalize_billing_country_value( $billing_country ) );
 		$order->set_billing_state( isset( $contact['state'] ) ? (string) $contact['state'] : '' );
 		$order->set_billing_city( isset( $contact['city'] ) ? (string) $contact['city'] : '' );
 		$order->set_billing_address_1( isset( $contact['address_1'] ) ? (string) $contact['address_1'] : '' );

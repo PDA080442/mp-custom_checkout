@@ -779,25 +779,6 @@
 		return getUiText(path[key] || 'step_4.address_block_title', fb[key] || key);
 	}
 
-	function getSortedCountryCodes(geo) {
-		var out = [];
-		var id;
-		for (id in geo) {
-			if (!Object.prototype.hasOwnProperty.call(geo, id)) {
-				continue;
-			}
-			var row = geo[id];
-			out.push({
-				iso: id,
-				label: row && row.label ? String(row.label) : id
-			});
-		}
-		out.sort(function (a, b) {
-			return a.label.localeCompare(b.label, 'ru');
-		});
-		return out;
-	}
-
 	function getRegionsForCountry(geo, countryIso) {
 		var c = geo[countryIso];
 		if (!c || typeof c !== 'object') {
@@ -835,10 +816,6 @@
 		return Array.isArray(row.settlements) ? row.settlements.slice() : [];
 	}
 
-	function isCountryInGeo(geo, countryIso) {
-		return Boolean(geo[countryIso]);
-	}
-
 	function ensureAddressDefaults(state) {
 		if (!state || !state.frontendStore || !state.frontendStore.form) {
 			return;
@@ -851,46 +828,11 @@
 		var cfg = getStepFourConfig();
 		var ab = cfg.address_block || {};
 		var defCountry = trimNonEmpty(ab.default_country) ? String(ab.default_country) : 'RU';
-		var geo = getAddressGeoMerged();
 		var needGeoKey = shouldRenderAddressSubfield('country', contact)
 			|| shouldRenderAddressSubfield('state', contact)
 			|| shouldRenderAddressSubfield('city', contact);
 		if (needGeoKey && !trimNonEmpty(contact.country)) {
 			contact.country = defCountry;
-		}
-		if (needGeoKey && !isCountryInGeo(geo, contact.country)) {
-			contact.country = defCountry;
-		}
-		var regions = getRegionsForCountry(geo, contact.country);
-		if (regions.length && contact.state) {
-			var found = false;
-			var ri;
-			for (ri = 0; ri < regions.length; ri++) {
-				if (regions[ri].id === contact.state) {
-					found = true;
-					break;
-				}
-			}
-			if (!found) {
-				delete contact.state;
-				delete contact.city;
-			}
-		}
-		if (contact.state && trimNonEmpty(contact.city)) {
-			var settlements = getSettlementsForRegion(geo, contact.country, contact.state);
-			if (settlements.length) {
-				var ok = false;
-				var si;
-				for (si = 0; si < settlements.length; si++) {
-					if (settlements[si] === contact.city) {
-						ok = true;
-						break;
-					}
-				}
-				if (!ok) {
-					delete contact.city;
-				}
-			}
 		}
 		state.frontendStore.form.contact = contact;
 	}
@@ -1458,28 +1400,19 @@
 		state.frontendStore.discounts = discounts;
 	}
 
-	function isLegacyPromoCheckoutTitle(value) {
-		var t = String(value || '').toLowerCase().replace(/\s+/g, ' ').replace(/ё/g, 'е').trim();
-		return t === 'промокод' || t === 'промо-код' || t === 'промо код' || t === 'promocode' || t === 'promo code';
-	}
-
 	function getCouponCopy() {
 		var cfg = getStepFourConfig();
 		var c = cfg.coupon_block || {};
 		var g = cfg.gift_card_block || {};
-		var couponTitle = trimNonEmpty(c.title);
-		var title = trimNonEmpty(g.title)
-			|| (couponTitle && !isLegacyPromoCheckoutTitle(couponTitle) ? couponTitle : '')
-			|| getUiText('step_4.gift_card_title', 'Подарочная карта');
 		return {
-			title: title,
-			intro: trimNonEmpty(g.intro) || trimNonEmpty(c.intro) || getUiText('step_4.gift_card_intro', 'Введите код подарочной карты.'),
-			inputLabel: trimNonEmpty(g.input_label) || trimNonEmpty(c.input_label) || getUiText('step_4.gift_card_input_label', 'Номер подарочной карты'),
-			placeholder: trimNonEmpty(g.placeholder) || trimNonEmpty(c.placeholder) || getUiText('step_4.gift_card_placeholder', 'Например, GIFT-123'),
-			applyLabel: trimNonEmpty(g.apply_label) || trimNonEmpty(c.apply_label) || getUiText('step_4.gift_card_apply', 'Применить'),
-			emptyMessage: trimNonEmpty(g.empty_message) || trimNonEmpty(c.empty_message) || getUiText('step_4.gift_card_empty', 'Введите код.'),
-			successMessage: trimNonEmpty(g.success_message) || trimNonEmpty(c.success_message) || getUiText('step_4.gift_card_success', 'Код применён.'),
-			errorMessage: trimNonEmpty(g.error_message) || trimNonEmpty(c.error_message) || getUiText('step_4.gift_card_error', 'Не удалось применить код.')
+			title: trimNonEmpty(c.title) || trimNonEmpty(g.title) || getUiText('step_4.coupon_title', 'Промокод'),
+			intro: trimNonEmpty(c.intro) || trimNonEmpty(g.intro) || getUiText('step_4.coupon_intro', ''),
+			inputLabel: trimNonEmpty(c.input_label) || trimNonEmpty(g.input_label) || getUiText('step_4.coupon_input_label', 'Промокод'),
+			placeholder: trimNonEmpty(c.placeholder) || trimNonEmpty(g.placeholder) || getUiText('step_4.coupon_placeholder', 'Например, SALE10'),
+			applyLabel: trimNonEmpty(c.apply_label) || trimNonEmpty(g.apply_label) || getUiText('step_4.coupon_apply', 'Применить'),
+			emptyMessage: trimNonEmpty(c.empty_message) || trimNonEmpty(g.empty_message) || getUiText('step_4.coupon_empty', 'Введите промокод.'),
+			successMessage: trimNonEmpty(c.success_message) || trimNonEmpty(g.success_message) || getUiText('step_4.coupon_success', 'Промокод применён.'),
+			errorMessage: trimNonEmpty(c.error_message) || trimNonEmpty(g.error_message) || getUiText('step_4.coupon_error', 'Не удалось применить промокод. Проверьте написание и срок действия купона.')
 		};
 	}
 
@@ -1515,20 +1448,19 @@
 	function getGiftCardPeerCopy() {
 		var cfg = getStepFourConfig();
 		var g = cfg.gift_card_block || {};
-		var base = getCouponCopy();
-		var cardTitle = trimNonEmpty(g.card_title) || trimNonEmpty(g.title) || base.title;
-		var cardSubtitle = trimNonEmpty(g.card_subtitle) || trimNonEmpty(g.intro) || base.intro;
+		var cardTitle = trimNonEmpty(g.card_title) || trimNonEmpty(g.title) || getUiText('step_4.gift_card_title', 'Подарочная карта');
+		var cardSubtitle = trimNonEmpty(g.card_subtitle) || trimNonEmpty(g.intro) || getUiText('step_4.gift_card_intro', 'Введите код подарочной карты.');
 		var unavailable = trimNonEmpty(g.unavailable_message)
 			|| getUiText('step_4.gift_card_peer_unavailable', 'Подарочные карты на этом сайте сейчас недоступны.');
 		return {
 			cardTitle: cardTitle,
 			cardSubtitle: cardSubtitle,
-			inputLabel: base.inputLabel,
-			placeholder: base.placeholder,
-			applyLabel: base.applyLabel,
-			emptyMessage: base.emptyMessage,
-			successMessage: base.successMessage,
-			errorMessage: base.errorMessage,
+			inputLabel: trimNonEmpty(g.input_label) || getUiText('step_4.gift_card_input_label', 'Номер подарочной карты'),
+			placeholder: trimNonEmpty(g.placeholder) || getUiText('step_4.gift_card_placeholder', 'Например, GIFT-123'),
+			applyLabel: trimNonEmpty(g.apply_label) || getUiText('step_4.gift_card_apply', 'Применить'),
+			emptyMessage: trimNonEmpty(g.empty_message) || getUiText('step_4.gift_card_empty', 'Введите код подарочной карты.'),
+			successMessage: trimNonEmpty(g.success_message) || getUiText('step_4.gift_card_success', 'Подарочная карта применена.'),
+			errorMessage: trimNonEmpty(g.error_message) || getUiText('step_4.gift_card_error', 'Не удалось применить подарочную карту.'),
 			unavailableMessage: unavailable
 		};
 	}
@@ -1897,7 +1829,6 @@
 		}
 		var addrVis = contact.__address_visibility;
 		if (addrVis && !addrVis.hide_address_fields && addrVis.required_address_fields) {
-			var geo = getAddressGeoMerged();
 			var ab = cfg.address_block || {};
 			var order = Array.isArray(ab.subfields_order)
 				? ab.subfields_order
@@ -1923,36 +1854,16 @@
 					continue;
 				}
 				if (ak === 'state') {
-					var stateVal = trimNonEmpty(contact.state);
-					var regions = getRegionsForCountry(geo, contact.country);
-					var requiresKnownRegion = regions.length > 0;
-					if (!stateVal) {
-						errors.state = 'region';
-						ok = false;
-					} else if (requiresKnownRegion && regions.indexOf(stateVal) < 0) {
-						errors.state = 'region';
+					if (!trimNonEmpty(contact.state)) {
+						errors.state = 'required';
 						ok = false;
 					}
 					continue;
 				}
 				if (ak === 'city') {
-					var settlements = getSettlementsForRegion(geo, contact.country, contact.state);
 					if (!trimNonEmpty(contact.city)) {
 						errors.city = 'required';
 						ok = false;
-					} else if (settlements.length) {
-						var cityOk = false;
-						var ci;
-						for (ci = 0; ci < settlements.length; ci++) {
-							if (settlements[ci] === contact.city) {
-								cityOk = true;
-								break;
-							}
-						}
-						if (!cityOk) {
-						errors.city = 'city';
-							ok = false;
-						}
 					}
 					continue;
 				}
@@ -2999,10 +2910,6 @@
 		var vm = getStepFourValidationMessages();
 		var ab = cfg.address_block || {};
 		var geo = getAddressGeoMerged();
-		var countries = getSortedCountryCodes(geo);
-		if (!countries.length) {
-			return '';
-		}
 		var title = trimNonEmpty(ab.title) || getUiText('step_4.address_block_title', 'Адрес доставки');
 		var intro = trimNonEmpty(ab.intro) || getUiText('step_4.address_block_intro', '');
 		var order = Array.isArray(ab.subfields_order)
@@ -3043,16 +2950,12 @@
 			if (key === 'country') {
 				html += '<div class="mp-cc-address__field mp-cc-address__field--country">';
 				html += '<label class="mp-cc-field-label" for="mp-cc-address-country">' + escapeHtml(getAddressLabel('country')) + '</label>';
-				html += '<select id="mp-cc-address-country" class="mp-cc-select' + (err ? ' is-invalid' : '') + '" data-address-country="1" aria-required="true"';
+				html += '<input type="text" class="mp-cc-input' + (err ? ' is-invalid' : '') + '" id="mp-cc-address-country" name="country" autocomplete="country-name" ';
+				html += 'value="' + escapeHtml(String(contact.country || '')) + '" ';
+				html += 'placeholder="' + escapeHtml(getUiText('step_4.address_country_placeholder', 'Например: RU или полное название')) + '" ';
+				html += 'data-contact-field="country" aria-required="true"';
 				html += err ? ' aria-invalid="true"' : '';
-				html += '>';
-				var ci;
-				for (ci = 0; ci < countries.length; ci++) {
-					var co = countries[ci];
-					var sel = co.iso === String(contact.country || '');
-					html += '<option value="' + escapeHtml(co.iso) + '"' + (sel ? ' selected' : '') + '>' + escapeHtml(co.label) + '</option>';
-				}
-				html += '</select>';
+				html += '/>';
 				if (err) {
 					html += '<p class="mp-cc-field-error" id="mp-cc-address-country-err" role="alert">' + escapeHtml(trimNonEmpty(vm.address_required) || getUiText('step_4.address_error_required', 'Заполните это поле.')) + '</p>';
 				}
@@ -3060,20 +2963,14 @@
 				continue;
 			}
 			if (key === 'state') {
-				var regions = getRegionsForCountry(geo, contact.country);
 				html += '<div class="mp-cc-address__field mp-cc-address__field--region">';
 				html += '<label class="mp-cc-field-label" for="mp-cc-address-region">' + escapeHtml(getAddressLabel('state')) + '</label>';
-				html += '<select id="mp-cc-address-region" class="mp-cc-select' + (err ? ' is-invalid' : '') + '" data-address-region="1" aria-required="true"';
+				html += '<input type="text" class="mp-cc-input' + (err ? ' is-invalid' : '') + '" id="mp-cc-address-region" name="state" autocomplete="address-level1" ';
+				html += 'value="' + escapeHtml(String(contact.state || '')) + '" ';
+				html += 'placeholder="' + escapeHtml(getUiText('step_4.address_region_placeholder', 'Регион, область, край')) + '" ';
+				html += 'data-contact-field="state" aria-required="true"';
 				html += err ? ' aria-invalid="true"' : '';
-				html += '>';
-				html += '<option value="">' + escapeHtml(getUiText('step_4.address_region_placeholder', 'Выберите регион')) + '</option>';
-				var ri;
-				for (ri = 0; ri < regions.length; ri++) {
-					var reg = regions[ri];
-					var sr = reg.id === String(contact.state || '');
-					html += '<option value="' + escapeHtml(reg.id) + '"' + (sr ? ' selected' : '') + '>' + escapeHtml(reg.label) + '</option>';
-				}
-				html += '</select>';
+				html += '/>';
 				if (err) {
 					var regionMsg = err === 'region'
 						? (trimNonEmpty(vm.address_region) || getUiText('step_4.address_error_region', 'Выберите корректный регион.'))
@@ -3084,28 +2981,14 @@
 				continue;
 			}
 			if (key === 'city') {
-				var settlements = getSettlementsForRegion(geo, contact.country, contact.state);
 				html += '<div class="mp-cc-address__field mp-cc-address__field--city">';
 				html += '<label class="mp-cc-field-label" for="mp-cc-address-city">' + escapeHtml(getAddressLabel('city')) + '</label>';
-				if (settlements.length) {
-					html += '<select id="mp-cc-address-city" class="mp-cc-select' + (err ? ' is-invalid' : '') + '" data-address-city="1" aria-required="true"';
-					html += err ? ' aria-invalid="true"' : '';
-					html += '>';
-					html += '<option value="">' + escapeHtml(getUiText('step_4.address_city_placeholder', 'Выберите населённый пункт')) + '</option>';
-					var si;
-					for (si = 0; si < settlements.length; si++) {
-						var st = settlements[si];
-						var cs = st === String(contact.city || '');
-						html += '<option value="' + escapeHtml(st) + '"' + (cs ? ' selected' : '') + '>' + escapeHtml(st) + '</option>';
-					}
-					html += '</select>';
-				} else {
-					html += '<input type="text" class="mp-cc-input' + (err ? ' is-invalid' : '') + '" id="mp-cc-address-city" name="city" autocomplete="address-level2" ';
-					html += 'value="' + escapeHtml(String(contact.city || '')) + '" ';
-					html += 'data-contact-field="city" aria-required="true"';
-					html += err ? ' aria-invalid="true"' : '';
-					html += '/>';
-				}
+				html += '<input type="text" class="mp-cc-input' + (err ? ' is-invalid' : '') + '" id="mp-cc-address-city" name="city" autocomplete="address-level2" ';
+				html += 'value="' + escapeHtml(String(contact.city || '')) + '" ';
+				html += 'placeholder="' + escapeHtml(getUiText('step_4.address_city_placeholder', 'Город, посёлок')) + '" ';
+				html += 'data-contact-field="city" aria-required="true"';
+				html += err ? ' aria-invalid="true"' : '';
+				html += '/>';
 				if (err) {
 					var cityMsg = err === 'city'
 						? (trimNonEmpty(vm.address_city) || getUiText('step_4.address_error_city', 'Выберите населённый пункт из списка.'))
@@ -7160,40 +7043,6 @@
 				render(state, $app);
 			}).fail(function (xhr) {
 				var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
-				var tryGift = String(payload.code || '') === 'coupon_apply_failed' || xhr.status === 422;
-				if (tryGift) {
-					postCheckout('apply_gift_card', {
-						gift_card_code: code,
-						context_id: state.flowContextId
-					}).then(function (response) {
-						var data = response && response.data ? response.data : {};
-						rt.state = 'success';
-						rt.message = trimNonEmpty(data.message) || copy.successMessage;
-						discounts.coupon_runtime = rt;
-						var grt = discounts.gift_card_runtime || { code: '', state: 'empty', message: '' };
-						grt.code = '';
-						grt.state = 'success';
-						grt.message = trimNonEmpty(data.message) || getGiftCardPeerCopy().successMessage;
-						discounts.gift_card_runtime = grt;
-						state.frontendStore.discounts = discounts;
-						if (data.flow || data.cart) {
-							syncFromFlow(state, data.flow || {}, data.cart || {});
-						}
-						render(state, $app);
-					}).fail(function (gxhr) {
-						var gpayload = gxhr && gxhr.responseJSON && gxhr.responseJSON.data ? gxhr.responseJSON.data : {};
-						rt.state = 'error';
-						rt.message = trimNonEmpty(gpayload.message) || copy.errorMessage;
-						discounts.coupon_runtime = rt;
-						state.frontendStore.discounts = discounts;
-						if (gpayload.flow || gpayload.cart) {
-							syncFromFlow(state, gpayload.flow || {}, gpayload.cart || {});
-						}
-						render(state, $app);
-						notify(rt.message, 'error');
-					});
-					return;
-				}
 				rt.state = 'error';
 				rt.message = trimNonEmpty(payload.message) || copy.errorMessage;
 				if (Array.isArray(payload.applied_coupons)) {
@@ -7302,53 +7151,6 @@
 			});
 		});
 
-		$app.find('[data-address-country]').off('change').on('change', function () {
-			var v = String($(this).val() || '');
-			var contact = state.frontendStore.form.contact || {};
-			contact.country = v;
-			contact.state = '';
-			contact.city = '';
-			state.frontendStore.form.contact = contact;
-			if (state.frontendStore.form.errors && state.frontendStore.form.errors.contact) {
-				delete state.frontendStore.form.errors.contact.country;
-				delete state.frontendStore.form.errors.contact.state;
-				delete state.frontendStore.form.errors.contact.city;
-			}
-			render(state, $app);
-			saveCurrentStepDraft(state).fail(function () {
-				notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
-			});
-		});
-
-		$app.find('[data-address-region]').off('change').on('change', function () {
-			var v = String($(this).val() || '');
-			var contact = state.frontendStore.form.contact || {};
-			contact.state = v;
-			contact.city = '';
-			state.frontendStore.form.contact = contact;
-			if (state.frontendStore.form.errors && state.frontendStore.form.errors.contact) {
-				delete state.frontendStore.form.errors.contact.state;
-				delete state.frontendStore.form.errors.contact.city;
-			}
-			render(state, $app);
-			saveCurrentStepDraft(state).fail(function () {
-				notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
-			});
-		});
-
-		$app.find('[data-address-city]').off('change').on('change', function () {
-			var v = String($(this).val() || '');
-			var contact = state.frontendStore.form.contact || {};
-			contact.city = v;
-			state.frontendStore.form.contact = contact;
-			if (state.frontendStore.form.errors && state.frontendStore.form.errors.contact) {
-				delete state.frontendStore.form.errors.contact.city;
-			}
-			render(state, $app);
-			saveCurrentStepDraft(state).fail(function () {
-				notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
-			});
-		});
 	}
 
 	function clampQuantity(nextQty, minQty, maxQty) {

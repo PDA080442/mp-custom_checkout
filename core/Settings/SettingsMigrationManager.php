@@ -315,6 +315,57 @@ final class SettingsMigrationManager {
 
 			return $settings;
 		};
+
+		self::$migrations['7'] = static function ( array $settings ): array {
+			$s4 = isset( $settings[ OptionKeys::SECTION_STEP_4 ] ) && is_array( $settings[ OptionKeys::SECTION_STEP_4 ] )
+				? $settings[ OptionKeys::SECTION_STEP_4 ]
+				: array();
+			$cb  = isset( $s4['coupon_block'] ) && is_array( $s4['coupon_block'] ) ? $s4['coupon_block'] : array();
+			$old = array(
+				'title'           => 'Подарочная карта',
+				'intro'           => 'Введите код подарочной карты.',
+				'input_label'     => 'Номер подарочной карты',
+				'placeholder'     => 'Например, GIFT-123',
+				'empty_message'   => 'Введите код.',
+				'success_message' => 'Код применён.',
+				'error_message'   => 'Не удалось применить код.',
+			);
+			$new = array(
+				'title'           => 'Промокод',
+				'intro'           => '',
+				'input_label'     => 'Промокод',
+				'placeholder'     => 'Например, SALE10',
+				'empty_message'   => 'Введите промокод.',
+				'success_message' => 'Промокод применён.',
+				'error_message'   => 'Не удалось применить промокод. Проверьте написание и срок действия купона.',
+			);
+			foreach ( $old as $key => $legacy_val ) {
+				if ( ! array_key_exists( $key, $cb ) ) {
+					continue;
+				}
+				if ( (string) $cb[ $key ] === $legacy_val && isset( $new[ $key ] ) ) {
+					$cb[ $key ] = $new[ $key ];
+				}
+			}
+			$s4['coupon_block']                      = $cb;
+			$settings[ OptionKeys::SECTION_STEP_4 ] = $s4;
+
+			return $settings;
+		};
+
+		self::$migrations['8'] = static function ( array $settings ): array {
+			$s4 = isset( $settings[ OptionKeys::SECTION_STEP_4 ] ) && is_array( $settings[ OptionKeys::SECTION_STEP_4 ] )
+				? $settings[ OptionKeys::SECTION_STEP_4 ]
+				: array();
+			$cb = isset( $s4['coupon_block'] ) && is_array( $s4['coupon_block'] ) ? $s4['coupon_block'] : array();
+			if ( isset( $cb['intro'] ) && 'Купон создаётся в WooCommerce: Маркетинг → Купоны.' === (string) $cb['intro'] ) {
+				$cb['intro'] = '';
+			}
+			$s4['coupon_block']                      = $cb;
+			$settings[ OptionKeys::SECTION_STEP_4 ] = $s4;
+
+			return $settings;
+		};
 	}
 
 	/**
@@ -329,7 +380,9 @@ final class SettingsMigrationManager {
 			'4' => '5',
 			'5' => '6',
 			'6' => '7',
-			'7' => null,
+			'7' => '8',
+			'8' => '9',
+			'9' => null,
 		);
 
 		return array_key_exists( $current, $chain ) ? $chain[ $current ] : null;
