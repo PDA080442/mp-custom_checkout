@@ -5401,7 +5401,6 @@
 			}
 		} else {
 			html += '<span class="mp-cc-address-form__value">' + escapeHtml(pointAddress) + '</span>';
-			html += '<button type="button" class="mp-cc-address-form__edit" data-pvz-edit>' + escapeHtml(getStepOneLabel(state, 'address_form.change_button', '', 'другой')) + '</button>';
 		}
 		html += '</div>';
 		html += '</div>';
