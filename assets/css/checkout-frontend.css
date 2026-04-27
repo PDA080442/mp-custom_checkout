@@ -2647,7 +2647,7 @@
 }
 
 /* Card label container (variant A glow). Stay on parent grid layout, just visual. */
-.mp-cc-payment-card--surface.mp-cc-payment-card--brand-bank:has(.mp-cc-payment-card__shell--has-art) {
+.mp-cc-payment-card--surface:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art) {
 	--mp-cc-pay-glow: #a78bfa;
 	--mp-cc-pay-card-max: 100%;
 	--mp-cc-pay-glow-blur-strong: 28px;
@@ -2664,14 +2664,14 @@
 	cursor: pointer;
 }
 
-.mp-cc-payment-card--surface.mp-cc-payment-card--brand-bank:has(.mp-cc-payment-card__shell--has-art) .mp-cc-payment-card__shell {
+.mp-cc-payment-card--surface:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art) .mp-cc-payment-card__shell {
 	width: 100%;
 	max-width: var(--mp-cc-pay-card-max, 100%);
 	margin: 0 auto;
 	transition: transform 0.2s ease, filter 0.25s ease;
 }
 
-.mp-cc-payment-card--surface.mp-cc-payment-card--brand-bank:has(.mp-cc-payment-card__shell--has-art) .mp-cc-payment-card__title--text {
+.mp-cc-payment-card--surface:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art) .mp-cc-payment-card__title--text {
 	font-size: 1.05rem;
 	font-weight: 600;
 	color: var(--mp-cc-color-text, #0f172a);
@@ -2697,36 +2697,36 @@
 }
 
 /* Hover — gentle lift, no shadow (image is transparent). */
-.mp-cc-payment-card--surface.mp-cc-payment-card--brand-bank:has(.mp-cc-payment-card__shell--has-art):hover .mp-cc-payment-card__shell {
+.mp-cc-payment-card--surface:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art):hover .mp-cc-payment-card__shell {
 	transform: translateY(-2px);
 	box-shadow: none;
 }
 
 /* Glow + check pill appear only AFTER explicit user click (is-user-confirmed). */
-.mp-cc-payment-card--surface.mp-cc-payment-card--brand-bank:has(.mp-cc-payment-card__shell--has-art).is-user-confirmed .mp-cc-payment-card__shell {
+.mp-cc-payment-card--surface:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art).is-user-confirmed .mp-cc-payment-card__shell {
 	filter:
 		drop-shadow(0 0 var(--mp-cc-pay-glow-blur-strong, 28px) color-mix(in srgb, var(--mp-cc-pay-glow) var(--mp-cc-pay-glow-strong-alpha, 70%), transparent))
 		drop-shadow(0 0 var(--mp-cc-pay-glow-blur-soft, 10px) color-mix(in srgb, var(--mp-cc-pay-glow) var(--mp-cc-pay-glow-soft-alpha, 55%), transparent));
 }
 
-.mp-cc-payment-card--surface.mp-cc-payment-card--brand-bank:has(.mp-cc-payment-card__shell--has-art).is-user-confirmed .mp-cc-payment-card__check-pill {
+.mp-cc-payment-card--surface:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art).is-user-confirmed .mp-cc-payment-card__check-pill {
 	opacity: 1;
 	transform: scale(1);
 }
 
 /* No focus-within outline; visible focus only on real keyboard focus. */
-.mp-cc-payment-card--surface.mp-cc-payment-card--brand-bank:has(.mp-cc-payment-card__shell--has-art):focus-within {
+.mp-cc-payment-card--surface:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art):focus-within {
 	outline: none;
 }
 
-.mp-cc-payment-card--surface.mp-cc-payment-card--brand-bank:has(.mp-cc-payment-card__shell--has-art):has(.mp-cc-payment-card__radio:focus-visible) {
+.mp-cc-payment-card--surface:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art):has(.mp-cc-payment-card__radio:focus-visible) {
 	outline: 2px solid color-mix(in srgb, var(--mp-cc-pay-glow) 75%, transparent);
 	outline-offset: 4px;
 	border-radius: 18px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.mp-cc-payment-card--surface.mp-cc-payment-card--brand-bank:has(.mp-cc-payment-card__shell--has-art):hover .mp-cc-payment-card__shell {
+	.mp-cc-payment-card--surface:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art):hover .mp-cc-payment-card__shell {
 		transform: none;
 	}
 }

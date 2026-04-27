@@ -475,6 +475,7 @@ final class SafeSettingsResolver {
 						'bank_card_visual' => array(
 							'enabled'                 => true,
 							'confirm_on_click_only'   => true,
+							'allow_deselect'          => true,
 							'card_max_width'          => '100%',
 							'glow_color'              => '#a78bfa',
 							'glow_intensity'          => 'medium',

@@ -484,6 +484,7 @@
 				bank_card_visual: {
 					enabled: true,
 					confirm_on_click_only: true,
+					allow_deselect: true,
 					card_max_width: '100%',
 					glow_color: '#a78bfa',
 					glow_intensity: 'medium',
@@ -1034,12 +1035,8 @@
 		}
 		c.billing_phone = buildFullPhoneE164(c);
 		if (state.frontendStore && state.frontendStore.payment && !trimNonEmpty(state.frontendStore.payment.gateway)) {
-			var gateways = getAvailablePaymentGateways();
-			if (gateways.length) {
-				state.frontendStore.payment.gateway = String(gateways[0].id || '');
-				c.payment_gateway = state.frontendStore.payment.gateway;
-				c.gateway = state.frontendStore.payment.gateway;
-			}
+			c.payment_gateway = '';
+			c.gateway = '';
 		}
 		state.frontendStore.form.contact = c;
 		ensureAddressDefaults(state);
@@ -2854,6 +2851,7 @@
 		return {
 			enabled: raw.enabled !== false,
 			confirmOnClickOnly: raw.confirm_on_click_only !== false,
+			allowDeselect: raw.allow_deselect !== false,
 			cardMaxWidth: trimNonEmpty(raw.card_max_width) || '100%',
 			glowColor: trimNonEmpty(raw.glow_color) || '#a78bfa',
 			glowIntensity: trimNonEmpty(raw.glow_intensity) || 'medium',
@@ -2894,6 +2892,11 @@
 		return !!(state && state.frontendStore && state.frontendStore.payment && state.frontendStore.payment.user_confirmed === true);
 	}
 
+	function isGlowPaymentBrand(brand) {
+		var b = String(brand || '');
+		return b === 'bank' || b === 'robokassa' || b === 'yookassa';
+	}
+
 	function buildPaymentGatewaysHtml(state) {
 		var cfg = getStepFourConfig();
 		var pb = cfg.payment_block && typeof cfg.payment_block === 'object' ? cfg.payment_block : {};
@@ -2917,7 +2920,7 @@
 			htmlEmpty += '</section>';
 			return htmlEmpty;
 		}
-		var selected = trimNonEmpty(state.frontendStore && state.frontendStore.payment ? state.frontendStore.payment.gateway : '') || String(gateways[0].id || '');
+		var selected = trimNonEmpty(state.frontendStore && state.frontendStore.payment ? state.frontendStore.payment.gateway : '');
 		var errPayment = getContactFieldError(state, 'payment_gateway');
 		var title = trimNonEmpty(pb.title) || getUiText('step_4.payment_title', 'Способ оплаты');
 		var intro = trimNonEmpty(pb.intro) || getUiText('step_4.payment_intro', 'Выберите удобный способ оплаты.');
@@ -2995,7 +2998,7 @@
 						shellRt = ' mp-cc-payment-card--rt-success';
 					}
 				}
-				var bankVisualCfg = brand === 'bank' ? getBankCardVisualConfig() : null;
+				var bankVisualCfg = isGlowPaymentBrand(brand) ? getBankCardVisualConfig() : null;
 				var userConfirmedClass = '';
 				if (bankVisualCfg && bankVisualCfg.enabled && isSelected) {
 					var requireClick = bankVisualCfg.confirmOnClickOnly;
@@ -7107,13 +7110,29 @@
 			if (!gateway) {
 				return;
 			}
+			var brandClass = String($(this).attr('class') || '');
+			var glowBrand = brandClass.indexOf('mp-cc-payment-card--brand-bank') !== -1 || brandClass.indexOf('mp-cc-payment-card--brand-robokassa') !== -1 || brandClass.indexOf('mp-cc-payment-card--brand-yookassa') !== -1;
+			var visualCfg = glowBrand ? getBankCardVisualConfig() : null;
 			state.frontendStore.payment = state.frontendStore.payment || { gateway: '', state: 'idle' };
-			var alreadyConfirmedSame = state.frontendStore.payment.user_confirmed === true && String(state.frontendStore.payment.gateway || '') === gateway;
-			state.frontendStore.payment.user_confirmed = true;
-			if (alreadyConfirmedSame) {
+			var isSameGateway = String(state.frontendStore.payment.gateway || '') === gateway;
+			if (isSameGateway && state.frontendStore.payment.user_confirmed === true && visualCfg && visualCfg.allowDeselect) {
+				// UX: allow deselect by clicking the selected card again.
+				state.frontendStore.payment.user_confirmed = false;
+				state.frontendStore.payment.gateway = '';
+				state.frontendStore.payment.state = 'idle';
+				state.frontendStore.payment.fieldsHtml = '';
+				state.frontendStore.payment.fieldsGatewayId = '';
+				state.frontendStore.payment.fieldsHydration = 'idle';
+				state.frontendStore.payment.gatewayCompatIssue = '';
+				state.frontendStore.form.contact = state.frontendStore.form.contact || {};
+				state.frontendStore.form.contact.payment_gateway = '';
+				state.frontendStore.form.contact.gateway = '';
+				$radio.prop('checked', false);
+				render(state, $app);
 				return;
 			}
-			if (String(state.frontendStore.payment.gateway || '') === gateway) {
+			state.frontendStore.payment.user_confirmed = true;
+			if (isSameGateway) {
 				render(state, $app);
 			}
 		});
