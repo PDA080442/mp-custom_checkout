@@ -2796,10 +2796,18 @@
 			html += '<img class="mp-cc-gift-peer__shell-art" src="' + escapeHtml(giftArt) + '" alt="" decoding="async" loading="lazy" />';
 		}
 		html += '<div class="mp-cc-gift-peer__shell-body">';
-		html += '<span class="mp-cc-payment-card__mark">' + escapeHtml(getUiText('step_4.gift_card_peer_badge', 'Подарок')) + '</span>';
+		html += '<span class="mp-cc-visually-hidden">' + escapeHtml(getUiText('step_4.gift_card_peer_badge', 'Подарок')) + '</span>';
+		html +=
+			'<span class="mp-cc-gift-peer__bow" aria-hidden="true">' +
+			'<svg class="mp-cc-gift-peer__bow-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 40" width="48" height="34" focusable="false" aria-hidden="true">' +
+			'<path fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round" d="M28 6c-7-2-16 1-16 10 0 6 6 10 16 8m0-18c7-2 16 1 16 10 0 6-6 10-16 8M28 16v16M18 20c-4 4-6 10-6 16M38 20c4 4 6 10 6 16"/>' +
+			'</svg></span>';
 		html += '<p class="mp-cc-gift-peer__headline">' + escapeHtml(copy.cardTitle) + '</p>';
 		if (pwOk && copy.cardSubtitle) {
 			html += '<p class="mp-cc-gift-peer__lede">' + escapeHtml(copy.cardSubtitle) + '</p>';
+		}
+		if (pwOk) {
+			html += '<span class="mp-cc-gift-peer__rule" aria-hidden="true"></span>';
 		}
 		if (!pwOk) {
 			html += '<p class="mp-cc-gift-peer__blocked">' + escapeHtml(copy.unavailableMessage) + '</p>';
