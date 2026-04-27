@@ -481,6 +481,14 @@
 				description_style: 'muted',
 				show_description: true,
 				required: true,
+				bank_card_visual: {
+					enabled: true,
+					confirm_on_click_only: true,
+					card_max_width: '100%',
+					glow_color: '#a78bfa',
+					glow_intensity: 'medium',
+					show_check_pill: true
+				},
 				error_message: '',
 				messages: { loading: '', success: '', error: '' },
 				summary_mini_review: {
@@ -2509,6 +2517,9 @@
 			return requested;
 		}
 		var brand = classifyPaymentGatewayBrand(selected);
+		if (brand === 'bank') {
+			return requested;
+		}
 		if (!shouldEmbedGatewayPaymentFields(requested, brand)) {
 			return requested;
 		}
@@ -2534,6 +2545,14 @@
 		}
 		if (s.indexOf('yookassa') !== -1 || s.indexOf('yandex_kassa') !== -1 || s.indexOf('yandex') !== -1) {
 			return 'yookassa';
+		}
+		if (
+			s === 'bacs' ||
+			s.indexOf('bank_transfer') !== -1 ||
+			s.indexOf('direct_bank_transfer') !== -1 ||
+			s.indexOf('bank') !== -1
+		) {
+			return 'bank';
 		}
 		if (s.indexOf('stripe') !== -1 || s.indexOf('woocommerce_payments') !== -1 || s.indexOf('woopayments') !== -1 || s.indexOf('ppcp') !== -1 || s.indexOf('square') !== -1 || s.indexOf('mollie') !== -1 || s.indexOf('card') !== -1 || s.indexOf('tinkoff') !== -1 || s.indexOf('tbank') !== -1 || s.indexOf('cloudpayments') !== -1 || s.indexOf('dolyame') !== -1 || s.indexOf('sber') !== -1 || s.indexOf('sbp') !== -1) {
 			return 'bank';
@@ -2583,8 +2602,12 @@
 				faux += '<p class="mp-cc-payment-card__redirect-hint mp-cc-payment-card__redirect-hint--subtle" aria-hidden="true">' + escapeHtml(getUiText('step_4.payment_card_fields_below', 'Реквизиты — в полях платёжного модуля ниже')) + '</p>';
 			}
 		}
+		var shellMods = ' mp-cc-payment-card__shell--brand-' + escapeHtml(brand);
+		if (artUrl) {
+			shellMods += ' mp-cc-payment-card__shell--has-art';
+		}
 		var html = '';
-		html += '<div class="mp-cc-payment-card__shell" aria-hidden="true">';
+		html += '<div class="mp-cc-payment-card__shell' + shellMods + '" aria-hidden="true">';
 		if (artUrl) {
 			html += '<img class="mp-cc-payment-card__shell-art" src="' + escapeHtml(artUrl) + '" alt="" decoding="async" loading="lazy" />';
 		}
@@ -2824,6 +2847,53 @@
 		return html;
 	}
 
+	function getBankCardVisualConfig() {
+		var cfg = getStepFourConfig();
+		var pb = cfg.payment_block && typeof cfg.payment_block === 'object' ? cfg.payment_block : {};
+		var raw = pb.bank_card_visual && typeof pb.bank_card_visual === 'object' ? pb.bank_card_visual : {};
+		return {
+			enabled: raw.enabled !== false,
+			confirmOnClickOnly: raw.confirm_on_click_only !== false,
+			cardMaxWidth: trimNonEmpty(raw.card_max_width) || '100%',
+			glowColor: trimNonEmpty(raw.glow_color) || '#a78bfa',
+			glowIntensity: trimNonEmpty(raw.glow_intensity) || 'medium',
+			showCheckPill: raw.show_check_pill !== false
+		};
+	}
+
+	function buildBankCardCssVarsStyle(visualCfg) {
+		if (!visualCfg || !visualCfg.enabled) {
+			return '';
+		}
+		var blurStrong = '28px';
+		var blurSoft = '10px';
+		var alphaStrong = '70%';
+		var alphaSoft = '55%';
+		if (visualCfg.glowIntensity === 'soft') {
+			blurStrong = '18px';
+			blurSoft = '6px';
+			alphaStrong = '50%';
+			alphaSoft = '35%';
+		} else if (visualCfg.glowIntensity === 'strong') {
+			blurStrong = '38px';
+			blurSoft = '14px';
+			alphaStrong = '85%';
+			alphaSoft = '70%';
+		}
+		var styles = [];
+		styles.push('--mp-cc-pay-glow:' + visualCfg.glowColor);
+		styles.push('--mp-cc-pay-card-max:' + visualCfg.cardMaxWidth);
+		styles.push('--mp-cc-pay-glow-blur-strong:' + blurStrong);
+		styles.push('--mp-cc-pay-glow-blur-soft:' + blurSoft);
+		styles.push('--mp-cc-pay-glow-strong-alpha:' + alphaStrong);
+		styles.push('--mp-cc-pay-glow-soft-alpha:' + alphaSoft);
+		return styles.join(';');
+	}
+
+	function isPaymentUserConfirmed(state) {
+		return !!(state && state.frontendStore && state.frontendStore.payment && state.frontendStore.payment.user_confirmed === true);
+	}
+
 	function buildPaymentGatewaysHtml(state) {
 		var cfg = getStepFourConfig();
 		var pb = cfg.payment_block && typeof cfg.payment_block === 'object' ? cfg.payment_block : {};
@@ -2853,6 +2923,14 @@
 		var intro = trimNonEmpty(pb.intro) || getUiText('step_4.payment_intro', 'Выберите удобный способ оплаты.');
 		var showDescription = pb.show_description !== false;
 		var layout = pb.layout && typeof pb.layout === 'object' ? pb.layout : {};
+		var desktopCols = Math.max(1, Number(layout.desktop_columns || 2));
+		var tabletCols = Math.max(1, Number(layout.tablet_columns || 2));
+		var mobileCols = Math.max(1, Number(layout.mobile_columns || 1));
+		if (gateways.length === 1) {
+			desktopCols = 1;
+			tabletCols = 1;
+			mobileCols = 1;
+		}
 		var messages = pb.messages && typeof pb.messages === 'object' ? pb.messages : {};
 		var paymentState = state.frontendStore && state.frontendStore.payment ? String(state.frontendStore.payment.state || 'idle') : 'idle';
 		var diagnosticsIssues = [];
@@ -2891,7 +2969,7 @@
 			html += '<div class="mp-cc-payment__deck">';
 			html += '<div class="mp-cc-payment__deck-main">';
 		}
-		html += '<div class="mp-cc-payment__grid" role="group" aria-label="' + escapeHtml(getUiText('step_4.payment_method_group_label', 'Выбор способа оплаты')) + '" style="--mp-cc-payment-cols:' + escapeHtml(String(Number(layout.desktop_columns || 2))) + ';--mp-cc-payment-cols-tablet:' + escapeHtml(String(Number(layout.tablet_columns || 2))) + ';--mp-cc-payment-cols-mobile:' + escapeHtml(String(Number(layout.mobile_columns || 1))) + ';--mp-cc-payment-gap:' + escapeHtml(trimNonEmpty(layout.grid_gap) || '0.6rem 0.75rem') + ';">';
+		html += '<div class="mp-cc-payment__grid" role="group" aria-label="' + escapeHtml(getUiText('step_4.payment_method_group_label', 'Выбор способа оплаты')) + '" style="--mp-cc-payment-cols:' + escapeHtml(String(desktopCols)) + ';--mp-cc-payment-cols-tablet:' + escapeHtml(String(tabletCols)) + ';--mp-cc-payment-cols-mobile:' + escapeHtml(String(mobileCols)) + ';--mp-cc-payment-gap:' + escapeHtml(trimNonEmpty(layout.grid_gap) || '0.6rem 0.75rem') + ';">';
 		var gi;
 		for (gi = 0; gi < gateways.length; gi += 1) {
 			var g = gateways[gi];
@@ -2917,9 +2995,27 @@
 						shellRt = ' mp-cc-payment-card--rt-success';
 					}
 				}
-				html += '<label class="mp-cc-payment-card mp-cc-payment-card--surface mp-cc-payment-card--brand-' + escapeHtml(brand) + ' mp-cc-payment-card--active-' + activeMod + (isSelected ? ' is-active' : '') + shellRt + '">';
+				var bankVisualCfg = brand === 'bank' ? getBankCardVisualConfig() : null;
+				var userConfirmedClass = '';
+				if (bankVisualCfg && bankVisualCfg.enabled && isSelected) {
+					var requireClick = bankVisualCfg.confirmOnClickOnly;
+					if (!requireClick || isPaymentUserConfirmed(state)) {
+						userConfirmedClass = ' is-user-confirmed';
+					}
+				}
+				var bankInlineStyle = '';
+				if (bankVisualCfg && bankVisualCfg.enabled) {
+					var bankCssVars = buildBankCardCssVarsStyle(bankVisualCfg);
+					if (bankCssVars) {
+						bankInlineStyle = ' style="' + escapeHtml(bankCssVars) + '"';
+					}
+				}
+				html += '<label class="mp-cc-payment-card mp-cc-payment-card--surface mp-cc-payment-card--brand-' + escapeHtml(brand) + ' mp-cc-payment-card--active-' + activeMod + (isSelected ? ' is-active' : '') + userConfirmedClass + shellRt + '"' + bankInlineStyle + '>';
 				html += '<input type="radio" class="mp-cc-payment-card__radio' + (errPayment ? ' is-invalid' : '') + '" name="mp_cc_payment_gateway" value="' + escapeHtml(g.id) + '" data-payment-gateway="1"' + payRadioA11y + (isSelected ? ' checked' : '') + ' autocomplete="off" />';
 				html += buildPaymentCardShellMarkup(g, brand, surface);
+				if (bankVisualCfg && bankVisualCfg.enabled && bankVisualCfg.showCheckPill) {
+					html += '<span class="mp-cc-payment-card__check-pill" aria-hidden="true"></span>';
+				}
 				html += '<span class="mp-cc-payment-card__title mp-cc-payment-card__title--text">' + escapeHtml(g.title) + '</span>';
 				if (showDescription && g.description) {
 					html += '<span class="mp-cc-payment-card__desc">' + escapeHtml(g.description) + '</span>';
@@ -7005,6 +7101,23 @@
 			});
 		});
 
+		$app.find('.mp-cc-payment-card--surface').off('click.mpccPayConfirm').on('click.mpccPayConfirm', function () {
+			var $radio = $(this).find('input[data-payment-gateway]');
+			var gateway = trimNonEmpty($radio.val());
+			if (!gateway) {
+				return;
+			}
+			state.frontendStore.payment = state.frontendStore.payment || { gateway: '', state: 'idle' };
+			var alreadyConfirmedSame = state.frontendStore.payment.user_confirmed === true && String(state.frontendStore.payment.gateway || '') === gateway;
+			state.frontendStore.payment.user_confirmed = true;
+			if (alreadyConfirmedSame) {
+				return;
+			}
+			if (String(state.frontendStore.payment.gateway || '') === gateway) {
+				render(state, $app);
+			}
+		});
+
 		$app.find('[data-payment-gateway]').off('change').on('change', function () {
 			var gateway = trimNonEmpty($(this).val());
 			if (!gateway) {
@@ -7012,6 +7125,7 @@
 			}
 			state.frontendStore.payment = state.frontendStore.payment || { gateway: '', state: 'idle' };
 			state.frontendStore.payment.gateway = gateway;
+			state.frontendStore.payment.user_confirmed = true;
 			state.frontendStore.payment.state = 'syncing';
 			window.clearTimeout(state.__mpCcPaymentSuccessTimer);
 			state.__mpCcPaymentSuccessTimer = 0;

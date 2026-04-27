@@ -472,6 +472,14 @@ final class SafeSettingsResolver {
 						'description_style' => 'muted',
 						'show_description' => true,
 						'required' => true,
+						'bank_card_visual' => array(
+							'enabled'                 => true,
+							'confirm_on_click_only'   => true,
+							'card_max_width'          => '100%',
+							'glow_color'              => '#a78bfa',
+							'glow_intensity'          => 'medium',
+							'show_check_pill'         => true,
+						),
 						'error_message' => 'Выберите способ оплаты.',
 						'messages' => array(
 							'loading' => 'Сохраняем выбранный способ оплаты...',

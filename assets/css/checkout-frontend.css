@@ -2626,6 +2626,111 @@
 	opacity: 0.32;
 }
 
+/* Bank card visual (variant A — glow): render transparent silver reference PNG. */
+.mp-cc-payment-card__shell--brand-bank.mp-cc-payment-card__shell--has-art {
+	background: transparent;
+	box-shadow: none;
+	border-radius: 0;
+	overflow: visible;
+	max-height: none;
+	min-height: 0;
+}
+
+.mp-cc-payment-card__shell--brand-bank.mp-cc-payment-card__shell--has-art .mp-cc-payment-card__shell-bg,
+.mp-cc-payment-card__shell--brand-bank.mp-cc-payment-card__shell--has-art .mp-cc-payment-card__shell-body {
+	display: none;
+}
+
+.mp-cc-payment-card__shell--brand-bank.mp-cc-payment-card__shell--has-art .mp-cc-payment-card__shell-art {
+	object-fit: contain;
+	background: transparent;
+}
+
+/* Card label container (variant A glow). Stay on parent grid layout, just visual. */
+.mp-cc-payment-card--surface.mp-cc-payment-card--brand-bank:has(.mp-cc-payment-card__shell--has-art) {
+	--mp-cc-pay-glow: #a78bfa;
+	--mp-cc-pay-card-max: 100%;
+	--mp-cc-pay-glow-blur-strong: 28px;
+	--mp-cc-pay-glow-blur-soft: 10px;
+	--mp-cc-pay-glow-strong-alpha: 70%;
+	--mp-cc-pay-glow-soft-alpha: 55%;
+	border: none;
+	background: transparent;
+	box-shadow: none;
+	padding: 1rem 0.6rem 1.1rem;
+	gap: 0.7rem;
+	justify-items: center;
+	text-align: center;
+	cursor: pointer;
+}
+
+.mp-cc-payment-card--surface.mp-cc-payment-card--brand-bank:has(.mp-cc-payment-card__shell--has-art) .mp-cc-payment-card__shell {
+	width: 100%;
+	max-width: var(--mp-cc-pay-card-max, 100%);
+	margin: 0 auto;
+	transition: transform 0.2s ease, filter 0.25s ease;
+}
+
+.mp-cc-payment-card--surface.mp-cc-payment-card--brand-bank:has(.mp-cc-payment-card__shell--has-art) .mp-cc-payment-card__title--text {
+	font-size: 1.05rem;
+	font-weight: 600;
+	color: var(--mp-cc-color-text, #0f172a);
+	margin-top: 0.2rem;
+}
+
+/* Check pill rendered as <span> from JS so it sits right between card and title. */
+.mp-cc-payment-card__check-pill {
+	display: inline-flex;
+	width: 2rem;
+	height: 2rem;
+	border-radius: 50%;
+	background-color: color-mix(in srgb, var(--mp-cc-pay-glow, #a78bfa) 22%, #ffffff);
+	background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237c3aed' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='20 6 9 17 4 12'/></svg>");
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: 60% 60%;
+	opacity: 0;
+	transform: scale(0.85);
+	transition: opacity 0.18s ease, transform 0.18s ease;
+	pointer-events: none;
+	margin: 0 auto;
+}
+
+/* Hover — gentle lift, no shadow (image is transparent). */
+.mp-cc-payment-card--surface.mp-cc-payment-card--brand-bank:has(.mp-cc-payment-card__shell--has-art):hover .mp-cc-payment-card__shell {
+	transform: translateY(-2px);
+	box-shadow: none;
+}
+
+/* Glow + check pill appear only AFTER explicit user click (is-user-confirmed). */
+.mp-cc-payment-card--surface.mp-cc-payment-card--brand-bank:has(.mp-cc-payment-card__shell--has-art).is-user-confirmed .mp-cc-payment-card__shell {
+	filter:
+		drop-shadow(0 0 var(--mp-cc-pay-glow-blur-strong, 28px) color-mix(in srgb, var(--mp-cc-pay-glow) var(--mp-cc-pay-glow-strong-alpha, 70%), transparent))
+		drop-shadow(0 0 var(--mp-cc-pay-glow-blur-soft, 10px) color-mix(in srgb, var(--mp-cc-pay-glow) var(--mp-cc-pay-glow-soft-alpha, 55%), transparent));
+}
+
+.mp-cc-payment-card--surface.mp-cc-payment-card--brand-bank:has(.mp-cc-payment-card__shell--has-art).is-user-confirmed .mp-cc-payment-card__check-pill {
+	opacity: 1;
+	transform: scale(1);
+}
+
+/* No focus-within outline; visible focus only on real keyboard focus. */
+.mp-cc-payment-card--surface.mp-cc-payment-card--brand-bank:has(.mp-cc-payment-card__shell--has-art):focus-within {
+	outline: none;
+}
+
+.mp-cc-payment-card--surface.mp-cc-payment-card--brand-bank:has(.mp-cc-payment-card__shell--has-art):has(.mp-cc-payment-card__radio:focus-visible) {
+	outline: 2px solid color-mix(in srgb, var(--mp-cc-pay-glow) 75%, transparent);
+	outline-offset: 4px;
+	border-radius: 18px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.mp-cc-payment-card--surface.mp-cc-payment-card--brand-bank:has(.mp-cc-payment-card__shell--has-art):hover .mp-cc-payment-card__shell {
+		transform: none;
+	}
+}
+
 .mp-cc-payment-card--surface:hover .mp-cc-payment-card__shell {
 	transform: translateY(-2px);
 	box-shadow: 0 10px 26px rgba(15, 23, 42, 0.16);
