@@ -43,6 +43,8 @@
 	var syncStoreGeneration = 0;
 	/** Защита от параллельных кликов по способу/тарифу доставки на шаге 1. */
 	var shippingMutationInFlight = false;
+	/** Отложенный клик по тарифу, если пользователь нажал во время shippingMutationInFlight. */
+	var pendingShippingTariffChoice = null;
 
 	function getUiText(path, fallback) {
 		var source = (window.mpCcCheckout && window.mpCcCheckout.uiText) ? window.mpCcCheckout.uiText : {};
@@ -1033,6 +1035,58 @@
 		}
 		state.frontendStore.form.contact = c;
 		ensureAddressDefaults(state);
+	}
+
+	/**
+	 * Подтягивает значения контактной формы из DOM в state.
+	 * Нужен перед валидацией «Далее» (автозаполнение / последний символ без input)
+	 * и после session_get_state: иначе гонка с отложенным session_set_answers
+	 * затирает ввод при syncStoreWithBackend на каждом input по полям адреса.
+	 */
+	function flushContactFormFromDom(state, $app) {
+		if (!state || !$app || !$app.length || !state.frontendStore || !state.frontendStore.form) {
+			return;
+		}
+		var $fields = $app.find('[data-contact-field]');
+		if (!$fields.length) {
+			return;
+		}
+		var contact = $.extend({}, state.frontendStore.form.contact || {});
+		$fields.each(function () {
+			var $el = $(this);
+			var key = String($el.data('contact-field') || '');
+			if (!key) {
+				return;
+			}
+			var val = $el.val();
+			if (key === 'order_notes') {
+				var settings = getOrderNotesSettings();
+				val = String(val || '');
+				if (val.length > settings.maxLength) {
+					val = val.slice(0, settings.maxLength);
+					$el.val(val);
+				}
+			}
+			contact[key] = val;
+		});
+		var $nat = $app.find('[data-contact-phone-national]');
+		if ($nat.length) {
+			var cfg = getStepFourConfig();
+			var codes = cfg.contact_block && cfg.contact_block.phone_country_codes ? cfg.contact_block.phone_country_codes : [];
+			var meta = findPhoneCountryMeta(codes, contact.phone_country_iso);
+			var maxLen = meta.national_digits || 10;
+			var raw = String($nat.val() || '').replace(/\D/g, '').slice(0, maxLen);
+			contact.billing_phone_national = raw;
+		}
+		var $phoneCountry = $app.find('[data-contact-phone-country]');
+		if ($phoneCountry.length) {
+			var iso = String($phoneCountry.val() || '').trim();
+			if (iso) {
+				contact.phone_country_iso = iso;
+			}
+		}
+		contact.billing_phone = buildFullPhoneE164(contact);
+		state.frontendStore.form.contact = contact;
 	}
 
 	function getAvailablePaymentGateways() {
@@ -4548,6 +4602,17 @@
 				state.frontendStore.payment.gatewayCompatIssue = mergedPaymentFields.gatewayCompatIssue;
 			}
 			state.flowContextId = rehydrated.flowContextId;
+			var skipContactDomHydration = state.currentStepId === 'address_delivery';
+			if (!skipContactDomHydration && isV2CheckoutUiEnabled(state)) {
+				ensureV2ScreenState(state);
+				if (state.v2CurrentIndex === 0) {
+					skipContactDomHydration = true;
+				}
+			}
+			if (!skipContactDomHydration) {
+				flushContactFormFromDom(state, $app);
+				ensureContactDefaults(state);
+			}
 			render(state, $app);
 		}).fail(function (xhr) {
 			var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
@@ -4782,6 +4847,7 @@
 				return;
 			}
 			if (currentScreen.id === 'recipient_screen') {
+				flushContactFormFromDom(state, $app);
 				if (!validateRecipientStep(state)) {
 					setV2StepInvalidState(state, currentScreen.id, true);
 					logValidationFailure(state, 'recipient_screen', state.frontendStore.form.errors ? state.frontendStore.form.errors.contact : {});
@@ -4871,8 +4937,9 @@
 			setStepInvalidState(state, 'address_delivery', false);
 		}
 		if (state.currentStepId === 'recipient') {
+			flushContactFormFromDom(state, $app);
 			ensureContactDefaults(state);
-			if (!validateContactPaymentStep(state)) {
+			if (!validateRecipientStep(state)) {
 				setStepInvalidState(state, 'recipient', true);
 				logValidationFailure(state, 'recipient', state.frontendStore.form.errors ? state.frontendStore.form.errors.contact : {});
 				notify(getUiText('step_4.contact_error_all_required', 'Не все обязательные поля заполнены.'), 'error');
@@ -5054,6 +5121,7 @@
 			}
 			if (screen && screen.id === 'recipient_screen') {
 				v2html += buildContactPaymentHtml(state, { includePayment: false });
+				v2html += buildAddressBlockHtml(state);
 			}
 			if (screen && screen.id === 'payment_screen') {
 				v2html += buildPaymentGatewaysHtml(state);
@@ -5269,6 +5337,21 @@
 			return;
 		}
 		setStepInvalidState(state, 'address_delivery', false);
+		if (isV2CheckoutUiEnabled(state)) {
+			ensureV2ScreenState(state);
+			var v2Target = -1;
+			var vsi;
+			for (vsi = 0; vsi < state.v2Screens.length; vsi += 1) {
+				if (getV2LegacyStepId(state.v2Screens[vsi]) === nextStepId) {
+					v2Target = vsi;
+					break;
+				}
+			}
+			if (v2Target >= 0) {
+				setCurrentV2Screen(state, $app, v2Target);
+				return;
+			}
+		}
 		setCurrentStep(state, $app, nextStepId);
 	}
 
@@ -6306,7 +6389,14 @@
 			scenarioRequest.fail(function () {
 				notify('Не удалось сохранить способ доставки.', 'error');
 				syncStoreWithBackend(state, $app);
-			}).always(release);
+			}).always(function () {
+				release();
+				if (pendingShippingTariffChoice && String(pendingShippingTariffChoice.methodId || '') === methodId) {
+					var queued = pendingShippingTariffChoice;
+					pendingShippingTariffChoice = null;
+					applyShippingTariffUserChoice(state, $app, queued.methodId, queued.tariffId);
+				}
+			});
 		}
 	}
 
@@ -6317,8 +6407,10 @@
 			return;
 		}
 		if (shippingMutationInFlight) {
+			pendingShippingTariffChoice = { methodId: methodId, tariffId: tariffId };
 			return;
 		}
+		pendingShippingTariffChoice = null;
 		var methods = getV2ShippingCatalog(state);
 		var selection = resolveShippingSelection(methods, methodId, tariffId);
 		if (!selection) {
@@ -6340,6 +6432,11 @@
 			syncStoreWithBackend(state, $app);
 		}).always(function () {
 			shippingMutationInFlight = false;
+			if (pendingShippingTariffChoice) {
+				var queued = pendingShippingTariffChoice;
+				pendingShippingTariffChoice = null;
+				applyShippingTariffUserChoice(state, $app, queued.methodId, queued.tariffId);
+			}
 		});
 	}
 
@@ -6839,7 +6936,7 @@
 			}
 		});
 
-		$app.find('[data-contact-field]').off('input blur').on('input', function () {
+		$app.find('[data-contact-field]').off('input change blur').on('input change', function () {
 			var key = String($(this).data('contact-field') || '');
 			if (!key) {
 				return;
@@ -6879,7 +6976,7 @@
 			});
 		});
 
-		$app.find('[data-contact-phone-national]').off('input blur').on('input', function () {
+		$app.find('[data-contact-phone-national]').off('input change blur').on('input change', function () {
 			var $inp = $(this);
 			var cfg = getStepFourConfig();
 			var codes = cfg.contact_block && cfg.contact_block.phone_country_codes ? cfg.contact_block.phone_country_codes : [];
