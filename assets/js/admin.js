@@ -1808,6 +1808,29 @@
 		enhanceStepThreeFields();
 		enhanceStepFourFields();
 		refreshStepThreeEmptyIndicators();
+		(function mountStepOnePresetButtons() {
+			var inputName = 'mp_custom_checkout_settings[step_1][address_form_style_preset]';
+			var $presetInput = $('[name="' + inputName + '"]').first();
+			if (!$presetInput.length || $presetInput.prev('.mp-cc-admin-preset-toolbar').length) {
+				return;
+			}
+			var presets = [
+				{ id: 'concept_a', label: 'Concept A' },
+				{ id: 'clean', label: 'Clean' },
+				{ id: 'compact', label: 'Compact' }
+			];
+			var current = String($presetInput.val() || 'concept_a');
+			var html = '<div class="mp-cc-admin-preset-toolbar" style="margin:10px 0 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
+			html += '<strong style="margin-right:4px;">Стиль полей шага 1:</strong>';
+			for (var pi = 0; pi < presets.length; pi += 1) {
+				var p = presets[pi];
+				var activeClass = p.id === current ? ' button-primary' : '';
+				html += '<button type="button" class="button' + activeClass + '" data-mp-cc-step1-preset="' + escapeHtml(p.id) + '">' + escapeHtml(p.label) + '</button>';
+			}
+			html += '<span style="color:#6b7280;font-size:12px;">переключение в 1 клик</span>';
+			html += '</div>';
+			$presetInput.before(html);
+		})();
 
 		var mountPreviews = function (nextConfig, nextScenarioConfig, nextDateConfig, nextOfficeConfig, nextStepFourConfig, nextDeliveryConfig) {
 			var previewState = previewStore.getState();
@@ -2053,6 +2076,21 @@
 			flattenStepOneDefaults(defaultsMap, defaults, []);
 			applyDefaultsToForm(defaultsMap);
 			rerender();
+		});
+		$(document).on('click', '[data-mp-cc-step1-preset]', function () {
+			var inputName = 'mp_custom_checkout_settings[step_1][address_form_style_preset]';
+			var $presetInput = $('[name="' + inputName + '"]').first();
+			if (!$presetInput.length) {
+				return;
+			}
+			var next = String($(this).attr('data-mp-cc-step1-preset') || '');
+			if (!next) {
+				return;
+			}
+			$presetInput.val(next).trigger('change');
+			$('[data-mp-cc-step1-preset]').removeClass('button-primary');
+			$(this).addClass('button-primary');
+			rerenderDebounced();
 		});
 		function validateMotionFormBeforeSave() {
 			var errs = [];

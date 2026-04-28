@@ -161,6 +161,7 @@
 			layout_order: {
 				secondary_order: ['price', 'sku', 'variation', 'quantity', 'subtotal', 'remove']
 			},
+			address_form_style_preset: 'concept_a',
 			responsive: {
 				desktop_mode: 'comfortable',
 				tablet_mode: 'comfortable',
@@ -169,8 +170,155 @@
 			},
 			admin_preview: {
 				enabled: true
+			},
+			address_form_styles: {
+				card_bg: '#ffffff',
+				card_border: '#e5e7eb',
+				card_radius: '14px',
+				row_divider: '#e5e7eb',
+				label_color: '#111111',
+				label_size: '1.05rem',
+				value_color: '#1f2937',
+				value_size: '1.03rem',
+				placeholder_color: '#80868f',
+				option_title_color: '#111111',
+				option_title_size: '1.05rem',
+				option_hint_color: '#6b7280',
+				option_hint_size: '0.96rem',
+				radio_border_color: '#8b919a',
+				radio_checked_color: '#111111',
+				edit_btn_bg: '#f3f4f6',
+				edit_btn_border: '#d9dce1',
+				edit_btn_color: '#1f2937',
+				edit_btn_radius: '6px'
 			}
 		}, source);
+	}
+
+	function getAddressFormPresetStyles(preset) {
+		var key = trimNonEmpty(preset).toLowerCase();
+		if (key === 'clean') {
+			return {
+				card_bg: '#ffffff',
+				card_border: '#dfe3e8',
+				card_radius: '12px',
+				row_divider: '#eceff3',
+				label_color: '#0f172a',
+				label_size: '1.02rem',
+				value_color: '#1f2937',
+				value_size: '1rem',
+				placeholder_color: '#9aa1aa',
+				option_title_color: '#111827',
+				option_title_size: '1.02rem',
+				option_hint_color: '#6b7280',
+				option_hint_size: '0.92rem',
+				radio_border_color: '#9aa1aa',
+				radio_checked_color: '#111827',
+				edit_btn_bg: '#f8fafc',
+				edit_btn_border: '#d9dde3',
+				edit_btn_color: '#1f2937',
+				edit_btn_radius: '6px'
+			};
+		}
+		if (key === 'compact') {
+			return {
+				card_bg: '#ffffff',
+				card_border: '#e5e7eb',
+				card_radius: '10px',
+				row_divider: '#eef0f3',
+				label_color: '#111111',
+				label_size: '0.98rem',
+				value_color: '#1f2937',
+				value_size: '0.96rem',
+				placeholder_color: '#8b9098',
+				option_title_color: '#111111',
+				option_title_size: '0.98rem',
+				option_hint_color: '#6b7280',
+				option_hint_size: '0.88rem',
+				radio_border_color: '#8f959d',
+				radio_checked_color: '#111111',
+				edit_btn_bg: '#f3f4f6',
+				edit_btn_border: '#d9dce1',
+				edit_btn_color: '#1f2937',
+				edit_btn_radius: '5px'
+			};
+		}
+		// concept_a (default)
+		return {
+			card_bg: '#ffffff',
+			card_border: '#e5e7eb',
+			card_radius: '14px',
+			row_divider: '#e5e7eb',
+			label_color: '#111111',
+			label_size: '1.05rem',
+			value_color: '#1f2937',
+			value_size: '1.03rem',
+			placeholder_color: '#80868f',
+			option_title_color: '#111111',
+			option_title_size: '1.05rem',
+			option_hint_color: '#6b7280',
+			option_hint_size: '0.96rem',
+			radio_border_color: '#8b919a',
+			radio_checked_color: '#111111',
+			edit_btn_bg: '#f3f4f6',
+			edit_btn_border: '#d9dce1',
+			edit_btn_color: '#1f2937',
+			edit_btn_radius: '6px'
+		};
+	}
+
+	function buildAddressFormStyleAttr(state) {
+		var config = state && state.stepOneConfig && typeof state.stepOneConfig === 'object' ? state.stepOneConfig : {};
+		var presetKey = trimNonEmpty(config.address_form_style_preset) || 'concept_a';
+		var presetStyles = getAddressFormPresetStyles(presetKey);
+		var conceptABase = getAddressFormPresetStyles('concept_a');
+		var rawOverrides = config.address_form_styles && typeof config.address_form_styles === 'object'
+			? config.address_form_styles
+			: {};
+		var overrides = {};
+		Object.keys(rawOverrides).forEach(function (key) {
+			var val = trimNonEmpty(rawOverrides[key]);
+			if (!val) {
+				return;
+			}
+			// Для non-concept пресетов игнорируем дефолтные concept-a значения из tree,
+			// чтобы пресет реально переключался без ручной очистки всех полей.
+			if (presetKey !== 'concept_a' && Object.prototype.hasOwnProperty.call(conceptABase, key) && String(conceptABase[key]) === String(val)) {
+				return;
+			}
+			overrides[key] = val;
+		});
+		var styles = $.extend({}, presetStyles, overrides);
+		var vars = {
+			'--mp-cc-address-card-bg': styles.card_bg,
+			'--mp-cc-address-card-border': styles.card_border,
+			'--mp-cc-address-card-radius': styles.card_radius,
+			'--mp-cc-address-row-divider': styles.row_divider,
+			'--mp-cc-address-label-color': styles.label_color,
+			'--mp-cc-address-label-size': styles.label_size,
+			'--mp-cc-address-value-color': styles.value_color,
+			'--mp-cc-address-value-size': styles.value_size,
+			'--mp-cc-address-placeholder-color': styles.placeholder_color,
+			'--mp-cc-address-option-title-color': styles.option_title_color,
+			'--mp-cc-address-option-title-size': styles.option_title_size,
+			'--mp-cc-address-option-hint-color': styles.option_hint_color,
+			'--mp-cc-address-option-hint-size': styles.option_hint_size,
+			'--mp-cc-address-radio-border-color': styles.radio_border_color,
+			'--mp-cc-address-radio-checked-color': styles.radio_checked_color,
+			'--mp-cc-address-edit-btn-bg': styles.edit_btn_bg,
+			'--mp-cc-address-edit-btn-border': styles.edit_btn_border,
+			'--mp-cc-address-edit-btn-color': styles.edit_btn_color,
+			'--mp-cc-address-edit-btn-radius': styles.edit_btn_radius
+		};
+		var out = [];
+		Object.keys(vars).forEach(function (key) {
+			var value = trimNonEmpty(vars[key]);
+			if (!value) {
+				return;
+			}
+			out.push(key + ': ' + value);
+		});
+		return out.length ? ' style="' + escapeHtml(out.join('; ')) + '"' : '';
 	}
 
 	function resolveStepOneLabelsPath(labels, keyPath) {
@@ -5516,7 +5664,7 @@
 			break;
 		}
 
-		html += '<section class="mp-cc-address-form">';
+		html += '<section class="mp-cc-address-form"' + buildAddressFormStyleAttr(state) + '>';
 		html += '<div class="mp-cc-address-form__row" data-row="city">';
 		html += '<span class="mp-cc-address-form__label">' + escapeHtml(getStepOneLabel(state, 'address_form.city_row', 'step_4.address_city', 'населённый пункт')) + '</span>';
 		html += '<div class="mp-cc-address-form__control">';
