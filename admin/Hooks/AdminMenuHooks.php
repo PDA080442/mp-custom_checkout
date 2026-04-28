@@ -882,7 +882,7 @@ final class AdminMenuHooks {
 	 * @param mixed $value
 	 */
 	private static function render_leaf_input( string $name, $value, string $path ): void {
-		$label = str_replace( '_', ' ', basename( str_replace( '.', '/', $path ) ) );
+		$label = self::localized_label_for_path( $path );
 		$filters = self::build_filters_for_path( $path );
 		$risky = self::is_risky_path( $path );
 		$scenario = self::scenario_scope_for_path( $path );
@@ -915,6 +915,39 @@ final class AdminMenuHooks {
 		}
 		echo '<code class="mp-cc-admin-shell__field-path">' . esc_html( $path ) . '</code>';
 		echo '</label>';
+	}
+
+	/**
+	 * Локализованные подписи для наиболее важных полей админки.
+	 */
+	private static function localized_label_for_path( string $path ): string {
+		$leaf = basename( str_replace( '.', '/', $path ) );
+		$map = array(
+			'step_1.address_form_style_preset'          => __( 'Пресет стиля формы адреса', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.card_bg'        => __( 'Фон карточки', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.card_border'    => __( 'Рамка карточки', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.card_radius'    => __( 'Скругление карточки', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.row_divider'    => __( 'Разделитель строк', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.label_color'    => __( 'Цвет названий полей', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.label_size'     => __( 'Размер названий полей', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.value_color'    => __( 'Цвет значений', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.value_size'     => __( 'Размер значений', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.placeholder_color' => __( 'Цвет плейсхолдера', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.option_title_color' => __( 'Цвет названия способа доставки', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.option_title_size'  => __( 'Размер названия способа доставки', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.option_hint_color'  => __( 'Цвет описания способа доставки', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.option_hint_size'   => __( 'Размер описания способа доставки', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.radio_border_color' => __( 'Цвет рамки радио-кнопки', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.radio_checked_color' => __( 'Цвет выбранной радио-кнопки', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.edit_btn_bg'      => __( 'Фон кнопки «другой»', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.edit_btn_border'  => __( 'Рамка кнопки «другой»', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.edit_btn_color'   => __( 'Цвет текста кнопки «другой»', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.edit_btn_radius'  => __( 'Скругление кнопки «другой»', 'mp-custom-checkout' ),
+		);
+		if ( isset( $map[ $path ] ) ) {
+			return (string) $map[ $path ];
+		}
+		return str_replace( '_', ' ', $leaf );
 	}
 
 	/**
