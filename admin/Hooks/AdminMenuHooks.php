@@ -424,10 +424,7 @@ final class AdminMenuHooks {
 					if (!input) { return; }
 					if (field.querySelector('[data-mp-cc-giftbar-presets="1"]')) { return; }
 					var presets = [
-						{ label: 'Компакт', value: 'compact' },
-						{ label: 'Сбалансированный', value: 'balanced' },
-						{ label: 'Luxe', value: 'luxe' },
-						{ label: 'Минимал', value: 'minimal' }
+						{ label: 'Seal Inline', value: 'seal-inline' }
 					];
 					var toolbar = document.createElement('div');
 					toolbar.setAttribute('data-mp-cc-giftbar-presets', '1');
@@ -436,7 +433,7 @@ final class AdminMenuHooks {
 					toolbar.style.gap = '8px';
 					toolbar.style.marginTop = '8px';
 					toolbar.style.marginBottom = '2px';
-					var current = String(input.value || '').trim().toLowerCase() || 'balanced';
+					var current = String(input.value || '').trim().toLowerCase() || 'seal-inline';
 					presets.forEach(function (preset) {
 						var btn = document.createElement('button');
 						btn.type = 'button';
@@ -447,7 +444,7 @@ final class AdminMenuHooks {
 					});
 					var hint = document.createElement('small');
 					hint.className = 'description';
-					hint.textContent = 'Варианты: compact | balanced | luxe | minimal.';
+					hint.textContent = 'Единственный поддерживаемый вариант: seal-inline.';
 					hint.style.display = 'block';
 					hint.style.marginTop = '6px';
 					field.appendChild(toolbar);
@@ -1136,6 +1133,16 @@ final class AdminMenuHooks {
 			'step_4.payment_block.card_styles.perk_padding'  => __( 'Оплата: внутренние отступы плашек преимуществ', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.gift_card_width' => __( 'Оплата: ширина карточки подарочной карты рядом', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.gift_bar_style' => __( 'Оплата: стиль нижней карточки подарочной карты', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_bg' => __( 'Подарочная карта (нижний блок): фон', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_border' => __( 'Подарочная карта (нижний блок): цвет рамки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_shadow' => __( 'Подарочная карта (нижний блок): тень', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_title_color' => __( 'Подарочная карта (нижний блок): цвет заголовка', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_text_color' => __( 'Подарочная карта (нижний блок): цвет описания', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_input_bg' => __( 'Подарочная карта (нижний блок): фон поля ввода', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_input_border' => __( 'Подарочная карта (нижний блок): рамка поля ввода', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_input_text' => __( 'Подарочная карта (нижний блок): цвет текста поля ввода', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_button_bg' => __( 'Подарочная карта (нижний блок): фон кнопки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_button_text' => __( 'Подарочная карта (нижний блок): цвет текста кнопки', 'mp-custom-checkout' ),
 		);
 		if ( isset( $map[ $path ] ) ) {
 			return (string) $map[ $path ];

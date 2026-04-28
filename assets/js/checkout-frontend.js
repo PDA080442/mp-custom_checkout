@@ -656,7 +656,17 @@
 					perk_radius: '9px',
 					perk_padding: '0.42rem 0.75rem',
 					gift_card_width: '228px',
-					gift_bar_style: 'balanced'
+					gift_bar_style: 'seal-inline',
+					gift_bar_bg: '#fefbf6',
+					gift_bar_border: '#ceb284',
+					gift_bar_shadow: '0 10px 24px rgba(37,25,8,0.08)',
+					gift_bar_title_color: '#241f17',
+					gift_bar_text_color: '#7e6950',
+					gift_bar_input_bg: '#fffdf8',
+					gift_bar_input_border: '#d7bb8e',
+					gift_bar_input_text: '#46372a',
+					gift_bar_button_bg: '#121212',
+					gift_bar_button_text: '#ffffff'
 				},
 				error_message: '',
 				messages: { loading: '', success: '', error: '' },
@@ -2836,6 +2846,16 @@
 			vars['--mp-cc-pay-two-up-perk-radius'] = trimNonEmpty(s.perk_radius);
 			vars['--mp-cc-pay-two-up-perk-padding'] = trimNonEmpty(s.perk_padding);
 			vars['--mp-cc-pay-two-up-gift-width'] = trimNonEmpty(s.gift_card_width);
+			vars['--mp-cc-pay-gift-bar-bg'] = trimNonEmpty(s.gift_bar_bg);
+			vars['--mp-cc-pay-gift-bar-border'] = trimNonEmpty(s.gift_bar_border);
+			vars['--mp-cc-pay-gift-bar-shadow'] = trimNonEmpty(s.gift_bar_shadow);
+			vars['--mp-cc-pay-gift-bar-title-color'] = trimNonEmpty(s.gift_bar_title_color);
+			vars['--mp-cc-pay-gift-bar-text-color'] = trimNonEmpty(s.gift_bar_text_color);
+			vars['--mp-cc-pay-gift-bar-input-bg'] = trimNonEmpty(s.gift_bar_input_bg);
+			vars['--mp-cc-pay-gift-bar-input-border'] = trimNonEmpty(s.gift_bar_input_border);
+			vars['--mp-cc-pay-gift-bar-input-text'] = trimNonEmpty(s.gift_bar_input_text);
+			vars['--mp-cc-pay-gift-bar-button-bg'] = trimNonEmpty(s.gift_bar_button_bg);
+			vars['--mp-cc-pay-gift-bar-button-text'] = trimNonEmpty(s.gift_bar_button_text);
 		}
 		var out = [];
 		Object.keys(vars).forEach(function (key) {
@@ -3307,11 +3327,21 @@
 				? 'mp-cc-payment--surface-in-card'
 				: (surface === 'segment_preview' ? 'mp-cc-payment--surface-segment-preview' : 'mp-cc-payment--surface-visual'));
 		var twoUpMode = surface === 'visual' && twoUpBrands;
-		var giftBarStyle = 'balanced';
+		var giftBarStyle = 'seal-inline';
 		if (twoUpMode && pb && pb.card_styles && typeof pb.card_styles === 'object') {
 			var rawGiftStyle = String(pb.card_styles.gift_bar_style || '').toLowerCase().trim();
-			if (rawGiftStyle === 'compact' || rawGiftStyle === 'balanced' || rawGiftStyle === 'luxe' || rawGiftStyle === 'minimal') {
+			if (rawGiftStyle === 'seal-inline') {
 				giftBarStyle = rawGiftStyle;
+			} else if (
+				rawGiftStyle === 'editorial-bow-divider' ||
+				rawGiftStyle === 'ticket-ribbon' ||
+				rawGiftStyle === 'balanced' ||
+				rawGiftStyle === 'compact' ||
+				rawGiftStyle === 'luxe' ||
+				rawGiftStyle === 'minimal'
+			) {
+				// Backward-compat fallback for retired presets.
+				giftBarStyle = 'seal-inline';
 			}
 		}
 		var layoutClass = twoUpMode ? ' mp-cc-payment--layout-two-up mp-cc-payment--gift-style-' + giftBarStyle : '';
