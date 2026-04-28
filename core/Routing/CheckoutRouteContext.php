@@ -189,9 +189,8 @@ final class CheckoutRouteContext {
 			$shipping_total = max( 0.0, (float) $date_answers['shipping_price'] );
 		}
 		$steps_pre_payment     = array(
-			ScenarioStepRegistry::STEP_CART,
-			ScenarioStepRegistry::STEP_DATE,
-			ScenarioStepRegistry::STEP_CONDITIONS,
+			ScenarioStepRegistry::STEP_ADDRESS_DELIVERY,
+			ScenarioStepRegistry::STEP_RECIPIENT,
 		);
 		$suppress_shipping_in_summary = false;
 		if ( $cart->needs_shipping() ) {

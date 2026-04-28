@@ -8,6 +8,7 @@
 namespace MP\CustomCheckout\Checkout\Hooks;
 
 use MP\CustomCheckout\DependencyFailureGuard;
+use MP\CustomCheckout\Hooks\CheckoutRouteHooks;
 use MP\CustomCheckout\Integrations\WooCommerce\GiftCardIntegration;
 use MP\CustomCheckout\Routing\CheckoutDateAvailabilityEngine;
 use MP\CustomCheckout\Routing\CheckoutRouteContext;
@@ -17,6 +18,7 @@ use MP\CustomCheckout\Checkout\Routing\CheckoutSessionService;
 use MP\CustomCheckout\Routing\CheckoutStepManager;
 use MP\CustomCheckout\Settings\DefaultFeatureFlagsRegistry;
 use MP\CustomCheckout\Settings\FeatureFlagResolver;
+use MP\CustomCheckout\Settings\OptionKeys;
 use MP\CustomCheckout\Settings\SafeSettingsResolver;
 
 defined( 'ABSPATH' ) || exit;
@@ -101,7 +103,7 @@ final class CheckoutAjaxHooks {
 				wp_send_json_error( array( 'code' => 'invalid_step_id', 'message' => __( 'Не указан шаг checkout.', 'mp-custom-checkout' ) ), 400 );
 			}
 			$answers = self::sanitize_payload_shape( is_array( $answers ) ? $answers : array(), 4, 80 );
-			if ( in_array( $step_id, array( 'date', 'conditions' ), true ) ) {
+			if ( in_array( $step_id, array( 'address_delivery', 'date', 'conditions' ), true ) ) {
 				$flow          = CheckoutSessionService::get_flow();
 				$existing_date = array();
 				if ( is_array( $flow ) && isset( $flow['answers']['date_conditions'] ) && is_array( $flow['answers']['date_conditions'] ) ) {
@@ -109,10 +111,13 @@ final class CheckoutAjaxHooks {
 				}
 				// Частичный payload (напр. только с шага «условия») дополняем сохранённым date_conditions.
 				$answers = array_replace_recursive( $existing_date, $answers );
-				if ( ! self::validate_date_answers_payload( $answers ) ) {
-					$message = SafeSettingsResolver::get( 'step_3.copy.errors.invalid_date', __( 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.', 'mp-custom-checkout' ) );
-					$message = is_string( $message ) && '' !== trim( $message ) ? $message : __( 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.', 'mp-custom-checkout' );
-					wp_send_json_error( array( 'code' => 'invalid_date_selection', 'message' => $message ), 422 );
+				// Дата выбирается на отдельном шаге (если включён). Для address_delivery валидируем только доставку.
+				if ( in_array( $step_id, array( 'date', 'conditions' ), true ) || ! empty( $answers['selected_date'] ) ) {
+					if ( ! self::validate_date_answers_payload( $answers ) ) {
+						$message = SafeSettingsResolver::get( 'step_3.copy.errors.invalid_date', __( 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.', 'mp-custom-checkout' ) );
+						$message = is_string( $message ) && '' !== trim( $message ) ? $message : __( 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.', 'mp-custom-checkout' );
+						wp_send_json_error( array( 'code' => 'invalid_date_selection', 'message' => $message ), 422 );
+					}
 				}
 				if ( ! self::validate_shipping_answers_payload( $answers ) ) {
 					wp_send_json_error(
@@ -300,7 +305,7 @@ final class CheckoutAjaxHooks {
 		if ( ! $pm instanceof \WC_Payment_Gateways ) {
 			wp_send_json_error( array( 'code' => 'wc_gateway_unavailable', 'message' => __( 'Платёжные шлюзы WooCommerce недоступны.', 'mp-custom-checkout' ) ), 503 );
 		}
-		$available = $pm->get_available_payment_gateways();
+		$available = self::get_available_payment_gateways_in_checkout_context( $pm );
 		if ( ! isset( $available[ $gateway ] ) ) {
 			wp_send_json_error( array( 'code' => 'gateway_not_available', 'message' => __( 'Выбранный способ оплаты сейчас недоступен.', 'mp-custom-checkout' ) ), 422 );
 		}
@@ -312,7 +317,7 @@ final class CheckoutAjaxHooks {
 		$contact                = isset( $answers['contact_billing'] ) && is_array( $answers['contact_billing'] ) ? $answers['contact_billing'] : array();
 		$contact['payment_gateway'] = $gateway;
 		$contact['gateway']     = $gateway;
-		CheckoutSessionService::set_step_answers( 'contact_payment', $contact );
+		CheckoutSessionService::set_step_answers( 'payment', $contact );
 		$fields_payload = self::build_payment_fields_payload_from_session();
 		wp_send_json_success(
 			array_merge(
@@ -386,7 +391,7 @@ final class CheckoutAjaxHooks {
 				'payment_fields_gateway' => $gateway_id,
 			);
 		}
-		$available = $pm->get_available_payment_gateways();
+		$available = self::get_available_payment_gateways_in_checkout_context( $pm );
 		if ( ! isset( $available[ $gateway_id ] ) || ! $available[ $gateway_id ] instanceof \WC_Payment_Gateway ) {
 			return array(
 				'payment_fields_html'    => '',
@@ -443,9 +448,18 @@ final class CheckoutAjaxHooks {
 		if ( ! $pm instanceof \WC_Payment_Gateways ) {
 			wp_send_json_error( array( 'code' => 'gateway_unavailable', 'message' => __( 'Платёжные шлюзы недоступны.', 'mp-custom-checkout' ) ), 503 );
 		}
-		$available = $pm->get_available_payment_gateways();
+		$available = self::get_available_payment_gateways_in_checkout_context( $pm );
 		if ( ! isset( $available[ $gateway ] ) ) {
 			wp_send_json_error( array( 'code' => 'gateway_not_available', 'message' => __( 'Выбранный способ оплаты недоступен.', 'mp-custom-checkout' ) ), 422 );
+		}
+		if ( ! self::is_contact_phone_acceptable( $contact ) ) {
+			wp_send_json_error(
+				array(
+					'code'    => 'invalid_phone',
+					'message' => __( 'Проверьте номер телефона: для выбранной страны укажите нужное количество цифр без кода страны.', 'mp-custom-checkout' ),
+				),
+				422
+			);
 		}
 		$wc_session = WC()->session;
 		$lock_key   = 'mp_cc_payment_submit_lock';
@@ -492,6 +506,65 @@ final class CheckoutAjaxHooks {
 		}
 	}
 
+	/**
+	 * Проверка длины национальной части телефона по настройкам шага 4 (совпадает с фронтенд-валидацией).
+	 *
+	 * @param array<string, mixed> $contact
+	 */
+	private static function is_contact_phone_acceptable( array $contact ): bool {
+		$merged = SafeSettingsResolver::get_merged();
+		$s4     = isset( $merged[ OptionKeys::SECTION_STEP_4 ] ) && is_array( $merged[ OptionKeys::SECTION_STEP_4 ] )
+			? $merged[ OptionKeys::SECTION_STEP_4 ]
+			: array();
+		$block  = isset( $s4['contact_block'] ) && is_array( $s4['contact_block'] ) ? $s4['contact_block'] : array();
+		$vis    = isset( $block['field_visibility']['phone'] ) ? (bool) $block['field_visibility']['phone'] : true;
+		if ( ! $vis ) {
+			return true;
+		}
+		$req = isset( $block['field_required']['phone'] ) ? (bool) $block['field_required']['phone'] : true;
+
+		$codes = isset( $block['phone_country_codes'] ) && is_array( $block['phone_country_codes'] ) ? $block['phone_country_codes'] : array();
+		$iso   = isset( $contact['phone_country_iso'] ) ? strtoupper( sanitize_text_field( (string) $contact['phone_country_iso'] ) ) : '';
+		if ( 2 !== strlen( $iso ) || 1 !== preg_match( '/^[A-Z]{2}$/', $iso ) ) {
+			$iso = 'RU';
+		}
+		$need = 10;
+		$dial = '+7';
+		foreach ( $codes as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+			$row_iso = isset( $row['iso'] ) ? strtoupper( (string) $row['iso'] ) : '';
+			if ( $row_iso === $iso ) {
+				$need = isset( $row['national_digits'] ) ? max( 1, min( 15, (int) $row['national_digits'] ) ) : 10;
+				$dial = isset( $row['dial'] ) ? (string) $row['dial'] : '+7';
+				break;
+			}
+		}
+		$constraints = isset( $block['validation_constraints'] ) && is_array( $block['validation_constraints'] )
+			? $block['validation_constraints']
+			: array();
+		$override = isset( $constraints['phone_digits_override'] ) ? (int) $constraints['phone_digits_override'] : 0;
+		if ( $override > 0 ) {
+			$need = max( 1, min( 20, $override ) );
+		}
+
+		$nat = isset( $contact['billing_phone_national'] ) ? preg_replace( '/\D+/', '', (string) $contact['billing_phone_national'] ) : '';
+		if ( '' === $nat && ! empty( $contact['billing_phone'] ) ) {
+			$full        = preg_replace( '/\D+/', '', (string) $contact['billing_phone'] );
+			$dial_digits = preg_replace( '/\D+/', '', $dial );
+			if ( '' !== $dial_digits && 0 === strpos( $full, $dial_digits ) ) {
+				$nat = substr( $full, strlen( $dial_digits ) );
+			}
+		}
+
+		if ( '' === $nat ) {
+			return ! $req;
+		}
+
+		return strlen( $nat ) === $need;
+	}
+
 	private static function create_order_from_cart_and_answers( array $contact, string $gateway ): ?\WC_Order {
 		if ( ! function_exists( 'wc_create_order' ) || ! function_exists( 'WC' ) || ! WC()->cart instanceof \WC_Cart ) {
 			return null;
@@ -513,7 +586,8 @@ final class CheckoutAjaxHooks {
 		$order->set_billing_last_name( isset( $contact['billing_last_name'] ) ? (string) $contact['billing_last_name'] : '' );
 		$order->set_billing_email( isset( $contact['billing_email'] ) ? (string) $contact['billing_email'] : '' );
 		$order->set_billing_phone( isset( $contact['billing_phone'] ) ? (string) $contact['billing_phone'] : '' );
-		$order->set_billing_country( isset( $contact['country'] ) ? (string) $contact['country'] : '' );
+		$billing_country = isset( $contact['country'] ) ? sanitize_text_field( (string) $contact['country'] ) : '';
+		$order->set_billing_country( OrderMetaHooks::normalize_billing_country_value( $billing_country ) );
 		$order->set_billing_state( isset( $contact['state'] ) ? (string) $contact['state'] : '' );
 		$order->set_billing_city( isset( $contact['city'] ) ? (string) $contact['city'] : '' );
 		$order->set_billing_address_1( isset( $contact['address_1'] ) ? (string) $contact['address_1'] : '' );
@@ -533,6 +607,45 @@ final class CheckoutAjaxHooks {
 		}
 		$order->save();
 		return $order;
+	}
+
+	/**
+	 * Для кастомного checkout-route временно возвращаем is_checkout()=true,
+	 * иначе часть шлюзов (особенно внешних) отфильтровываются как «не checkout контекст».
+	 *
+	 * @param \WC_Payment_Gateways $pm
+	 * @return array<string, mixed>
+	 */
+	private static function get_available_payment_gateways_in_checkout_context( \WC_Payment_Gateways $pm ): array {
+		// На странице кастомного checkout is_checkout_route() === true, и WooCommerce видит «как на checkout».
+		// Запросы set_payment_gateway / submit_payment идут через admin-ajax.php: там is_checkout_route() === false,
+		// и часть шлюзов (Robokassa и др.) отваливается из get_available_payment_gateways() из‑за проверок is_checkout().
+		$force_checkout = self::should_force_wc_checkout_for_gateway_resolution();
+		if ( $force_checkout ) {
+			add_filter( 'woocommerce_is_checkout', '__return_true', PHP_INT_MAX );
+		}
+		try {
+			$available = $pm->get_available_payment_gateways();
+		} finally {
+			if ( $force_checkout ) {
+				remove_filter( 'woocommerce_is_checkout', '__return_true', PHP_INT_MAX );
+			}
+		}
+		return is_array( $available ) ? $available : array();
+	}
+
+	/**
+	 * Нужно ли подставить is_checkout()=true при разрешении списка шлюзов (как на нативном checkout).
+	 */
+	private static function should_force_wc_checkout_for_gateway_resolution(): bool {
+		if ( CheckoutRouteHooks::is_checkout_route() ) {
+			return true;
+		}
+		if ( ! function_exists( 'wp_doing_ajax' ) || ! wp_doing_ajax() ) {
+			return false;
+		}
+		$action = isset( $_REQUEST['action'] ) ? sanitize_key( wp_unslash( (string) $_REQUEST['action'] ) ) : '';
+		return self::ACTION === $action;
 	}
 
 	private static function validate_context_id(): bool {
@@ -638,7 +751,7 @@ final class CheckoutAjaxHooks {
 				'courier'              => array( 'tariffs' => array( 'express', 'standard' ), 'visibility_scenarios' => array( 'krasnoyarsk_delivery', 'other_city_delivery' ) ),
 				'pvz'                  => array( 'tariffs' => array( 'express', 'standard' ), 'visibility_scenarios' => array( 'krasnoyarsk_delivery', 'other_city_delivery' ) ),
 				'krasnoyarsk_delivery' => array( 'tariffs' => array(), 'visibility_scenarios' => array( 'krasnoyarsk_delivery' ) ),
-				'pickup'               => array( 'tariffs' => array(), 'visibility_scenarios' => array( 'pickup' ) ),
+				'pickup'               => array( 'tariffs' => array(), 'visibility_scenarios' => array( 'pickup', 'krasnoyarsk_delivery', 'other_city_delivery' ) ),
 			);
 		}
 		return $result;

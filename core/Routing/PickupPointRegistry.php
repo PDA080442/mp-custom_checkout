@@ -85,7 +85,7 @@ final class PickupPointRegistry {
 			$normalized[] = array(
 				'id'          => 'pickup_main',
 				'title'       => 'Основная точка самовывоза',
-				'address'     => 'г. Красноярск, ул. Примерная, 1',
+				'address'     => 'г. Красноярск, ул. Маерчака, д. 10, оф. 17-13',
 				'description' => 'Ежедневно с 10:00 до 20:00',
 				'map_hint'    => 'Слот карты/схемы будет подключен здесь.',
 			);

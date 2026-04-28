@@ -222,7 +222,7 @@ final class CheckoutSessionService {
 	/** @return array<string, mixed> */
 	private static function build_initial_flow(): array {
 		$step_order = self::get_initial_step_order();
-		$first_step = isset( $step_order[0] ) && is_string( $step_order[0] ) ? $step_order[0] : ScenarioStepRegistry::STEP_CART;
+		$first_step = isset( $step_order[0] ) && is_string( $step_order[0] ) ? $step_order[0] : ScenarioStepRegistry::STEP_ADDRESS_DELIVERY;
 		$scenario   = self::get_initial_scenario();
 		$flow       = array(
 			'context_id'   => wp_generate_uuid4(),
@@ -319,6 +319,12 @@ final class CheckoutSessionService {
 
 	/** @return array<int, string> */
 	private static function get_initial_step_order(): array {
+		$legacy_map = array(
+			'cart'            => ScenarioStepRegistry::STEP_ADDRESS_DELIVERY,
+			'date'            => ScenarioStepRegistry::STEP_ADDRESS_DELIVERY,
+			'conditions'      => ScenarioStepRegistry::STEP_CONFIRM,
+			'contact_payment' => ScenarioStepRegistry::STEP_RECIPIENT,
+		);
 		$stored = SafeSettingsResolver::get( 'registry.step_order', ScenarioStepRegistry::default_step_order() );
 		if ( ! is_array( $stored ) ) {
 			return ScenarioStepRegistry::default_step_order();
@@ -329,6 +335,9 @@ final class CheckoutSessionService {
 				continue;
 			}
 			$key = sanitize_key( $item );
+			if ( isset( $legacy_map[ $key ] ) ) {
+				$key = $legacy_map[ $key ];
+			}
 			if ( '' !== $key ) {
 				$order[] = $key;
 			}
@@ -401,13 +410,16 @@ final class CheckoutSessionService {
 
 	private static function normalize_answers_storage_key( string $step_id ): string {
 		$step_id = sanitize_key( $step_id );
-		if ( ScenarioStepRegistry::STEP_CART === $step_id ) {
+		if ( ScenarioStepRegistry::STEP_ADDRESS_DELIVERY === $step_id ) {
 			return 'step_one';
 		}
-		if ( ScenarioStepRegistry::STEP_DATE === $step_id || ScenarioStepRegistry::STEP_CONDITIONS === $step_id ) {
+		if ( ScenarioStepRegistry::STEP_RECIPIENT === $step_id || ScenarioStepRegistry::STEP_PAYMENT === $step_id || ScenarioStepRegistry::STEP_CONFIRM === $step_id ) {
+			return 'contact_billing';
+		}
+		if ( 'date' === $step_id || 'conditions' === $step_id ) {
 			return 'date_conditions';
 		}
-		if ( ScenarioStepRegistry::STEP_CONTACT_PAYMENT === $step_id ) {
+		if ( 'contact_payment' === $step_id || 'recipient' === $step_id || 'payment' === $step_id || 'confirm' === $step_id ) {
 			return 'contact_billing';
 		}
 		if ( 'scenario' === $step_id ) {

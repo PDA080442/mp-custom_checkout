@@ -14,6 +14,7 @@ use MP\CustomCheckout\Settings\AdminSectionsRegistry;
 use MP\CustomCheckout\Settings\MotionSettingsResolver;
 use MP\CustomCheckout\Settings\OptionKeys;
 use MP\CustomCheckout\Settings\SafeSettingsResolver;
+use MP\CustomCheckout\Settings\SettingsMigrationManager;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -26,6 +27,7 @@ final class AdminMenuHooks {
 		add_action( 'admin_menu', array( __CLASS__, 'register_menu' ) );
 		add_action( 'admin_init', array( __CLASS__, 'register_settings' ) );
 		add_action( 'admin_init', array( __CLASS__, 'handle_logs_actions' ) );
+		add_action( 'admin_init', array( __CLASS__, 'handle_config_actions' ) );
 	}
 
 	public static function register_menu(): void {
@@ -145,6 +147,29 @@ final class AdminMenuHooks {
 			$node_path = '' === $path ? (string) $key : $path . '.' . (string) $key;
 			if ( is_array( $default_value ) ) {
 				if ( self::is_list_array( $default_value ) ) {
+					$first_template = $default_value[0] ?? null;
+					if ( is_array( $first_template ) && ! self::is_list_array( $first_template ) ) {
+						$raw_list = is_array( $raw ) ? array_values( $raw ) : array();
+						$out_rows = array();
+						foreach ( $raw_list as $idx => $item ) {
+							$item_array = is_array( $item ) ? $item : array();
+							$iso_guess  = isset( $item_array['iso'] ) ? strtoupper( sanitize_text_field( (string) $item_array['iso'] ) ) : '';
+							$row_shape  = $first_template;
+							foreach ( $default_value as $def_row ) {
+								if ( ! is_array( $def_row ) ) {
+									continue;
+								}
+								$def_iso = isset( $def_row['iso'] ) ? strtoupper( (string) $def_row['iso'] ) : '';
+								if ( '' !== $iso_guess && $def_iso === $iso_guess ) {
+									$row_shape = $def_row;
+									break;
+								}
+							}
+							$out_rows[] = self::sanitize_by_shape( $item_array, $row_shape, $node_path . '[' . (string) $idx . ']' );
+						}
+						$result[ $key ] = $out_rows;
+						continue;
+					}
 					if ( is_array( $raw ) ) {
 						$list = array_values( array_map( 'sanitize_text_field', array_map( 'strval', $raw ) ) );
 					} else {
@@ -337,6 +362,112 @@ final class AdminMenuHooks {
 				var status = document.querySelector('[data-mp-cc-search-status="1"]');
 				var isDirty = false;
 				var activeFilter = 'all';
+				var installCheckoutWidthPresets = function () {
+					var field = form.querySelector('.mp-cc-admin-shell__field[data-setting-path="general.checkout_layout.max_width"]');
+					if (!field) { return; }
+					var input = field.querySelector('input[type="text"], input[type="number"]');
+					if (!input) { return; }
+					if (field.querySelector('[data-mp-cc-width-presets="1"]')) { return; }
+					var presets = [
+						{ label: 'Компакт', value: '1140px' },
+						{ label: 'Стандарт', value: '1280px' },
+						{ label: 'Шире', value: '1360px' },
+						{ label: 'Широкий', value: '1440px' },
+						{ label: 'Full', value: '94%' }
+					];
+					var toolbar = document.createElement('div');
+					toolbar.setAttribute('data-mp-cc-width-presets', '1');
+					toolbar.style.display = 'flex';
+					toolbar.style.flexWrap = 'wrap';
+					toolbar.style.gap = '8px';
+					toolbar.style.marginTop = '8px';
+					toolbar.style.marginBottom = '2px';
+					var current = String(input.value || '').trim();
+					presets.forEach(function (preset) {
+						var btn = document.createElement('button');
+						btn.type = 'button';
+						btn.className = 'button button-small' + (current === preset.value ? ' button-primary' : '');
+						btn.textContent = preset.label;
+						btn.setAttribute('data-width-value', preset.value);
+						toolbar.appendChild(btn);
+					});
+					var hint = document.createElement('small');
+					hint.className = 'description';
+					hint.textContent = 'Быстрые пресеты + ручной ввод (например: 1320px, 82rem, 94%).';
+					hint.style.display = 'block';
+					hint.style.marginTop = '6px';
+					field.appendChild(toolbar);
+					field.appendChild(hint);
+					var syncPresetButtons = function () {
+						var val = String(input.value || '').trim();
+						Array.prototype.forEach.call(toolbar.querySelectorAll('button[data-width-value]'), function (btn) {
+							btn.classList.toggle('button-primary', String(btn.getAttribute('data-width-value') || '') === val);
+						});
+					};
+					toolbar.addEventListener('click', function (event) {
+						var btn = event.target && event.target.closest('button[data-width-value]');
+						if (!btn) { return; }
+						var nextValue = String(btn.getAttribute('data-width-value') || '').trim();
+						if (!nextValue) { return; }
+						input.value = nextValue;
+						input.dispatchEvent(new Event('input', { bubbles: true }));
+						input.dispatchEvent(new Event('change', { bubbles: true }));
+						syncPresetButtons();
+					});
+					input.addEventListener('input', syncPresetButtons);
+					input.addEventListener('change', syncPresetButtons);
+				};
+				var installGiftBarStylePresets = function () {
+					var field = form.querySelector('.mp-cc-admin-shell__field[data-setting-path="step_4.payment_block.card_styles.gift_bar_style"]');
+					if (!field) { return; }
+					var input = field.querySelector('input[type="text"]');
+					if (!input) { return; }
+					if (field.querySelector('[data-mp-cc-giftbar-presets="1"]')) { return; }
+					var presets = [
+						{ label: 'Seal Inline', value: 'seal-inline' }
+					];
+					var toolbar = document.createElement('div');
+					toolbar.setAttribute('data-mp-cc-giftbar-presets', '1');
+					toolbar.style.display = 'flex';
+					toolbar.style.flexWrap = 'wrap';
+					toolbar.style.gap = '8px';
+					toolbar.style.marginTop = '8px';
+					toolbar.style.marginBottom = '2px';
+					var current = String(input.value || '').trim().toLowerCase() || 'seal-inline';
+					presets.forEach(function (preset) {
+						var btn = document.createElement('button');
+						btn.type = 'button';
+						btn.className = 'button button-small' + (current === preset.value ? ' button-primary' : '');
+						btn.textContent = preset.label;
+						btn.setAttribute('data-giftbar-value', preset.value);
+						toolbar.appendChild(btn);
+					});
+					var hint = document.createElement('small');
+					hint.className = 'description';
+					hint.textContent = 'Единственный поддерживаемый вариант: seal-inline.';
+					hint.style.display = 'block';
+					hint.style.marginTop = '6px';
+					field.appendChild(toolbar);
+					field.appendChild(hint);
+					var syncPresetButtons = function () {
+						var val = String(input.value || '').trim().toLowerCase();
+						Array.prototype.forEach.call(toolbar.querySelectorAll('button[data-giftbar-value]'), function (btn) {
+							btn.classList.toggle('button-primary', String(btn.getAttribute('data-giftbar-value') || '') === val);
+						});
+					};
+					toolbar.addEventListener('click', function (event) {
+						var btn = event.target && event.target.closest('button[data-giftbar-value]');
+						if (!btn) { return; }
+						var nextValue = String(btn.getAttribute('data-giftbar-value') || '').trim();
+						if (!nextValue) { return; }
+						input.value = nextValue;
+						input.dispatchEvent(new Event('input', { bubbles: true }));
+						input.dispatchEvent(new Event('change', { bubbles: true }));
+						syncPresetButtons();
+					});
+					input.addEventListener('input', syncPresetButtons);
+					input.addEventListener('change', syncPresetButtons);
+				};
 				var getScopePass = function (node) {
 					if (activeFilter === 'all') { return true; }
 					var scopes = String(node.getAttribute('data-setting-filters') || '');
@@ -381,6 +512,8 @@ final class AdminMenuHooks {
 						applySearch();
 					});
 				}
+				installCheckoutWidthPresets();
+				installGiftBarStylePresets();
 				applySearch();
 				window.addEventListener('beforeunload', onBeforeUnload);
 			})();
@@ -397,12 +530,38 @@ final class AdminMenuHooks {
 			self::render_logs_tab( $tab_id, $tabs );
 			return;
 		}
+		$name_prefix_tab = $tab_id;
+		$path_tab        = $tab_id;
 		$section_value = isset( $settings[ $tab_id ] ) ? $settings[ $tab_id ] : array();
 		$section_value = is_array( $section_value ) ? $section_value : array();
 		$defaults_tree   = SafeSettingsResolver::get_defaults_tree();
 		$defaults_for_tab = isset( $defaults_tree[ $tab_id ] ) && is_array( $defaults_tree[ $tab_id ] ) ? $defaults_tree[ $tab_id ] : array();
 		if ( ! empty( $defaults_for_tab ) ) {
 			$section_value = array_replace_recursive( $defaults_for_tab, $section_value );
+		}
+		// По смыслу UI: настройки Получателя/Адреса показываем на вкладке шага 2
+		// (исторически эти блоки хранятся в step_4).
+		if ( OptionKeys::SECTION_STEP_2 === $tab_id ) {
+			$s4 = isset( $settings[ OptionKeys::SECTION_STEP_4 ] ) && is_array( $settings[ OptionKeys::SECTION_STEP_4 ] )
+				? $settings[ OptionKeys::SECTION_STEP_4 ]
+				: array();
+			$def4 = isset( $defaults_tree[ OptionKeys::SECTION_STEP_4 ] ) && is_array( $defaults_tree[ OptionKeys::SECTION_STEP_4 ] )
+				? $defaults_tree[ OptionKeys::SECTION_STEP_4 ]
+				: array();
+			if ( ! empty( $def4 ) ) {
+				$s4 = array_replace_recursive( $def4, $s4 );
+			}
+			$section_value = array(
+				'contact_block' => isset( $s4['contact_block'] ) && is_array( $s4['contact_block'] ) ? $s4['contact_block'] : array(),
+				'address_block' => isset( $s4['address_block'] ) && is_array( $s4['address_block'] ) ? $s4['address_block'] : array(),
+				'address_geo'   => isset( $s4['address_geo'] ) && is_array( $s4['address_geo'] ) ? $s4['address_geo'] : array(),
+			);
+			$name_prefix_tab = OptionKeys::SECTION_STEP_4;
+			$path_tab        = OptionKeys::SECTION_STEP_4;
+		}
+		// На вкладке шага 4 скрываем эти блоки, чтобы не дублировать.
+		if ( OptionKeys::SECTION_STEP_4 === $tab_id ) {
+			unset( $section_value['contact_block'], $section_value['address_block'], $section_value['address_geo'] );
 		}
 		$title = isset( AdminSectionsRegistry::sections()[ $tab_id ]['label'] ) ? (string) AdminSectionsRegistry::sections()[ $tab_id ]['label'] : $tab_id;
 		$description = isset( $tabs[ $tab_id ]['description'] ) ? (string) $tabs[ $tab_id ]['description'] : '';
@@ -415,7 +574,7 @@ final class AdminMenuHooks {
 			echo '<p class="mp-cc-admin-shell__tab-onboarding"><strong>' . esc_html__( 'Onboarding:', 'mp-custom-checkout' ) . '</strong> ' . esc_html( $onboarding ) . '</p>';
 		}
 		echo '<div class="mp-cc-admin-shell__fields">';
-		self::render_field_group( OptionKeys::MAIN . '[' . $tab_id . ']', $section_value, $tab_id );
+		self::render_field_group( OptionKeys::MAIN . '[' . $name_prefix_tab . ']', $section_value, $path_tab );
 		if ( OptionKeys::SECTION_MOTION === $tab_id ) {
 			self::render_motion_admin_preview_block();
 		}
@@ -544,6 +703,7 @@ final class AdminMenuHooks {
 	 */
 	private static function render_supplemental_groups_for_tab( string $tab_id, array $settings ): void {
 		if ( OptionKeys::SECTION_SERVICE === $tab_id ) {
+			self::render_config_io_block();
 			self::render_supplemental_group(
 				__( 'Service Flags', 'mp-custom-checkout' ),
 				OptionKeys::MAIN . '[' . OptionKeys::KEY_FEATURE_FLAGS . ']',
@@ -560,6 +720,199 @@ final class AdminMenuHooks {
 			);
 			self::render_health_checks_group();
 		}
+	}
+
+	/**
+	 * Блок «Конфигурация: экспорт и импорт» во вкладке «Служебное».
+	 */
+	private static function render_config_io_block(): void {
+		$import_messages = array(
+			'no_file' => __( 'Файл не выбран.', 'mp-custom-checkout' ),
+			'upload'  => __( 'Ошибка загрузки файла.', 'mp-custom-checkout' ),
+			'size'    => __( 'Файл слишком большой (>5 МБ) или пустой.', 'mp-custom-checkout' ),
+			'read'    => __( 'Не удалось прочитать файл.', 'mp-custom-checkout' ),
+			'json'    => __( 'Файл не является валидным JSON.', 'mp-custom-checkout' ),
+			'format'  => __( 'Файл не похож на конфиг MP Custom Checkout (поле «format» не совпадает).', 'mp-custom-checkout' ),
+			'empty'   => __( 'В файле нет настроек для импорта.', 'mp-custom-checkout' ),
+		);
+
+		echo '<details class="mp-cc-admin-shell__fieldset" open>';
+		echo '<summary><span>' . esc_html__( 'Конфигурация: экспорт и импорт', 'mp-custom-checkout' ) . '</span><em class="mp-cc-admin-shell__type-badge mp-cc-admin-shell__type-badge--logic">' . esc_html__( 'перенос', 'mp-custom-checkout' ) . '</em></summary>';
+		echo '<p class="description">' . esc_html__( 'Скачайте JSON со всеми настройками плагина и загрузите его на другом сайте, чтобы перенести конфигурацию целиком.', 'mp-custom-checkout' ) . '</p>';
+
+		if ( isset( $_GET['mp_cc_config_imported'] ) ) {
+			echo '<div class="notice notice-success inline"><p>' . esc_html__( 'Конфигурация успешно импортирована. Все настройки плагина заменены значениями из файла.', 'mp-custom-checkout' ) . '</p></div>';
+		}
+		if ( isset( $_GET['mp_cc_config_exported'] ) ) {
+			// На случай блокировки скачивания, отдельная ветка обычно не нужна — экспорт сам отдаёт файл.
+			echo '<div class="notice notice-success inline"><p>' . esc_html__( 'Экспорт выполнен.', 'mp-custom-checkout' ) . '</p></div>';
+		}
+		if ( isset( $_GET['mp_cc_config_import_error'] ) ) {
+			$code    = sanitize_key( wp_unslash( (string) $_GET['mp_cc_config_import_error'] ) );
+			$message = isset( $import_messages[ $code ] ) ? $import_messages[ $code ] : __( 'Не удалось импортировать конфиг.', 'mp-custom-checkout' );
+			echo '<div class="notice notice-error inline"><p>' . esc_html( $message ) . '</p></div>';
+		}
+
+		echo '<div class="mp-cc-admin-shell__fieldset" style="margin-bottom:12px">';
+		echo '<p><strong>' . esc_html__( 'Экспорт', 'mp-custom-checkout' ) . '</strong></p>';
+		echo '<p class="description">' . esc_html(
+			sprintf(
+				/* translators: %s: schema version */
+				__( 'Сохранит все настройки в JSON-файл (версия схемы %s). Файл можно загрузить на другом сайте для воспроизведения конфигурации.', 'mp-custom-checkout' ),
+				OptionKeys::SETTINGS_SCHEMA_VERSION
+			)
+		) . '</p>';
+		echo '<form method="post">';
+		wp_nonce_field( 'mp_cc_config_actions', 'mp_cc_config_nonce' );
+		echo '<input type="hidden" name="mp_cc_config_action" value="export_config" />';
+		submit_button( __( 'Скачать конфиг (JSON)', 'mp-custom-checkout' ), 'secondary', '', false );
+		echo '</form>';
+		echo '</div>';
+
+		echo '<div class="mp-cc-admin-shell__fieldset">';
+		echo '<p><strong>' . esc_html__( 'Импорт', 'mp-custom-checkout' ) . '</strong></p>';
+		echo '<p class="description">' . esc_html__( 'Импорт ПОЛНОСТЬЮ перезапишет настройки плагина значениями из файла. Перед импортом рекомендуется сделать экспорт текущей конфигурации.', 'mp-custom-checkout' ) . '</p>';
+		$confirm_text = __( 'Импорт перезапишет ВСЕ настройки плагина. Продолжить?', 'mp-custom-checkout' );
+		echo '<form method="post" enctype="multipart/form-data" onsubmit="return confirm(\'' . esc_js( $confirm_text ) . '\');">';
+		wp_nonce_field( 'mp_cc_config_actions', 'mp_cc_config_nonce' );
+		echo '<input type="hidden" name="mp_cc_config_action" value="import_config" />';
+		echo '<p><label class="mp-cc-admin-shell__field"><span class="mp-cc-admin-shell__field-label">' . esc_html__( 'JSON-файл с настройками', 'mp-custom-checkout' ) . '</span><input type="file" name="mp_cc_config_file" accept="application/json,.json" required /></label></p>';
+		submit_button( __( 'Импортировать конфиг', 'mp-custom-checkout' ), 'primary', '', false );
+		echo '</form>';
+		echo '</div>';
+
+		echo '</details>';
+	}
+
+	/**
+	 * Обработчик POST-действий экспорта/импорта конфигурации.
+	 */
+	public static function handle_config_actions(): void {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+		if ( 'POST' !== strtoupper( (string) ( $_SERVER['REQUEST_METHOD'] ?? '' ) ) ) {
+			return;
+		}
+		$action = isset( $_POST['mp_cc_config_action'] ) ? sanitize_key( wp_unslash( (string) $_POST['mp_cc_config_action'] ) ) : '';
+		if ( 'export_config' !== $action && 'import_config' !== $action ) {
+			return;
+		}
+		$page = isset( $_REQUEST['page'] ) ? sanitize_key( wp_unslash( (string) $_REQUEST['page'] ) ) : '';
+		if ( self::PAGE_SLUG !== $page ) {
+			return;
+		}
+		check_admin_referer( 'mp_cc_config_actions', 'mp_cc_config_nonce' );
+
+		if ( 'export_config' === $action ) {
+			self::do_export_config();
+			return;
+		}
+		if ( 'import_config' === $action ) {
+			self::do_import_config();
+		}
+	}
+
+	private static function do_export_config(): void {
+		$settings = get_option( OptionKeys::MAIN, array() );
+		$settings = is_array( $settings ) ? $settings : array();
+
+		$payload = array(
+			'format'         => 'mp-custom-checkout/config',
+			'format_version' => 1,
+			'schema_version' => OptionKeys::SETTINGS_SCHEMA_VERSION,
+			'plugin_version' => defined( 'MP_CUSTOM_CHECKOUT_VERSION' ) ? (string) MP_CUSTOM_CHECKOUT_VERSION : '',
+			'exported_at'    => gmdate( 'c' ),
+			'site_url'       => (string) get_site_url(),
+			'settings'       => $settings,
+		);
+
+		$json = wp_json_encode( $payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT );
+		if ( ! is_string( $json ) ) {
+			$json = '{}';
+		}
+
+		nocache_headers();
+		header( 'Content-Type: application/json; charset=utf-8' );
+		header( 'Content-Disposition: attachment; filename="mp-cc-config-' . gmdate( 'Ymd-His' ) . '.json"' );
+		header( 'Content-Length: ' . (string) strlen( $json ) );
+		echo $json; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+		exit;
+	}
+
+	private static function do_import_config(): void {
+		$tab = isset( $_REQUEST['tab'] ) ? sanitize_key( wp_unslash( (string) $_REQUEST['tab'] ) ) : OptionKeys::SECTION_SERVICE;
+		if ( '' === $tab ) {
+			$tab = OptionKeys::SECTION_SERVICE;
+		}
+		$redirect_base = add_query_arg(
+			array(
+				'page' => self::PAGE_SLUG,
+				'tab'  => $tab,
+			),
+			admin_url( 'admin.php' )
+		);
+
+		$fail = static function ( string $code ) use ( $redirect_base ): void {
+			wp_safe_redirect( add_query_arg( 'mp_cc_config_import_error', $code, $redirect_base ) );
+			exit;
+		};
+
+		if ( ! isset( $_FILES['mp_cc_config_file'] ) || ! is_array( $_FILES['mp_cc_config_file'] ) ) {
+			$fail( 'no_file' );
+		}
+		$file = $_FILES['mp_cc_config_file'];
+		$err  = isset( $file['error'] ) ? (int) $file['error'] : UPLOAD_ERR_NO_FILE;
+		if ( UPLOAD_ERR_NO_FILE === $err ) {
+			$fail( 'no_file' );
+		}
+		if ( UPLOAD_ERR_OK !== $err ) {
+			$fail( 'upload' );
+		}
+		$tmp_name = isset( $file['tmp_name'] ) ? (string) $file['tmp_name'] : '';
+		if ( '' === $tmp_name || ! is_uploaded_file( $tmp_name ) ) {
+			$fail( 'upload' );
+		}
+		$size = isset( $file['size'] ) ? (int) $file['size'] : 0;
+		if ( $size <= 0 || $size > 5 * 1024 * 1024 ) {
+			$fail( 'size' );
+		}
+
+		$contents = file_get_contents( $tmp_name );
+		if ( false === $contents || '' === $contents ) {
+			$fail( 'read' );
+		}
+
+		$decoded = json_decode( $contents, true );
+		if ( ! is_array( $decoded ) ) {
+			$fail( 'json' );
+		}
+
+		$format = isset( $decoded['format'] ) ? (string) $decoded['format'] : '';
+		if ( 'mp-custom-checkout/config' !== $format ) {
+			$fail( 'format' );
+		}
+
+		$incoming = isset( $decoded['settings'] ) && is_array( $decoded['settings'] ) ? $decoded['settings'] : array();
+		if ( empty( $incoming ) ) {
+			$fail( 'empty' );
+		}
+
+		$sanitized = self::sanitize_settings( $incoming );
+
+		update_option( OptionKeys::MAIN, $sanitized, false );
+
+		$imported_version = isset( $decoded['schema_version'] ) ? (string) $decoded['schema_version'] : '0';
+		if ( '' === $imported_version ) {
+			$imported_version = '0';
+		}
+		update_option( OptionKeys::DB_VERSION, $imported_version, false );
+
+		SettingsMigrationManager::maybe_migrate();
+		SafeSettingsResolver::clear_cache();
+
+		wp_safe_redirect( add_query_arg( 'mp_cc_config_imported', '1', $redirect_base ) );
+		exit;
 	}
 
 	private static function render_motion_admin_preview_block(): void {
@@ -650,7 +1003,7 @@ final class AdminMenuHooks {
 			if ( is_array( $child ) && ! self::is_list_array( $child ) ) {
 				$group_type = self::detect_group_type( $key_str, $child_path );
 				echo '<details class="mp-cc-admin-shell__fieldset" open>';
-				echo '<summary><span>' . esc_html( str_replace( '_', ' ', $key_str ) ) . '</span><em class="mp-cc-admin-shell__type-badge mp-cc-admin-shell__type-badge--' . esc_attr( $group_type ) . '">' . esc_html( self::group_type_label( $group_type ) ) . '</em></summary>';
+				echo '<summary><span>' . esc_html( self::localized_group_label_for_path( $child_path, $key_str ) ) . '</span><em class="mp-cc-admin-shell__type-badge mp-cc-admin-shell__type-badge--' . esc_attr( $group_type ) . '">' . esc_html( self::group_type_label( $group_type ) ) . '</em></summary>';
 				self::render_field_group( $child_name, $child, $child_path );
 				echo '</details>';
 				continue;
@@ -663,11 +1016,11 @@ final class AdminMenuHooks {
 	 * @param mixed $value
 	 */
 	private static function render_leaf_input( string $name, $value, string $path ): void {
-		$label = str_replace( '_', ' ', basename( str_replace( '.', '/', $path ) ) );
+		$label = self::localized_label_for_path( $path );
 		$filters = self::build_filters_for_path( $path );
 		$risky = self::is_risky_path( $path );
 		$scenario = self::scenario_scope_for_path( $path );
-		echo '<label class="mp-cc-admin-shell__field' . ( $risky ? ' is-risky' : '' ) . '" data-setting-filters="' . esc_attr( implode( ',', $filters ) ) . '" data-setting-scenario="' . esc_attr( $scenario ) . '">';
+		echo '<label class="mp-cc-admin-shell__field' . ( $risky ? ' is-risky' : '' ) . '" data-setting-path="' . esc_attr( $path ) . '" data-setting-filters="' . esc_attr( implode( ',', $filters ) ) . '" data-setting-scenario="' . esc_attr( $scenario ) . '">';
 		echo '<span class="mp-cc-admin-shell__field-label">' . esc_html( ucfirst( $label ) ) . '</span>';
 		if ( 'all' !== $scenario ) {
 			echo '<span class="mp-cc-admin-shell__scenario-badge">' . esc_html( self::scenario_scope_label( $scenario ) ) . '</span>';
@@ -696,6 +1049,134 @@ final class AdminMenuHooks {
 		}
 		echo '<code class="mp-cc-admin-shell__field-path">' . esc_html( $path ) . '</code>';
 		echo '</label>';
+	}
+
+	/**
+	 * Локализованные подписи для наиболее важных полей админки.
+	 */
+	private static function localized_label_for_path( string $path ): string {
+		$leaf = basename( str_replace( '.', '/', $path ) );
+		$map = array(
+			'general.checkout_layout.max_width'          => __( 'Максимальная ширина страницы checkout', 'mp-custom-checkout' ),
+			'step_1.address_form_style_preset'          => __( 'Пресет стиля формы адреса', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.card_bg'        => __( 'Фон карточки', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.card_border'    => __( 'Рамка карточки', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.card_radius'    => __( 'Скругление карточки', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.row_divider'    => __( 'Разделитель строк', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.label_color'    => __( 'Цвет названий полей', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.label_size'     => __( 'Размер названий полей', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.value_color'    => __( 'Цвет значений', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.value_size'     => __( 'Размер значений', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.placeholder_color' => __( 'Цвет плейсхолдера', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.option_title_color' => __( 'Цвет названия способа доставки', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.option_title_size'  => __( 'Размер названия способа доставки', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.option_hint_color'  => __( 'Цвет описания способа доставки', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.option_hint_size'   => __( 'Размер описания способа доставки', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.radio_border_color' => __( 'Цвет рамки радио-кнопки', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.radio_checked_color' => __( 'Цвет выбранной радио-кнопки', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.edit_btn_bg'      => __( 'Фон кнопки «другой»', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.edit_btn_border'  => __( 'Рамка кнопки «другой»', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.edit_btn_color'   => __( 'Цвет текста кнопки «другой»', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.edit_btn_radius'  => __( 'Скругление кнопки «другой»', 'mp-custom-checkout' ),
+			'step_4.contact_block.layout.desktop_columns' => __( 'Контакты: колонки (desktop)', 'mp-custom-checkout' ),
+			'step_4.contact_block.layout.tablet_columns'  => __( 'Контакты: колонки (tablet)', 'mp-custom-checkout' ),
+			'step_4.contact_block.layout.mobile_columns'  => __( 'Контакты: колонки (mobile)', 'mp-custom-checkout' ),
+			'step_4.contact_block.layout.grid_gap'        => __( 'Контакты: расстояние между полями', 'mp-custom-checkout' ),
+			'step_4.contact_block.field_state_styles.invalid_style' => __( 'Контакты: стиль невалидного поля', 'mp-custom-checkout' ),
+			'step_4.contact_block.field_state_styles.hint_style'    => __( 'Контакты: стиль подсказок', 'mp-custom-checkout' ),
+			'step_4.contact_block.field_state_styles.focus_style'   => __( 'Контакты: стиль фокуса', 'mp-custom-checkout' ),
+			'step_4.contact_block.field_state_styles.disabled_style'=> __( 'Контакты: стиль disabled-поля', 'mp-custom-checkout' ),
+			'step_4.contact_block.title'                  => __( 'Контакты: заголовок блока', 'mp-custom-checkout' ),
+			'step_4.contact_block.intro'                  => __( 'Контакты: подзаголовок блока', 'mp-custom-checkout' ),
+			'step_4.address_block.title'                  => __( 'Адрес: заголовок блока', 'mp-custom-checkout' ),
+			'step_4.address_block.intro'                  => __( 'Адрес: подзаголовок блока', 'mp-custom-checkout' ),
+			'step_4.address_block.default_country'        => __( 'Адрес: страна по умолчанию', 'mp-custom-checkout' ),
+			'step_4.address_block.postcode_max_length'    => __( 'Адрес: максимальная длина индекса', 'mp-custom-checkout' ),
+			'step_4.address_block.labels.country'         => __( 'Адрес: подпись поля «Страна»', 'mp-custom-checkout' ),
+			'step_4.address_block.labels.state'           => __( 'Адрес: подпись поля «Регион»', 'mp-custom-checkout' ),
+			'step_4.address_block.labels.city'            => __( 'Адрес: подпись поля «Населённый пункт»', 'mp-custom-checkout' ),
+			'step_4.address_block.labels.address_1'       => __( 'Адрес: подпись поля «Улица, дом»', 'mp-custom-checkout' ),
+			'step_4.address_block.labels.address_2'       => __( 'Адрес: подпись поля «Квартира, офис»', 'mp-custom-checkout' ),
+			'step_4.address_block.labels.postcode'        => __( 'Адрес: подпись поля «Почтовый индекс»', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.contact_card_bg'     => __( 'Шаг 2: фон карточки контактов', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.contact_card_border' => __( 'Шаг 2: рамка карточки контактов', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.contact_card_radius' => __( 'Шаг 2: скругление карточки контактов', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.contact_card_padding'=> __( 'Шаг 2: внутренние отступы карточки контактов', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.contact_header_divider' => __( 'Шаг 2: разделитель заголовка контактов', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.contact_title_size'  => __( 'Шаг 2: размер заголовка контактов', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.contact_intro_size'  => __( 'Шаг 2: размер подзаголовка контактов', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.contact_label_size'  => __( 'Шаг 2: размер названий полей контактов', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.contact_input_border'=> __( 'Шаг 2: рамка полей контактов', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.contact_input_radius'=> __( 'Шаг 2: скругление полей контактов', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.address_card_bg'     => __( 'Шаг 2: фон карточки адреса', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.address_card_border' => __( 'Шаг 2: рамка карточки адреса', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.address_card_radius' => __( 'Шаг 2: скругление карточки адреса', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.address_card_padding'=> __( 'Шаг 2: внутренние отступы карточки адреса', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.address_header_divider' => __( 'Шаг 2: разделитель заголовка адреса', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.address_title_size'  => __( 'Шаг 2: размер заголовка адреса', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.address_intro_size'  => __( 'Шаг 2: размер подзаголовка адреса', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.grid_gap'      => __( 'Оплата: расстояние между карточками', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.card_padding'  => __( 'Оплата: внутренние отступы карточки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.card_radius'   => __( 'Оплата: скругление карточки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.card_border'   => __( 'Оплата: цвет рамки карточки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.card_shadow'   => __( 'Оплата: тень карточки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.active_border' => __( 'Оплата: цвет рамки активной карточки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.active_glow_outer' => __( 'Оплата: свечение активной карточки (внешнее)', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.active_glow_shadow' => __( 'Оплата: тень активной карточки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.radio_size'    => __( 'Оплата: размер радиокнопки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.logo_height'   => __( 'Оплата: высота логотипа/картинки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.logo_max_width'=> __( 'Оплата: максимальная ширина логотипа/картинки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.title_size'    => __( 'Оплата: размер заголовка карточки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.desc_size'     => __( 'Оплата: размер описания карточки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.perk_font_size'=> __( 'Оплата: размер текста плашек преимуществ', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.perk_radius'   => __( 'Оплата: скругление плашек преимуществ', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.perk_padding'  => __( 'Оплата: внутренние отступы плашек преимуществ', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_card_width' => __( 'Оплата: ширина карточки подарочной карты рядом', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_style' => __( 'Оплата: стиль нижней карточки подарочной карты', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_bg' => __( 'Подарочная карта (нижний блок): фон', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_border' => __( 'Подарочная карта (нижний блок): цвет рамки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_shadow' => __( 'Подарочная карта (нижний блок): тень', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_title_color' => __( 'Подарочная карта (нижний блок): цвет заголовка', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_text_color' => __( 'Подарочная карта (нижний блок): цвет описания', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_input_bg' => __( 'Подарочная карта (нижний блок): фон поля ввода', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_input_border' => __( 'Подарочная карта (нижний блок): рамка поля ввода', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_input_text' => __( 'Подарочная карта (нижний блок): цвет текста поля ввода', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_button_bg' => __( 'Подарочная карта (нижний блок): фон кнопки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_button_text' => __( 'Подарочная карта (нижний блок): цвет текста кнопки', 'mp-custom-checkout' ),
+		);
+		if ( isset( $map[ $path ] ) ) {
+			return (string) $map[ $path ];
+		}
+		return str_replace( '_', ' ', $leaf );
+	}
+
+	/**
+	 * Локализация заголовков групп/fieldset в дереве настроек.
+	 */
+	private static function localized_group_label_for_path( string $path, string $fallback_key ): string {
+		$map = array(
+			'general.checkout_layout'                    => __( 'Макет страницы checkout', 'mp-custom-checkout' ),
+			'step_1.address_form_styles'                 => __( 'Стили формы адреса и доставки (шаг 1)', 'mp-custom-checkout' ),
+			'step_4.contact_block'                       => __( 'Контактные данные (шаг 4)', 'mp-custom-checkout' ),
+			'step_4.contact_block.layout'                => __( 'Сетка полей контактов', 'mp-custom-checkout' ),
+			'step_4.contact_block.field_state_styles'    => __( 'Стили состояний полей контактов', 'mp-custom-checkout' ),
+			'step_4.contact_block.labels'                => __( 'Подписи полей контактов', 'mp-custom-checkout' ),
+			'step_4.contact_block.placeholders'          => __( 'Плейсхолдеры полей контактов', 'mp-custom-checkout' ),
+			'step_4.contact_block.hints'                 => __( 'Подсказки полей контактов', 'mp-custom-checkout' ),
+			'step_4.contact_block.validation_messages'   => __( 'Сообщения валидации контактов', 'mp-custom-checkout' ),
+			'step_4.contact_block.validation_constraints'=> __( 'Ограничения валидации контактов', 'mp-custom-checkout' ),
+			'step_4.contact_block.ajax_messages'         => __( 'AJAX-сообщения контактов', 'mp-custom-checkout' ),
+			'step_4.address_block'                       => __( 'Адрес доставки (шаг 4)', 'mp-custom-checkout' ),
+			'step_4.address_block.labels'                => __( 'Подписи полей адреса', 'mp-custom-checkout' ),
+			'step_4.address_block.subfields_visible'     => __( 'Видимость полей адреса', 'mp-custom-checkout' ),
+			'step_4.address_block.subfields_order'       => __( 'Порядок полей адреса', 'mp-custom-checkout' ),
+			'step_4.recipient_styles'                    => __( 'Стили шага 2: Получатель', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles'           => __( 'Стили карточек оплаты', 'mp-custom-checkout' ),
+		);
+		if ( isset( $map[ $path ] ) ) {
+			return (string) $map[ $path ];
+		}
+		return str_replace( '_', ' ', $fallback_key );
 	}
 
 	/**
@@ -784,6 +1265,33 @@ final class AdminMenuHooks {
 		}
 		if ( false !== strpos( $p, 'motion.throttle' ) ) {
 			return __( 'Ограничение частоты второстепенных анимаций на слабых устройствах / при лавине событий.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, 'tariffs' ) && false !== strpos( $p, '.price' ) ) {
+			return __( 'Цена тарифа в рублях (целое). Показывается покупателю в выборе способа доставки.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, '.price' ) ) {
+			return __( 'Базовая цена метода доставки в рублях (целое). Используется, если у метода нет тарифов.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, '.eta' ) ) {
+			return __( 'Срок доставки (произвольный текст). Например: «2 дней», «в течение дня», пусто — не показывать.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, '.title' ) ) {
+			return __( 'Название метода/тарифа, которое увидит покупатель на шаге «Адрес и доставка».', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, '.active' ) ) {
+			return __( 'Включить метод/тариф. Выключенные в checkout не показываются.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, 'visibility_scenarios' ) ) {
+			return __( 'Сценарии, в которых метод доступен: pickup, krasnoyarsk_delivery, other_city_delivery.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'pickup.points' ) && false !== strpos( $p, 'address' ) ) {
+			return __( 'Адрес пункта самовывоза одной строкой. Отображается в карточке метода «Самовывоз».', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'step_1.labels.address_form' ) ) {
+			return __( 'Тексты полей формы «Адрес и доставка» на checkout (шаг 1): подписи строк, placeholder города, кнопка «другой», подпись к тарифам, строка адреса офиса.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'phone_country_codes' ) ) {
+			return __( 'Список стран для выбора кода телефона на шаге «Получатель»: dial, ISO, national_digits (сколько цифр без кода страны), label (подпись в списке, обычно код ISO: RU, KZ, …). Флаги на сайте — эмодзи по ISO.', 'mp-custom-checkout' );
 		}
 		return '';
 	}

@@ -47,17 +47,11 @@ final class WooCommerceDependencyValidator {
 		if ( ! $wc ) {
 			return false;
 		}
-
-		$checkout = $wc->checkout();
-		if ( ! $checkout instanceof \WC_Checkout ) {
-			return false;
-		}
-
-		$gateways = $wc->payment_gateways();
-		if ( ! $gateways instanceof \WC_Payment_Gateways ) {
-			return false;
-		}
-
+		/*
+		 * ВАЖНО: не трогаем checkout()/payment_gateways() на ранней стадии woocommerce_loaded.
+		 * Ранний вызов payment_gateways() может зафиксировать неполный список шлюзов
+		 * (часть плагинов регистрирует gateways позже), что ломает экран WooCommerce → Платежи.
+		 */
 		return true;
 	}
 

@@ -50,6 +50,9 @@ final class SafeSettingsResolver {
 					'route_slug'          => 'mp-checkout',
 					'require_entry_gate'  => true,
 					'success_route_slug'  => 'mp-checkout-success',
+					'checkout_layout'     => array(
+						'max_width' => '1140px',
+					),
 					'admin_branding'      => array(
 						'title'         => 'MP Custom Checkout — Настройки',
 						'description'   => 'Единый экран управления сценариями checkout, текстами, валидацией и визуальным поведением шагов.',
@@ -86,6 +89,16 @@ final class SafeSettingsResolver {
 						'continue_label' => 'Продолжить оформление',
 						'return_label'   => 'Вернуться в магазин',
 						'empty_title'    => 'Корзина пуста',
+						'address_form'   => array(
+							'city_row'         => 'населённый пункт',
+							'city_placeholder' => 'Укажите город',
+							'city_empty_hint'  => 'Укажите населённый пункт',
+							'change_button'    => 'другой',
+							'method_row'       => 'способ доставки',
+							'tariff_intro'     => 'Выбрать вариант:',
+							'office_row'       => 'адрес офиса',
+							'office_not_set'   => 'Не выбран',
+						),
 					),
 					'product_meta_visibility' => array(
 						'show_image'      => true,
@@ -112,6 +125,28 @@ final class SafeSettingsResolver {
 					),
 					'layout_order' => array(
 						'secondary_order' => array( 'price', 'sku', 'variation', 'quantity', 'subtotal', 'remove' ),
+					),
+					'address_form_style_preset' => 'concept_a',
+					'address_form_styles' => array(
+						'card_bg'             => '#ffffff',
+						'card_border'         => '#e5e7eb',
+						'card_radius'         => '14px',
+						'row_divider'         => '#e5e7eb',
+						'label_color'         => '#111111',
+						'label_size'          => '1.05rem',
+						'value_color'         => '#1f2937',
+						'value_size'          => '1.03rem',
+						'placeholder_color'   => '#80868f',
+						'option_title_color'  => '#111111',
+						'option_title_size'   => '1.05rem',
+						'option_hint_color'   => '#6b7280',
+						'option_hint_size'    => '0.96rem',
+						'radio_border_color'  => '#8b919a',
+						'radio_checked_color' => '#111111',
+						'edit_btn_bg'         => '#f3f4f6',
+						'edit_btn_border'     => '#d9dce1',
+						'edit_btn_color'      => '#1f2937',
+						'edit_btn_radius'     => '6px',
 					),
 					'responsive' => array(
 						'desktop_mode'       => 'comfortable',
@@ -326,23 +361,7 @@ final class SafeSettingsResolver {
 						'order_notes_counter'    => array(
 							'enabled' => true,
 						),
-						'phone_country_codes' => array(
-							array(
-								'dial'             => '+7',
-								'iso'              => 'RU',
-								'national_digits'  => 10,
-							),
-							array(
-								'dial'             => '+7',
-								'iso'              => 'KZ',
-								'national_digits'  => 10,
-							),
-							array(
-								'dial'             => '+375',
-								'iso'              => 'BY',
-								'national_digits'  => 9,
-							),
-						),
+						'phone_country_codes' => self::default_phone_country_codes(),
 						'default_phone_country_iso' => 'RU',
 						'layout'              => array(
 							'desktop_columns' => 3,
@@ -421,6 +440,25 @@ final class SafeSettingsResolver {
 							),
 						),
 					),
+					'recipient_styles' => array(
+						'contact_card_bg'          => '#ffffff',
+						'contact_card_border'      => '#e5e7eb',
+						'contact_card_radius'      => '14px',
+						'contact_card_padding'     => '1.15rem 1.1rem 1.2rem',
+						'contact_header_divider'   => '#e5e7eb',
+						'contact_title_size'       => '1.1rem',
+						'contact_intro_size'       => '0.92rem',
+						'contact_label_size'       => '0.9rem',
+						'contact_input_border'     => '#d9dde3',
+						'contact_input_radius'     => '6px',
+						'address_card_bg'          => '#ffffff',
+						'address_card_border'      => '#e5e7eb',
+						'address_card_radius'      => '14px',
+						'address_card_padding'     => '1.15rem 1.1rem 1.2rem',
+						'address_header_divider'   => '#e5e7eb',
+						'address_title_size'       => '1.1rem',
+						'address_intro_size'       => '0.92rem',
+					),
 					'discount_layout' => array(
 						'placement'             => 'step_4',
 						'separate_step_enabled' => false,
@@ -433,14 +471,14 @@ final class SafeSettingsResolver {
 						'focus_style'   => 'default',
 					),
 					'coupon_block' => array(
-						'title'                 => 'Подарочная карта',
-						'intro'                 => 'Введите код подарочной карты.',
-						'input_label'           => 'Номер подарочной карты',
-						'placeholder'           => 'Например, GIFT-123',
+						'title'                 => 'Промокод',
+						'intro'                 => 'Введите промокод.',
+						'input_label'           => 'Промокод',
+						'placeholder'           => 'Например, SALE10',
 						'apply_label'           => 'Применить',
-						'empty_message'         => 'Введите код.',
-						'success_message'       => 'Код применён.',
-						'error_message'         => 'Не удалось применить код.',
+						'empty_message'         => 'Введите промокод.',
+						'success_message'       => 'Промокод применён.',
+						'error_message'         => 'Не удалось применить промокод. Проверьте написание и срок действия купона.',
 						'allow_remove_applied'  => true,
 						'summary_section_title' => '',
 					),
@@ -478,6 +516,45 @@ final class SafeSettingsResolver {
 						'description_style' => 'muted',
 						'show_description' => true,
 						'required' => true,
+						'bank_card_visual' => array(
+							'enabled'                 => true,
+							'confirm_on_click_only'   => true,
+							'allow_deselect'          => true,
+							'card_max_width'          => '100%',
+							'glow_color'              => '#a78bfa',
+							'glow_intensity'          => 'medium',
+							'show_check_pill'         => true,
+						),
+						'card_styles' => array(
+							'grid_gap'             => '0.85rem',
+							'card_padding'         => '0.95rem 1rem 1rem',
+							'card_radius'          => '14px',
+							'card_border'          => '#e6e1da',
+							'card_shadow'          => '0 2px 10px rgba(17,24,39,0.03)',
+							'active_border'        => '#b9a9ff',
+							'active_glow_outer'    => 'rgba(167,139,250,0.12)',
+							'active_glow_shadow'   => '0 8px 18px rgba(111,76,193,0.08)',
+							'radio_size'           => '18px',
+							'logo_height'          => '12rem',
+							'logo_max_width'       => '22rem',
+							'title_size'           => '2rem',
+							'desc_size'            => '1.15rem',
+							'perk_font_size'       => '0.92rem',
+							'perk_radius'          => '9px',
+							'perk_padding'         => '0.42rem 0.75rem',
+							'gift_card_width'      => '228px',
+							'gift_bar_style'       => 'seal-inline',
+							'gift_bar_bg'          => '#fefbf6',
+							'gift_bar_border'      => '#ceb284',
+							'gift_bar_shadow'      => '0 10px 24px rgba(37,25,8,0.08)',
+							'gift_bar_title_color' => '#241f17',
+							'gift_bar_text_color'  => '#7e6950',
+							'gift_bar_input_bg'    => '#fffdf8',
+							'gift_bar_input_border'=> '#d7bb8e',
+							'gift_bar_input_text'  => '#46372a',
+							'gift_bar_button_bg'   => '#121212',
+							'gift_bar_button_text' => '#ffffff',
+						),
 						'error_message' => 'Выберите способ оплаты.',
 						'messages' => array(
 							'loading' => 'Сохраняем выбранный способ оплаты...',
@@ -513,8 +590,8 @@ final class SafeSettingsResolver {
 						'methods'    => array(
 							'post_russia' => array(
 								'title'               => 'Почта России',
-								'price'               => 453,
-								'eta'                 => '3 дней',
+								'price'               => 321,
+								'eta'                 => '',
 								'description'         => 'Отправка через отделение Почты России.',
 								'active'              => true,
 								'requires_address'    => true,
@@ -522,30 +599,30 @@ final class SafeSettingsResolver {
 							),
 							'courier' => array(
 								'title'               => 'Курьером до двери',
-								'price'               => 580,
-								'eta'                 => '3 дней',
+								'price'               => 375,
+								'eta'                 => '2 дней',
 								'description'         => 'Доставка курьером по адресу получателя.',
 								'active'              => true,
 								'requires_address'    => true,
 								'visibility_scenarios'=> array( 'krasnoyarsk_delivery', 'other_city_delivery' ),
 								'tariffs'             => array(
-									'express'  => array( 'title' => 'Курьером до двери (экспресс)', 'price' => 710, 'eta' => '3 дней', 'active' => true ),
-									'standard' => array( 'title' => 'Курьером до двери (стандарт)', 'price' => 580, 'eta' => '3 дней', 'active' => true ),
+									'express'  => array( 'title' => 'Курьером до двери (экспресс)', 'price' => 550, 'eta' => '2 дней', 'active' => true ),
+									'standard' => array( 'title' => 'Курьером до двери (стандарт)', 'price' => 375, 'eta' => '2 дней', 'active' => true ),
 									'slot_1'   => array( 'title' => '', 'price' => 0, 'eta' => '', 'active' => false ),
 									'slot_2'   => array( 'title' => '', 'price' => 0, 'eta' => '', 'active' => false ),
 								),
 							),
 							'pvz' => array(
 								'title'               => 'Доставка до ПВЗ',
-								'price'               => 330,
-								'eta'                 => '3 дней',
+								'price'               => 185,
+								'eta'                 => '2 дней',
 								'description'         => 'Получение заказа в пункте выдачи.',
 								'active'              => true,
 								'requires_address'    => false,
 								'visibility_scenarios'=> array( 'krasnoyarsk_delivery', 'other_city_delivery' ),
 								'tariffs'             => array(
-									'express'  => array( 'title' => 'Доставка до ПВЗ (экспресс)', 'price' => 530, 'eta' => '3 дней', 'active' => true ),
-									'standard' => array( 'title' => 'Доставка до ПВЗ (стандарт)', 'price' => 330, 'eta' => '3 дней', 'active' => true ),
+									'express'  => array( 'title' => 'Доставка до ПВЗ (экспресс)', 'price' => 360, 'eta' => '2 дней', 'active' => true ),
+									'standard' => array( 'title' => 'Доставка до ПВЗ (стандарт)', 'price' => 185, 'eta' => '2 дней', 'active' => true ),
 									'slot_1'   => array( 'title' => '', 'price' => 0, 'eta' => '', 'active' => false ),
 									'slot_2'   => array( 'title' => '', 'price' => 0, 'eta' => '', 'active' => false ),
 								),
@@ -566,7 +643,7 @@ final class SafeSettingsResolver {
 								'description'         => 'Получение заказа в офисе самовывоза.',
 								'active'              => true,
 								'requires_address'    => false,
-								'visibility_scenarios'=> array( 'pickup' ),
+								'visibility_scenarios'=> array( 'pickup', 'krasnoyarsk_delivery', 'other_city_delivery' ),
 							),
 							'custom_1' => array(
 								'title'               => 'Пользовательский метод 1',
@@ -630,7 +707,7 @@ final class SafeSettingsResolver {
 						array(
 							'id'          => 'pickup_main',
 							'title'       => 'Основная точка самовывоза',
-							'address'     => 'г. Красноярск, ул. Примерная, 1',
+							'address'     => 'г. Красноярск, ул. Маерчака, д. 10, оф. 17-13',
 							'description' => 'Ежедневно с 10:00 до 20:00',
 							'map_hint'    => 'Слот карты/схемы будет подключен здесь.',
 						),
@@ -760,10 +837,113 @@ final class SafeSettingsResolver {
 	}
 
 	/**
+	 * Список стран для выбора кода телефона: dial, ISO, длина национальной части (без кода страны), label (подпись в списке, обычно код ISO).
+	 *
+	 * @return array<int, array{dial: string, iso: string, national_digits: int, label: string}>
+	 */
+	public static function default_phone_country_codes(): array {
+		return array(
+			array(
+				'dial'             => '+7',
+				'iso'              => 'RU',
+				'national_digits'  => 10,
+				'label'            => 'RU',
+			),
+			array(
+				'dial'             => '+7',
+				'iso'              => 'KZ',
+				'national_digits'  => 10,
+				'label'            => 'KZ',
+			),
+			array(
+				'dial'             => '+375',
+				'iso'              => 'BY',
+				'national_digits'  => 9,
+				'label'            => 'BY',
+			),
+			array(
+				'dial'             => '+994',
+				'iso'              => 'AZ',
+				'national_digits'  => 9,
+				'label'            => 'AZ',
+			),
+			array(
+				'dial'             => '+374',
+				'iso'              => 'AM',
+				'national_digits'  => 8,
+				'label'            => 'AM',
+			),
+			array(
+				'dial'             => '+995',
+				'iso'              => 'GE',
+				'national_digits'  => 9,
+				'label'            => 'GE',
+			),
+			array(
+				'dial'             => '+996',
+				'iso'              => 'KG',
+				'national_digits'  => 9,
+				'label'            => 'KG',
+			),
+			array(
+				'dial'             => '+992',
+				'iso'              => 'TJ',
+				'national_digits'  => 9,
+				'label'            => 'TJ',
+			),
+			array(
+				'dial'             => '+998',
+				'iso'              => 'UZ',
+				'national_digits'  => 9,
+				'label'            => 'UZ',
+			),
+		);
+	}
+
+	/**
 	 * Сброс кэша после обновления опций.
 	 */
 	public static function clear_cache(): void {
 		self::$merged_cache = null;
+	}
+
+	/**
+	 * Исторически в `coupon_block.intro` часто копировали текст подарочной карты — для промокода это неверно.
+	 *
+	 * @param array<string, mixed> $merged
+	 * @return array<string, mixed>
+	 */
+	private static function normalize_merged_coupon_intro( array $merged ): array {
+		if ( ! isset( $merged[ OptionKeys::SECTION_STEP_4 ] ) || ! is_array( $merged[ OptionKeys::SECTION_STEP_4 ] ) ) {
+			return $merged;
+		}
+		$s4 = &$merged[ OptionKeys::SECTION_STEP_4 ];
+		if ( ! isset( $s4['coupon_block'] ) || ! is_array( $s4['coupon_block'] ) ) {
+			return $merged;
+		}
+		$cb = &$s4['coupon_block'];
+		if ( ! isset( $cb['intro'] ) ) {
+			return $merged;
+		}
+		$intro = trim( (string) $cb['intro'] );
+		if ( '' === $intro ) {
+			return $merged;
+		}
+		$gift_intro = '';
+		if ( isset( $s4['gift_card_block'] ) && is_array( $s4['gift_card_block'] ) && isset( $s4['gift_card_block']['intro'] ) ) {
+			$gift_intro = trim( (string) $s4['gift_card_block']['intro'] );
+		}
+		$legacy_gift_phrases = array(
+			'Введите код подарочной карты.',
+			'Введите код подарочной карты',
+		);
+		$should_fix = ( '' !== $gift_intro && $intro === $gift_intro )
+			|| in_array( $intro, $legacy_gift_phrases, true )
+			|| (bool) preg_match( '/подарочн(ой|ая)?\s+карт/i', $intro );
+		if ( $should_fix ) {
+			$cb['intro'] = 'Введите промокод.';
+		}
+		return $merged;
 	}
 
 	/**
@@ -783,6 +963,7 @@ final class SafeSettingsResolver {
 
 		$defaults       = self::get_defaults_tree();
 		self::$merged_cache = array_replace_recursive( $defaults, $stored );
+		self::$merged_cache = self::normalize_merged_coupon_intro( self::$merged_cache );
 
 		return self::$merged_cache;
 	}

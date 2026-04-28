@@ -100,8 +100,8 @@ final class CheckoutScenarioRules {
 		unset( $scenario );
 
 		return array(
-			'show_conditions_step' => true,
-			'conditions_step_id'   => ScenarioStepRegistry::STEP_CONDITIONS,
+			'show_conditions_step' => false,
+			'conditions_step_id'   => ScenarioStepRegistry::STEP_CONFIRM,
 		);
 	}
 

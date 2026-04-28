@@ -33,6 +33,47 @@ final class OrderMetaHooks {
 		add_filter( 'woocommerce_checkout_update_customer_data', array( __CLASS__, 'maybe_skip_customer_data_sync' ), 10, 1 );
 	}
 
+	/**
+	 * Приводит страну к коду ISO из списка WooCommerce, если введён известный код или локализованное название.
+	 * Иначе возвращает исходную строку (для редких кейсов и обратной совместимости).
+	 */
+	public static function normalize_billing_country_value( string $raw ): string {
+		$raw = trim( $raw );
+		if ( '' === $raw ) {
+			return '';
+		}
+		if ( ! function_exists( 'WC' ) ) {
+			return 2 === strlen( $raw ) ? strtoupper( $raw ) : $raw;
+		}
+		$wc = WC();
+		if ( ! $wc instanceof \WooCommerce || ! $wc->countries instanceof \WC_Countries ) {
+			return 2 === strlen( $raw ) ? strtoupper( $raw ) : $raw;
+		}
+		$countries = $wc->countries->get_allowed_countries();
+		if ( ! is_array( $countries ) ) {
+			$countries = array();
+		}
+		$shipping = $wc->countries->get_shipping_countries();
+		if ( is_array( $shipping ) ) {
+			foreach ( $shipping as $code => $label ) {
+				if ( ! array_key_exists( $code, $countries ) ) {
+					$countries[ $code ] = $label;
+				}
+			}
+		}
+		$upper = strtoupper( $raw );
+		if ( 2 === strlen( $upper ) && preg_match( '/^[A-Z]{2}$/', $upper ) && isset( $countries[ $upper ] ) ) {
+			return $upper;
+		}
+		foreach ( $countries as $code => $label ) {
+			$code = (string) $code;
+			if ( 0 === strcasecmp( $raw, $code ) || 0 === strcasecmp( $raw, (string) $label ) ) {
+				return strtoupper( $code );
+			}
+		}
+		return $raw;
+	}
+
 	public static function maybe_skip_customer_data_sync( bool $should_update ): bool {
 		if ( ! $should_update ) { return false; }
 		$flow = CheckoutSessionService::get_flow();
@@ -53,8 +94,36 @@ final class OrderMetaHooks {
 		$flow = CheckoutSessionService::get_flow(); $answers = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : array(); $contact = isset( $answers['contact_billing'] ) && is_array( $answers['contact_billing'] ) ? $answers['contact_billing'] : array(); if ( empty( $contact ) ) { return; }
 		$scenario = isset( $flow['scenario'] ) ? CheckoutScenarioRules::sanitize_scenario( (string) $flow['scenario'] ) : ScenarioStepRegistry::SCENARIO_PICKUP; $rules = CheckoutScenarioRules::build( $scenario ); $field_rules = isset( $rules['field_rules'] ) && is_array( $rules['field_rules'] ) ? $rules['field_rules'] : array(); $hide_address = ! empty( $field_rules['hide_address_fields'] );
 		$billing_map = array( 'billing_first_name' => 'set_billing_first_name', 'billing_last_name' => 'set_billing_last_name', 'billing_email' => 'set_billing_email', 'billing_phone' => 'set_billing_phone', 'country' => 'set_billing_country', 'state' => 'set_billing_state', 'city' => 'set_billing_city', 'address_1' => 'set_billing_address_1', 'address_2' => 'set_billing_address_2', 'postcode' => 'set_billing_postcode' );
-		foreach ( $billing_map as $contact_key => $setter ) { if ( ! array_key_exists( $contact_key, $contact ) ) { continue; } if ( $hide_address && in_array( $contact_key, array( 'country', 'state', 'city', 'address_1', 'address_2', 'postcode' ), true ) ) { continue; } $value = sanitize_text_field( (string) $contact[ $contact_key ] ); if ( method_exists( $order, $setter ) ) { $order->{$setter}( $value ); } }
-		if ( ! $hide_address ) { $shipping_map = array( 'country' => 'set_shipping_country', 'state' => 'set_shipping_state', 'city' => 'set_shipping_city', 'address_1' => 'set_shipping_address_1', 'address_2' => 'set_shipping_address_2', 'postcode' => 'set_shipping_postcode' ); foreach ( $shipping_map as $contact_key => $setter ) { if ( ! array_key_exists( $contact_key, $contact ) ) { continue; } $value = sanitize_text_field( (string) $contact[ $contact_key ] ); if ( method_exists( $order, $setter ) ) { $order->{$setter}( $value ); } } }
+		foreach ( $billing_map as $contact_key => $setter ) {
+			if ( ! array_key_exists( $contact_key, $contact ) ) {
+				continue;
+			}
+			if ( $hide_address && in_array( $contact_key, array( 'country', 'state', 'city', 'address_1', 'address_2', 'postcode' ), true ) ) {
+				continue;
+			}
+			$value = sanitize_text_field( (string) $contact[ $contact_key ] );
+			if ( 'country' === $contact_key ) {
+				$value = self::normalize_billing_country_value( $value );
+			}
+			if ( method_exists( $order, $setter ) ) {
+				$order->{$setter}( $value );
+			}
+		}
+		if ( ! $hide_address ) {
+			$shipping_map = array( 'country' => 'set_shipping_country', 'state' => 'set_shipping_state', 'city' => 'set_shipping_city', 'address_1' => 'set_shipping_address_1', 'address_2' => 'set_shipping_address_2', 'postcode' => 'set_shipping_postcode' );
+			foreach ( $shipping_map as $contact_key => $setter ) {
+				if ( ! array_key_exists( $contact_key, $contact ) ) {
+					continue;
+				}
+				$value = sanitize_text_field( (string) $contact[ $contact_key ] );
+				if ( 'country' === $contact_key ) {
+					$value = self::normalize_billing_country_value( $value );
+				}
+				if ( method_exists( $order, $setter ) ) {
+					$order->{$setter}( $value );
+				}
+			}
+		}
 		$custom_meta_map = array(
 			OrderMetaKeys::BILLING_PATRONYMIC   => 'billing_patronymic',
 			OrderMetaKeys::GENDER              => 'billing_gender',
@@ -69,7 +138,24 @@ final class OrderMetaHooks {
 			OrderMetaKeys::ADDRESS_LINE2        => 'address_2',
 			OrderMetaKeys::ADDRESS_POSTCODE     => 'postcode',
 		);
-		foreach ( $custom_meta_map as $meta_key => $contact_key ) { if ( ! array_key_exists( $contact_key, $contact ) ) { continue; } if ( $hide_address && in_array( $contact_key, array( 'country', 'state', 'city', 'address_1', 'address_2', 'postcode' ), true ) ) { $order->delete_meta_data( $meta_key ); continue; } $value = sanitize_text_field( (string) $contact[ $contact_key ] ); if ( '' === $value ) { $order->delete_meta_data( $meta_key ); } else { $order->update_meta_data( $meta_key, $value ); } }
+		foreach ( $custom_meta_map as $meta_key => $contact_key ) {
+			if ( ! array_key_exists( $contact_key, $contact ) ) {
+				continue;
+			}
+			if ( $hide_address && in_array( $contact_key, array( 'country', 'state', 'city', 'address_1', 'address_2', 'postcode' ), true ) ) {
+				$order->delete_meta_data( $meta_key );
+				continue;
+			}
+			$value = sanitize_text_field( (string) $contact[ $contact_key ] );
+			if ( 'country' === $contact_key ) {
+				$value = self::normalize_billing_country_value( $value );
+			}
+			if ( '' === $value ) {
+				$order->delete_meta_data( $meta_key );
+			} else {
+				$order->update_meta_data( $meta_key, $value );
+			}
+		}
 		if ( array_key_exists( 'order_notes', $contact ) ) { $note_value = sanitize_textarea_field( (string) $contact['order_notes'] ); $order->set_customer_note( $note_value ); if ( '' === $note_value ) { $order->delete_meta_data( OrderMetaKeys::ORDER_NOTES ); } else { $order->update_meta_data( OrderMetaKeys::ORDER_NOTES, $note_value ); } }
 	}
 

@@ -68,7 +68,7 @@ final class AdminTabRegistry {
 			case 'motion':
 				return __( 'Длительности, easing, отдельные правила для mobile/desktop и live-preview анимаций checkout.', 'mp-custom-checkout' );
 			case 'service':
-				return __( 'Служебные переключатели, диагностика и режимы поддержки.', 'mp-custom-checkout' );
+				return __( 'Служебные переключатели, диагностика, режимы поддержки и экспорт/импорт всей конфигурации плагина в JSON.', 'mp-custom-checkout' );
 			default:
 				return __( 'Параметры раздела checkout.', 'mp-custom-checkout' );
 		}

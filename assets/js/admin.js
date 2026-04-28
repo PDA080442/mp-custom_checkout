@@ -1241,12 +1241,12 @@
 		html += '</div></div></article></div>';
 		html += '<div class="mp-cc-admin-preview__date-grid">';
 		html += '<article>';
-		html += '<strong>' + escapeHtml(String(cfg.coupon.title || cfg.giftCard.title || 'Подарочная карта')) + '</strong>';
-		html += '<p>' + escapeHtml(String(cfg.coupon.intro || cfg.giftCard.intro || '')) + '</p>';
-		html += '<p>Label: ' + escapeHtml(String(cfg.coupon.input_label || cfg.giftCard.input_label || 'Код подарочной карты')) + '</p>';
+		html += '<strong>' + escapeHtml(String(cfg.coupon.title || cfg.giftCard.title || 'Промокод (купон WooCommerce)')) + '</strong>';
+		html += '<p>' + escapeHtml(String(trimNonEmptyAdmin(cfg.coupon.intro) || 'Введите промокод.')) + '</p>';
+		html += '<p>Label: ' + escapeHtml(String(cfg.coupon.input_label || cfg.giftCard.input_label || 'Промокод')) + '</p>';
 		html += '<p>Placeholder: ' + escapeHtml(String(cfg.coupon.placeholder || cfg.giftCard.placeholder || '')) + '</p>';
 		html += '<p><em>States:</em> empty="' + escapeHtml(String(cfg.coupon.empty_message || cfg.giftCard.empty_message || '')) + '", success="' + escapeHtml(String(cfg.coupon.success_message || cfg.giftCard.success_message || '')) + '", error="' + escapeHtml(String(cfg.coupon.error_message || cfg.giftCard.error_message || '')) + '"</p>';
-		html += '<p><em>Одно поле на шаге 4:</em> тексты из <code>coupon_block</code>, при пустых полях подставляются из <code>gift_card_block</code>.</p>';
+		html += '<p><em>Нижнее поле на шаге оплаты:</em> <code>coupon_block</code> — промокод (купоны WC). Текст подсказки промокода не подставляется из подарочной карты. Карточка «Подарок» — только <code>gift_card_block</code> (Pimwick и т.п.).</p>';
 		html += '</article>';
 		html += '</div>';
 		html += '<div class="mp-cc-admin-preview__date-grid">';
@@ -1808,6 +1808,29 @@
 		enhanceStepThreeFields();
 		enhanceStepFourFields();
 		refreshStepThreeEmptyIndicators();
+		(function mountStepOnePresetButtons() {
+			var inputName = 'mp_custom_checkout_settings[step_1][address_form_style_preset]';
+			var $presetInput = $('[name="' + inputName + '"]').first();
+			if (!$presetInput.length || $presetInput.prev('.mp-cc-admin-preset-toolbar').length) {
+				return;
+			}
+			var presets = [
+				{ id: 'concept_a', label: 'Concept A' },
+				{ id: 'clean', label: 'Clean' },
+				{ id: 'compact', label: 'Compact' }
+			];
+			var current = String($presetInput.val() || 'concept_a');
+			var html = '<div class="mp-cc-admin-preset-toolbar" style="margin:10px 0 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
+			html += '<strong style="margin-right:4px;">Стиль полей шага 1:</strong>';
+			for (var pi = 0; pi < presets.length; pi += 1) {
+				var p = presets[pi];
+				var activeClass = p.id === current ? ' button-primary' : '';
+				html += '<button type="button" class="button' + activeClass + '" data-mp-cc-step1-preset="' + escapeHtml(p.id) + '">' + escapeHtml(p.label) + '</button>';
+			}
+			html += '<span style="color:#6b7280;font-size:12px;">переключение в 1 клик</span>';
+			html += '</div>';
+			$presetInput.before(html);
+		})();
 
 		var mountPreviews = function (nextConfig, nextScenarioConfig, nextDateConfig, nextOfficeConfig, nextStepFourConfig, nextDeliveryConfig) {
 			var previewState = previewStore.getState();
@@ -2053,6 +2076,21 @@
 			flattenStepOneDefaults(defaultsMap, defaults, []);
 			applyDefaultsToForm(defaultsMap);
 			rerender();
+		});
+		$(document).on('click', '[data-mp-cc-step1-preset]', function () {
+			var inputName = 'mp_custom_checkout_settings[step_1][address_form_style_preset]';
+			var $presetInput = $('[name="' + inputName + '"]').first();
+			if (!$presetInput.length) {
+				return;
+			}
+			var next = String($(this).attr('data-mp-cc-step1-preset') || '');
+			if (!next) {
+				return;
+			}
+			$presetInput.val(next).trigger('change');
+			$('[data-mp-cc-step1-preset]').removeClass('button-primary');
+			$(this).addClass('button-primary');
+			rerenderDebounced();
 		});
 		function validateMotionFormBeforeSave() {
 			var errs = [];

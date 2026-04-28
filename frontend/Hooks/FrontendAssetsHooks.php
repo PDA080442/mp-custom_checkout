@@ -8,6 +8,7 @@
 namespace MP\CustomCheckout\Frontend\Hooks;
 
 use MP\CustomCheckout\DependencyFailureGuard;
+use MP\CustomCheckout\Hooks\CheckoutRouteHooks;
 use MP\CustomCheckout\Routing\PickupPointRegistry;
 use MP\CustomCheckout\Integrations\WooCommerce\GiftCardIntegration;
 use MP\CustomCheckout\Routing\CheckoutScenarioRules;
@@ -45,6 +46,7 @@ final class FrontendAssetsHooks {
 
 		wp_enqueue_style( self::HANDLE_STYLE, MP_CUSTOM_CHECKOUT_URL . 'assets/css/checkout-frontend.css', array(), $version );
 		wp_add_inline_style( self::HANDLE_STYLE, self::build_design_tokens_css() );
+		wp_add_inline_style( self::HANDLE_STYLE, self::build_checkout_layout_css() );
 		wp_add_inline_style( self::HANDLE_STYLE, self::build_motion_runtime_css() );
 
 		wp_enqueue_script( self::HANDLE_SCRIPT, MP_CUSTOM_CHECKOUT_URL . 'assets/js/checkout-frontend.js', self::script_dependencies(), $version, true );
@@ -111,8 +113,8 @@ final class FrontendAssetsHooks {
 		$map  = array(
 			'bank'      => 'bank-card-generic.png',
 			'generic'   => 'bank-card-generic.png',
-			'robokassa' => 'robokassa-card.png',
-			'yookassa'  => 'yookassa-card.png',
+			'robokassa' => 'robokassa-card_without_bg.png',
+			'yookassa'  => 'yookassa-card-no-bg-preview.png',
 			'gift_card' => 'gift-card-peer.png',
 		);
 		$out = array();
@@ -235,7 +237,17 @@ final class FrontendAssetsHooks {
 		if ( ! $gateways instanceof \WC_Payment_Gateways ) {
 			return array();
 		}
-		$available = $gateways->get_available_payment_gateways();
+		$force_checkout = CheckoutRouteHooks::is_checkout_route();
+		if ( $force_checkout ) {
+			add_filter( 'woocommerce_is_checkout', '__return_true', PHP_INT_MAX );
+		}
+		try {
+			$available = $gateways->get_available_payment_gateways();
+		} finally {
+			if ( $force_checkout ) {
+				remove_filter( 'woocommerce_is_checkout', '__return_true', PHP_INT_MAX );
+			}
+		}
 		$result    = array();
 		foreach ( $available as $gateway ) {
 			if ( ! $gateway instanceof \WC_Payment_Gateway ) {
@@ -265,10 +277,34 @@ final class FrontendAssetsHooks {
 		return ':root{' . implode( '', $lines ) . '}';
 	}
 
+	private static function build_checkout_layout_css(): string {
+		$general   = SafeSettingsResolver::get_section( OptionKeys::SECTION_GENERAL );
+		$layout    = ( is_array( $general ) && isset( $general['checkout_layout'] ) && is_array( $general['checkout_layout'] ) ) ? $general['checkout_layout'] : array();
+		$max_width = isset( $layout['max_width'] ) ? self::sanitize_css_size_value( (string) $layout['max_width'] ) : '';
+		if ( '' === $max_width ) {
+			$max_width = '1140px';
+		}
+		return '#mp-cc-checkout{--mp-cc-shell-max-width:' . $max_width . ';}';
+	}
+
 	private static function sanitize_css_token_value( string $value ): string {
 		$value = trim( wp_strip_all_tags( $value ) );
 		$value = str_replace( array( ';', '{', '}', "\n", "\r", "\t" ), '', $value );
 		return $value;
+	}
+
+	private static function sanitize_css_size_value( string $value ): string {
+		$raw = self::sanitize_css_token_value( $value );
+		if ( '' === $raw ) {
+			return '';
+		}
+		if ( preg_match( '/^\d+(?:\.\d+)?$/', $raw ) ) {
+			return $raw . 'px';
+		}
+		if ( preg_match( '/^\d+(?:\.\d+)?(px|rem|em|vw|%)$/', $raw ) ) {
+			return $raw;
+		}
+		return '';
 	}
 
 	/**

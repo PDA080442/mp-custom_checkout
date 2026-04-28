@@ -9,8 +9,6 @@ namespace MP\CustomCheckout\Routing;
 
 use MP\CustomCheckout\Checkout\Routing\CheckoutSessionService;
 use MP\CustomCheckout\Contracts\CheckoutStepManagerInterface;
-use MP\CustomCheckout\Settings\DefaultFeatureFlagsRegistry;
-use MP\CustomCheckout\Settings\FeatureFlagResolver;
 use MP\CustomCheckout\Settings\SafeSettingsResolver;
 use MP\CustomCheckout\Settings\ScenarioStepRegistry;
 
@@ -248,15 +246,6 @@ final class CheckoutStepManager implements CheckoutStepManagerInterface {
 	 */
 	private function is_visible_for_scenario( string $scenario, array $meta ): bool {
 		$step_id = isset( $meta['id'] ) ? sanitize_key( (string) $meta['id'] ) : '';
-		if ( ScenarioStepRegistry::STEP_CONDITIONS === $step_id ) {
-			$rules = CheckoutScenarioRules::build( $scenario );
-			$show_conditions = isset( $rules['step_rules']['show_conditions_step'] ) ? (bool) $rules['step_rules']['show_conditions_step'] : true;
-			$feature_enabled = FeatureFlagResolver::is_enabled( DefaultFeatureFlagsRegistry::FLAG_CONDITIONS_STEP, true );
-			if ( ! $show_conditions || ! $feature_enabled ) {
-				return false;
-			}
-		}
-
 		$mode = isset( $meta['visibility_mode'] ) ? (string) $meta['visibility_mode'] : 'always';
 		if ( 'hidden' === $mode ) {
 			return false;
