@@ -7,6 +7,7 @@
 
 namespace MP\CustomCheckout\Hooks;
 
+use MP\CustomCheckout\Activator;
 use MP\CustomCheckout\DependencyFailureGuard;
 use MP\CustomCheckout\Routing\CheckoutRouteConfig;
 use MP\CustomCheckout\Settings\DefaultFeatureFlagsRegistry;
@@ -20,6 +21,12 @@ defined( 'ABSPATH' ) || exit;
 final class CheckoutRouteHooks {
 
 	public const QUERY_VAR = 'mpcc_checkout';
+
+	/**
+	 * Оплата существующего заказа (endpoint order-pay) под тем же slug, что и кастомный checkout.
+	 * Без отдельного правила URL вида /mp-checkout/order-pay/123/ даёт 404, а шлюзы редиректят туда после process_payment.
+	 */
+	public const QUERY_VAR_ORDER_PAY = 'mpcc_order_pay';
 
 	/**
 	 * Дефолтный slug (если не задан в настройках).
@@ -73,11 +80,26 @@ final class CheckoutRouteHooks {
 			return;
 		}
 
+		// Сначала более специфичное правило (order-pay), иначе вложенный путь не матчится и даёт 404.
+		add_rewrite_rule(
+			'^' . preg_quote( $slug, '/' ) . '/order-pay/([0-9]+)/?$',
+			'index.php?' . self::QUERY_VAR . '=1&' . self::QUERY_VAR_ORDER_PAY . '=$matches[1]',
+			'top'
+		);
+
 		add_rewrite_rule(
 			'^' . preg_quote( $slug, '/' ) . '/?$',
 			'index.php?' . self::QUERY_VAR . '=1',
 			'top'
 		);
+
+		// Одноразовый flush после добавления order-pay под тем же slug (без ручного «Сохранить» в Настройках → Постоянные ссылки).
+		$rules_stamp = '20260210_order_pay';
+		$saved      = get_option( 'mp_cc_checkout_rewrite_rules_version', '' );
+		if ( $saved !== $rules_stamp ) {
+			update_option( 'mp_cc_checkout_rewrite_rules_version', $rules_stamp, false );
+			update_option( Activator::OPTION_NEEDS_REWRITE_FLUSH, 1, false );
+		}
 	}
 
 	/**
@@ -86,7 +108,22 @@ final class CheckoutRouteHooks {
 	 */
 	public static function register_query_vars( array $vars ): array {
 		$vars[] = self::QUERY_VAR;
+		$vars[] = self::QUERY_VAR_ORDER_PAY;
 		return $vars;
+	}
+
+	/**
+	 * Запрос оплаты заказа на кастомном checkout-URL (не SPA-шаги).
+	 */
+	public static function is_mp_checkout_order_pay_query(): bool {
+		$id = (int) get_query_var( self::QUERY_VAR_ORDER_PAY, 0 );
+		if ( $id > 0 ) {
+			return true;
+		}
+		if ( isset( $_GET[ self::QUERY_VAR_ORDER_PAY ], $_GET[ self::QUERY_VAR ] ) && '1' === (string) wp_unslash( (string) $_GET[ self::QUERY_VAR ] ) ) {
+			return absint( wp_unslash( (string) $_GET[ self::QUERY_VAR_ORDER_PAY ] ) ) > 0;
+		}
+		return false;
 	}
 
 	/**
@@ -141,6 +178,10 @@ final class CheckoutRouteHooks {
 			return (bool) $is_checkout;
 		}
 		if ( self::is_checkout_route() ) {
+			// Для order-pay нужен «нативный» is_checkout(), иначе WC не отрисует форму оплаты и шлюзы.
+			if ( self::is_mp_checkout_order_pay_query() ) {
+				return true;
+			}
 			return false;
 		}
 
@@ -199,6 +240,12 @@ final class CheckoutRouteHooks {
 	public static function filter_body_class( array $classes ): array {
 		if ( ! self::is_checkout_route() ) {
 			return $classes;
+		}
+		if ( self::is_mp_checkout_order_pay_query() ) {
+			$classes[] = 'woocommerce-page';
+			$classes[] = 'woocommerce-checkout';
+			$classes[] = 'mp-custom-checkout';
+			return array_values( array_unique( array_filter( $classes ) ) );
 		}
 		$classes = array_values( array_diff( $classes, array( 'woocommerce-checkout', 'woocommerce-page' ) ) );
 		$classes[] = 'mp-custom-checkout';
