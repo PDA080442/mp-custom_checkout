@@ -8,6 +8,7 @@
 namespace MP\CustomCheckout\Frontend\Hooks;
 
 use MP\CustomCheckout\DependencyFailureGuard;
+use MP\CustomCheckout\Hooks\CheckoutRouteHooks;
 use MP\CustomCheckout\Routing\PickupPointRegistry;
 use MP\CustomCheckout\Integrations\WooCommerce\GiftCardIntegration;
 use MP\CustomCheckout\Routing\CheckoutScenarioRules;
@@ -235,7 +236,17 @@ final class FrontendAssetsHooks {
 		if ( ! $gateways instanceof \WC_Payment_Gateways ) {
 			return array();
 		}
-		$available = $gateways->get_available_payment_gateways();
+		$force_checkout = CheckoutRouteHooks::is_checkout_route();
+		if ( $force_checkout ) {
+			add_filter( 'woocommerce_is_checkout', '__return_true', PHP_INT_MAX );
+		}
+		try {
+			$available = $gateways->get_available_payment_gateways();
+		} finally {
+			if ( $force_checkout ) {
+				remove_filter( 'woocommerce_is_checkout', '__return_true', PHP_INT_MAX );
+			}
+		}
 		$result    = array();
 		foreach ( $available as $gateway ) {
 			if ( ! $gateway instanceof \WC_Payment_Gateway ) {

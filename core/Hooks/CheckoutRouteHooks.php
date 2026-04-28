@@ -32,6 +32,10 @@ final class CheckoutRouteHooks {
 	 * Регистрация rewrite и фильтров запроса.
 	 */
 	public static function register(): void {
+		// В админке WooCommerce (в т.ч. экран Платежи) роутинг checkout не должен вмешиваться вообще.
+		if ( function_exists( 'is_admin' ) && is_admin() && ! wp_doing_ajax() ) {
+			return;
+		}
 		add_action( 'init', array( __CLASS__, 'add_rewrite_rules' ), 10 );
 		add_filter( 'query_vars', array( __CLASS__, 'register_query_vars' ) );
 		add_filter( 'woocommerce_get_checkout_url', array( __CLASS__, 'filter_woocommerce_checkout_url' ), 20, 2 );
@@ -109,6 +113,9 @@ final class CheckoutRouteHooks {
 	 * @param string|false $endpoint     Endpoint (order-pay и т.д.) — оставляем стандартный URL.
 	 */
 	public static function filter_woocommerce_checkout_url( $checkout_url, $endpoint = '' ) {
+		if ( is_admin() && ! wp_doing_ajax() ) {
+			return $checkout_url;
+		}
 		if ( ! FeatureFlagResolver::is_enabled( DefaultFeatureFlagsRegistry::FLAG_CUSTOM_CHECKOUT_ROUTE, true ) ) {
 			return $checkout_url;
 		}
@@ -130,6 +137,9 @@ final class CheckoutRouteHooks {
 	 * @param bool $is_checkout Значение из WooCommerce.
 	 */
 	public static function filter_woocommerce_is_checkout( $is_checkout ): bool {
+		if ( is_admin() && ! wp_doing_ajax() ) {
+			return (bool) $is_checkout;
+		}
 		if ( self::is_checkout_route() ) {
 			return false;
 		}
@@ -199,6 +209,9 @@ final class CheckoutRouteHooks {
 	 * Текущий запрос — кастомный checkout (ЧПУ или ?mpcc_checkout=1 для plain permalinks).
 	 */
 	public static function is_checkout_route(): bool {
+		if ( function_exists( 'is_admin' ) && is_admin() && ! wp_doing_ajax() ) {
+			return false;
+		}
 		if ( isset( $_GET[ self::QUERY_VAR ] ) ) {
 			$raw = wp_unslash( $_GET[ self::QUERY_VAR ] );
 			return '1' === (string) $raw;

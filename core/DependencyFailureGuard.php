@@ -45,11 +45,6 @@ final class DependencyFailureGuard {
 	 * Хуки этапов WooCommerce: если событие уже произошло (позднее подключение плагина), вызываем обработчик сразу.
 	 */
 	private static function bind_woocommerce_stage_hooks(): void {
-		if ( did_action( 'woocommerce_loaded' ) ) {
-			self::on_woocommerce_loaded();
-		} else {
-			add_action( 'woocommerce_loaded', array( __CLASS__, 'on_woocommerce_loaded' ), 5 );
-		}
 		if ( did_action( 'woocommerce_init' ) ) {
 			self::on_woocommerce_init();
 		} else {
@@ -80,14 +75,7 @@ final class DependencyFailureGuard {
 	 * woocommerce_loaded: WC(), checkout, payment gateways.
 	 */
 	public static function on_woocommerce_loaded(): void {
-		if ( false === self::$woocommerce_ready ) {
-			return;
-		}
-
-		if ( ! WooCommerceDependencyValidator::is_woocommerce_runtime_ready() ) {
-			self::$woocommerce_ready = false;
-			add_action( 'admin_notices', array( __CLASS__, 'render_woocommerce_runtime_notice' ) );
-		}
+		// no-op: ранняя стадия woocommerce_loaded не используется для проверок, чтобы не трогать runtime gateways.
 	}
 
 	/**

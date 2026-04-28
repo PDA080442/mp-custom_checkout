@@ -8,6 +8,7 @@
 namespace MP\CustomCheckout\Checkout\Hooks;
 
 use MP\CustomCheckout\DependencyFailureGuard;
+use MP\CustomCheckout\Hooks\CheckoutRouteHooks;
 use MP\CustomCheckout\Integrations\WooCommerce\GiftCardIntegration;
 use MP\CustomCheckout\Routing\CheckoutDateAvailabilityEngine;
 use MP\CustomCheckout\Routing\CheckoutRouteContext;
@@ -304,7 +305,7 @@ final class CheckoutAjaxHooks {
 		if ( ! $pm instanceof \WC_Payment_Gateways ) {
 			wp_send_json_error( array( 'code' => 'wc_gateway_unavailable', 'message' => __( 'Платёжные шлюзы WooCommerce недоступны.', 'mp-custom-checkout' ) ), 503 );
 		}
-		$available = $pm->get_available_payment_gateways();
+		$available = self::get_available_payment_gateways_in_checkout_context( $pm );
 		if ( ! isset( $available[ $gateway ] ) ) {
 			wp_send_json_error( array( 'code' => 'gateway_not_available', 'message' => __( 'Выбранный способ оплаты сейчас недоступен.', 'mp-custom-checkout' ) ), 422 );
 		}
@@ -390,7 +391,7 @@ final class CheckoutAjaxHooks {
 				'payment_fields_gateway' => $gateway_id,
 			);
 		}
-		$available = $pm->get_available_payment_gateways();
+		$available = self::get_available_payment_gateways_in_checkout_context( $pm );
 		if ( ! isset( $available[ $gateway_id ] ) || ! $available[ $gateway_id ] instanceof \WC_Payment_Gateway ) {
 			return array(
 				'payment_fields_html'    => '',
@@ -447,7 +448,7 @@ final class CheckoutAjaxHooks {
 		if ( ! $pm instanceof \WC_Payment_Gateways ) {
 			wp_send_json_error( array( 'code' => 'gateway_unavailable', 'message' => __( 'Платёжные шлюзы недоступны.', 'mp-custom-checkout' ) ), 503 );
 		}
-		$available = $pm->get_available_payment_gateways();
+		$available = self::get_available_payment_gateways_in_checkout_context( $pm );
 		if ( ! isset( $available[ $gateway ] ) ) {
 			wp_send_json_error( array( 'code' => 'gateway_not_available', 'message' => __( 'Выбранный способ оплаты недоступен.', 'mp-custom-checkout' ) ), 422 );
 		}
@@ -606,6 +607,28 @@ final class CheckoutAjaxHooks {
 		}
 		$order->save();
 		return $order;
+	}
+
+	/**
+	 * Для кастомного checkout-route временно возвращаем is_checkout()=true,
+	 * иначе часть шлюзов (особенно внешних) отфильтровываются как «не checkout контекст».
+	 *
+	 * @param \WC_Payment_Gateways $pm
+	 * @return array<string, mixed>
+	 */
+	private static function get_available_payment_gateways_in_checkout_context( \WC_Payment_Gateways $pm ): array {
+		$force_checkout = CheckoutRouteHooks::is_checkout_route();
+		if ( $force_checkout ) {
+			add_filter( 'woocommerce_is_checkout', '__return_true', PHP_INT_MAX );
+		}
+		try {
+			$available = $pm->get_available_payment_gateways();
+		} finally {
+			if ( $force_checkout ) {
+				remove_filter( 'woocommerce_is_checkout', '__return_true', PHP_INT_MAX );
+			}
+		}
+		return is_array( $available ) ? $available : array();
 	}
 
 	private static function validate_context_id(): bool {
