@@ -617,7 +617,10 @@ final class CheckoutAjaxHooks {
 	 * @return array<string, mixed>
 	 */
 	private static function get_available_payment_gateways_in_checkout_context( \WC_Payment_Gateways $pm ): array {
-		$force_checkout = CheckoutRouteHooks::is_checkout_route();
+		// На странице кастомного checkout is_checkout_route() === true, и WooCommerce видит «как на checkout».
+		// Запросы set_payment_gateway / submit_payment идут через admin-ajax.php: там is_checkout_route() === false,
+		// и часть шлюзов (Robokassa и др.) отваливается из get_available_payment_gateways() из‑за проверок is_checkout().
+		$force_checkout = self::should_force_wc_checkout_for_gateway_resolution();
 		if ( $force_checkout ) {
 			add_filter( 'woocommerce_is_checkout', '__return_true', PHP_INT_MAX );
 		}
@@ -629,6 +632,20 @@ final class CheckoutAjaxHooks {
 			}
 		}
 		return is_array( $available ) ? $available : array();
+	}
+
+	/**
+	 * Нужно ли подставить is_checkout()=true при разрешении списка шлюзов (как на нативном checkout).
+	 */
+	private static function should_force_wc_checkout_for_gateway_resolution(): bool {
+		if ( CheckoutRouteHooks::is_checkout_route() ) {
+			return true;
+		}
+		if ( ! function_exists( 'wp_doing_ajax' ) || ! wp_doing_ajax() ) {
+			return false;
+		}
+		$action = isset( $_REQUEST['action'] ) ? sanitize_key( wp_unslash( (string) $_REQUEST['action'] ) ) : '';
+		return self::ACTION === $action;
 	}
 
 	private static function validate_context_id(): bool {
