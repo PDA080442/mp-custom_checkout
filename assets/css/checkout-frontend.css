@@ -2032,22 +2032,28 @@
 	display: grid;
 	gap: 1rem;
 	max-width: 44rem;
+	border: 1px solid var(--mp-cc-contact-card-border, #e5e7eb);
+	border-radius: var(--mp-cc-contact-card-radius, 14px);
+	background: var(--mp-cc-contact-card-bg, #fff);
+	padding: var(--mp-cc-contact-card-padding, 1.15rem 1.1rem 1.2rem);
 }
 
 .mp-cc-contact__header {
 	display: grid;
 	gap: 0.35rem;
+	padding-bottom: 0.85rem;
+	border-bottom: 1px solid var(--mp-cc-contact-header-divider, #e5e7eb);
 }
 
 .mp-cc-contact__title {
 	margin: 0;
-	font-size: 1rem;
+	font-size: var(--mp-cc-contact-title-size, 1.1rem);
 	font-weight: 700;
 }
 
 .mp-cc-contact__intro {
 	margin: 0;
-	font-size: 0.86rem;
+	font-size: var(--mp-cc-contact-intro-size, 0.92rem);
 	color: var(--mp-cc-color-text-muted);
 	line-height: 1.45;
 }
@@ -2057,6 +2063,7 @@
 	grid-template-columns: repeat(var(--mp-cc-contact-cols, 3), minmax(0, 1fr));
 	gap: var(--mp-cc-contact-gap, 0.75rem 1rem);
 	align-items: start;
+	padding-top: 0.1rem;
 }
 
 .mp-cc-contact__field {
@@ -2070,7 +2077,7 @@
 }
 
 .mp-cc-field-label {
-	font-size: 0.8rem;
+	font-size: var(--mp-cc-contact-label-size, 0.9rem);
 	font-weight: 600;
 	color: var(--mp-cc-color-text);
 }
@@ -2081,8 +2088,8 @@
 	box-sizing: border-box;
 	min-height: 2.55rem;
 	padding: 0.45rem 0.65rem;
-	border: 1px solid var(--mp-cc-color-border);
-	border-radius: var(--mp-cc-radius-sm);
+	border: 1px solid var(--mp-cc-contact-input-border, #d9dde3);
+	border-radius: var(--mp-cc-contact-input-radius, 6px);
 	background: var(--mp-cc-color-background);
 	color: var(--mp-cc-color-text);
 	font: inherit;
@@ -3192,25 +3199,29 @@
 	display: grid;
 	gap: 1rem;
 	max-width: 44rem;
-	margin-top: 1.5rem;
-	padding-top: 1.25rem;
-	border-top: 1px solid var(--mp-cc-color-border);
+	margin-top: 1rem;
+	border: 1px solid var(--mp-cc-address-card-border, #e5e7eb);
+	border-radius: var(--mp-cc-address-card-radius, 14px);
+	background: var(--mp-cc-address-card-bg, #fff);
+	padding: var(--mp-cc-address-card-padding, 1.15rem 1.1rem 1.2rem);
 }
 
 .mp-cc-address__header {
 	display: grid;
 	gap: 0.35rem;
+	padding-bottom: 0.85rem;
+	border-bottom: 1px solid var(--mp-cc-address-header-divider, #e5e7eb);
 }
 
 .mp-cc-address__title {
 	margin: 0;
-	font-size: 1rem;
+	font-size: var(--mp-cc-address-title-size, 1.1rem);
 	font-weight: 700;
 }
 
 .mp-cc-address__intro {
 	margin: 0;
-	font-size: 0.86rem;
+	font-size: var(--mp-cc-address-intro-size, 0.92rem);
 	color: var(--mp-cc-color-text-muted);
 	line-height: 1.45;
 }
@@ -3220,6 +3231,7 @@
 	grid-template-columns: repeat(3, minmax(0, 1fr));
 	gap: 0.75rem 1rem;
 	align-items: start;
+	padding-top: 0.1rem;
 }
 
 .mp-cc-address__field {

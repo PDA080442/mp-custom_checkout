@@ -422,12 +422,38 @@ final class AdminMenuHooks {
 			self::render_logs_tab( $tab_id, $tabs );
 			return;
 		}
+		$name_prefix_tab = $tab_id;
+		$path_tab        = $tab_id;
 		$section_value = isset( $settings[ $tab_id ] ) ? $settings[ $tab_id ] : array();
 		$section_value = is_array( $section_value ) ? $section_value : array();
 		$defaults_tree   = SafeSettingsResolver::get_defaults_tree();
 		$defaults_for_tab = isset( $defaults_tree[ $tab_id ] ) && is_array( $defaults_tree[ $tab_id ] ) ? $defaults_tree[ $tab_id ] : array();
 		if ( ! empty( $defaults_for_tab ) ) {
 			$section_value = array_replace_recursive( $defaults_for_tab, $section_value );
+		}
+		// По смыслу UI: настройки Получателя/Адреса показываем на вкладке шага 2
+		// (исторически эти блоки хранятся в step_4).
+		if ( OptionKeys::SECTION_STEP_2 === $tab_id ) {
+			$s4 = isset( $settings[ OptionKeys::SECTION_STEP_4 ] ) && is_array( $settings[ OptionKeys::SECTION_STEP_4 ] )
+				? $settings[ OptionKeys::SECTION_STEP_4 ]
+				: array();
+			$def4 = isset( $defaults_tree[ OptionKeys::SECTION_STEP_4 ] ) && is_array( $defaults_tree[ OptionKeys::SECTION_STEP_4 ] )
+				? $defaults_tree[ OptionKeys::SECTION_STEP_4 ]
+				: array();
+			if ( ! empty( $def4 ) ) {
+				$s4 = array_replace_recursive( $def4, $s4 );
+			}
+			$section_value = array(
+				'contact_block' => isset( $s4['contact_block'] ) && is_array( $s4['contact_block'] ) ? $s4['contact_block'] : array(),
+				'address_block' => isset( $s4['address_block'] ) && is_array( $s4['address_block'] ) ? $s4['address_block'] : array(),
+				'address_geo'   => isset( $s4['address_geo'] ) && is_array( $s4['address_geo'] ) ? $s4['address_geo'] : array(),
+			);
+			$name_prefix_tab = OptionKeys::SECTION_STEP_4;
+			$path_tab        = OptionKeys::SECTION_STEP_4;
+		}
+		// На вкладке шага 4 скрываем эти блоки, чтобы не дублировать.
+		if ( OptionKeys::SECTION_STEP_4 === $tab_id ) {
+			unset( $section_value['contact_block'], $section_value['address_block'], $section_value['address_geo'] );
 		}
 		$title = isset( AdminSectionsRegistry::sections()[ $tab_id ]['label'] ) ? (string) AdminSectionsRegistry::sections()[ $tab_id ]['label'] : $tab_id;
 		$description = isset( $tabs[ $tab_id ]['description'] ) ? (string) $tabs[ $tab_id ]['description'] : '';
@@ -440,7 +466,7 @@ final class AdminMenuHooks {
 			echo '<p class="mp-cc-admin-shell__tab-onboarding"><strong>' . esc_html__( 'Onboarding:', 'mp-custom-checkout' ) . '</strong> ' . esc_html( $onboarding ) . '</p>';
 		}
 		echo '<div class="mp-cc-admin-shell__fields">';
-		self::render_field_group( OptionKeys::MAIN . '[' . $tab_id . ']', $section_value, $tab_id );
+		self::render_field_group( OptionKeys::MAIN . '[' . $name_prefix_tab . ']', $section_value, $path_tab );
 		if ( OptionKeys::SECTION_MOTION === $tab_id ) {
 			self::render_motion_admin_preview_block();
 		}
@@ -869,7 +895,7 @@ final class AdminMenuHooks {
 			if ( is_array( $child ) && ! self::is_list_array( $child ) ) {
 				$group_type = self::detect_group_type( $key_str, $child_path );
 				echo '<details class="mp-cc-admin-shell__fieldset" open>';
-				echo '<summary><span>' . esc_html( str_replace( '_', ' ', $key_str ) ) . '</span><em class="mp-cc-admin-shell__type-badge mp-cc-admin-shell__type-badge--' . esc_attr( $group_type ) . '">' . esc_html( self::group_type_label( $group_type ) ) . '</em></summary>';
+				echo '<summary><span>' . esc_html( self::localized_group_label_for_path( $child_path, $key_str ) ) . '</span><em class="mp-cc-admin-shell__type-badge mp-cc-admin-shell__type-badge--' . esc_attr( $group_type ) . '">' . esc_html( self::group_type_label( $group_type ) ) . '</em></summary>';
 				self::render_field_group( $child_name, $child, $child_path );
 				echo '</details>';
 				continue;
@@ -943,11 +969,75 @@ final class AdminMenuHooks {
 			'step_1.address_form_styles.edit_btn_border'  => __( 'Рамка кнопки «другой»', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.edit_btn_color'   => __( 'Цвет текста кнопки «другой»', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.edit_btn_radius'  => __( 'Скругление кнопки «другой»', 'mp-custom-checkout' ),
+			'step_4.contact_block.layout.desktop_columns' => __( 'Контакты: колонки (desktop)', 'mp-custom-checkout' ),
+			'step_4.contact_block.layout.tablet_columns'  => __( 'Контакты: колонки (tablet)', 'mp-custom-checkout' ),
+			'step_4.contact_block.layout.mobile_columns'  => __( 'Контакты: колонки (mobile)', 'mp-custom-checkout' ),
+			'step_4.contact_block.layout.grid_gap'        => __( 'Контакты: расстояние между полями', 'mp-custom-checkout' ),
+			'step_4.contact_block.field_state_styles.invalid_style' => __( 'Контакты: стиль невалидного поля', 'mp-custom-checkout' ),
+			'step_4.contact_block.field_state_styles.hint_style'    => __( 'Контакты: стиль подсказок', 'mp-custom-checkout' ),
+			'step_4.contact_block.field_state_styles.focus_style'   => __( 'Контакты: стиль фокуса', 'mp-custom-checkout' ),
+			'step_4.contact_block.field_state_styles.disabled_style'=> __( 'Контакты: стиль disabled-поля', 'mp-custom-checkout' ),
+			'step_4.contact_block.title'                  => __( 'Контакты: заголовок блока', 'mp-custom-checkout' ),
+			'step_4.contact_block.intro'                  => __( 'Контакты: подзаголовок блока', 'mp-custom-checkout' ),
+			'step_4.address_block.title'                  => __( 'Адрес: заголовок блока', 'mp-custom-checkout' ),
+			'step_4.address_block.intro'                  => __( 'Адрес: подзаголовок блока', 'mp-custom-checkout' ),
+			'step_4.address_block.default_country'        => __( 'Адрес: страна по умолчанию', 'mp-custom-checkout' ),
+			'step_4.address_block.postcode_max_length'    => __( 'Адрес: максимальная длина индекса', 'mp-custom-checkout' ),
+			'step_4.address_block.labels.country'         => __( 'Адрес: подпись поля «Страна»', 'mp-custom-checkout' ),
+			'step_4.address_block.labels.state'           => __( 'Адрес: подпись поля «Регион»', 'mp-custom-checkout' ),
+			'step_4.address_block.labels.city'            => __( 'Адрес: подпись поля «Населённый пункт»', 'mp-custom-checkout' ),
+			'step_4.address_block.labels.address_1'       => __( 'Адрес: подпись поля «Улица, дом»', 'mp-custom-checkout' ),
+			'step_4.address_block.labels.address_2'       => __( 'Адрес: подпись поля «Квартира, офис»', 'mp-custom-checkout' ),
+			'step_4.address_block.labels.postcode'        => __( 'Адрес: подпись поля «Почтовый индекс»', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.contact_card_bg'     => __( 'Шаг 2: фон карточки контактов', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.contact_card_border' => __( 'Шаг 2: рамка карточки контактов', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.contact_card_radius' => __( 'Шаг 2: скругление карточки контактов', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.contact_card_padding'=> __( 'Шаг 2: внутренние отступы карточки контактов', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.contact_header_divider' => __( 'Шаг 2: разделитель заголовка контактов', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.contact_title_size'  => __( 'Шаг 2: размер заголовка контактов', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.contact_intro_size'  => __( 'Шаг 2: размер подзаголовка контактов', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.contact_label_size'  => __( 'Шаг 2: размер названий полей контактов', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.contact_input_border'=> __( 'Шаг 2: рамка полей контактов', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.contact_input_radius'=> __( 'Шаг 2: скругление полей контактов', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.address_card_bg'     => __( 'Шаг 2: фон карточки адреса', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.address_card_border' => __( 'Шаг 2: рамка карточки адреса', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.address_card_radius' => __( 'Шаг 2: скругление карточки адреса', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.address_card_padding'=> __( 'Шаг 2: внутренние отступы карточки адреса', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.address_header_divider' => __( 'Шаг 2: разделитель заголовка адреса', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.address_title_size'  => __( 'Шаг 2: размер заголовка адреса', 'mp-custom-checkout' ),
+			'step_4.recipient_styles.address_intro_size'  => __( 'Шаг 2: размер подзаголовка адреса', 'mp-custom-checkout' ),
 		);
 		if ( isset( $map[ $path ] ) ) {
 			return (string) $map[ $path ];
 		}
 		return str_replace( '_', ' ', $leaf );
+	}
+
+	/**
+	 * Локализация заголовков групп/fieldset в дереве настроек.
+	 */
+	private static function localized_group_label_for_path( string $path, string $fallback_key ): string {
+		$map = array(
+			'step_1.address_form_styles'                 => __( 'Стили формы адреса и доставки (шаг 1)', 'mp-custom-checkout' ),
+			'step_4.contact_block'                       => __( 'Контактные данные (шаг 4)', 'mp-custom-checkout' ),
+			'step_4.contact_block.layout'                => __( 'Сетка полей контактов', 'mp-custom-checkout' ),
+			'step_4.contact_block.field_state_styles'    => __( 'Стили состояний полей контактов', 'mp-custom-checkout' ),
+			'step_4.contact_block.labels'                => __( 'Подписи полей контактов', 'mp-custom-checkout' ),
+			'step_4.contact_block.placeholders'          => __( 'Плейсхолдеры полей контактов', 'mp-custom-checkout' ),
+			'step_4.contact_block.hints'                 => __( 'Подсказки полей контактов', 'mp-custom-checkout' ),
+			'step_4.contact_block.validation_messages'   => __( 'Сообщения валидации контактов', 'mp-custom-checkout' ),
+			'step_4.contact_block.validation_constraints'=> __( 'Ограничения валидации контактов', 'mp-custom-checkout' ),
+			'step_4.contact_block.ajax_messages'         => __( 'AJAX-сообщения контактов', 'mp-custom-checkout' ),
+			'step_4.address_block'                       => __( 'Адрес доставки (шаг 4)', 'mp-custom-checkout' ),
+			'step_4.address_block.labels'                => __( 'Подписи полей адреса', 'mp-custom-checkout' ),
+			'step_4.address_block.subfields_visible'     => __( 'Видимость полей адреса', 'mp-custom-checkout' ),
+			'step_4.address_block.subfields_order'       => __( 'Порядок полей адреса', 'mp-custom-checkout' ),
+			'step_4.recipient_styles'                    => __( 'Стили шага 2: Получатель', 'mp-custom-checkout' ),
+		);
+		if ( isset( $map[ $path ] ) ) {
+			return (string) $map[ $path ];
+		}
+		return str_replace( '_', ' ', $fallback_key );
 	}
 
 	/**

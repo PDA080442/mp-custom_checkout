@@ -2434,7 +2434,7 @@
 		var focusStyle = trimNonEmpty(stateStyles.focus_style) || 'default';
 		var disabledStyle = trimNonEmpty(stateStyles.disabled_style) || 'default';
 		var html = '';
-		html += '<section class="mp-cc-contact mp-cc-contact--invalid-' + escapeHtml(invalidStyle) + ' mp-cc-contact--hint-' + escapeHtml(hintStyle) + ' mp-cc-contact--focus-' + escapeHtml(focusStyle) + ' mp-cc-contact--disabled-' + escapeHtml(disabledStyle) + '" aria-labelledby="mp-cc-contact-title">';
+		html += '<section class="mp-cc-contact mp-cc-contact--invalid-' + escapeHtml(invalidStyle) + ' mp-cc-contact--hint-' + escapeHtml(hintStyle) + ' mp-cc-contact--focus-' + escapeHtml(focusStyle) + ' mp-cc-contact--disabled-' + escapeHtml(disabledStyle) + '"' + buildRecipientStylesAttr(state) + ' aria-labelledby="mp-cc-contact-title">';
 		html += '<header class="mp-cc-contact__header">';
 		html += '<h3 class="mp-cc-contact__title" id="mp-cc-contact-title">' + escapeHtml(title) + '</h3>';
 		if (intro) {
@@ -3258,7 +3258,7 @@
 			return '';
 		}
 		var html = '';
-		html += '<section class="mp-cc-address" aria-labelledby="mp-cc-address-title">';
+		html += '<section class="mp-cc-address"' + buildRecipientStylesAttr(state) + ' aria-labelledby="mp-cc-address-title">';
 		html += '<header class="mp-cc-address__header">';
 		html += '<h3 class="mp-cc-address__title" id="mp-cc-address-title">' + escapeHtml(title) + '</h3>';
 		if (intro) {
@@ -3374,6 +3374,39 @@
 		html += '</div>';
 		html += '</section>';
 		return html;
+	}
+
+	function buildRecipientStylesAttr(state) {
+		var cfg = getStepFourConfig();
+		var styles = cfg.recipient_styles && typeof cfg.recipient_styles === 'object' ? cfg.recipient_styles : {};
+		var vars = {
+			'--mp-cc-contact-card-bg': styles.contact_card_bg,
+			'--mp-cc-contact-card-border': styles.contact_card_border,
+			'--mp-cc-contact-card-radius': styles.contact_card_radius,
+			'--mp-cc-contact-card-padding': styles.contact_card_padding,
+			'--mp-cc-contact-header-divider': styles.contact_header_divider,
+			'--mp-cc-contact-title-size': styles.contact_title_size,
+			'--mp-cc-contact-intro-size': styles.contact_intro_size,
+			'--mp-cc-contact-label-size': styles.contact_label_size,
+			'--mp-cc-contact-input-border': styles.contact_input_border,
+			'--mp-cc-contact-input-radius': styles.contact_input_radius,
+			'--mp-cc-address-card-bg': styles.address_card_bg,
+			'--mp-cc-address-card-border': styles.address_card_border,
+			'--mp-cc-address-card-radius': styles.address_card_radius,
+			'--mp-cc-address-card-padding': styles.address_card_padding,
+			'--mp-cc-address-header-divider': styles.address_header_divider,
+			'--mp-cc-address-title-size': styles.address_title_size,
+			'--mp-cc-address-intro-size': styles.address_intro_size
+		};
+		var out = [];
+		Object.keys(vars).forEach(function (key) {
+			var v = trimNonEmpty(vars[key]);
+			if (!v) {
+				return;
+			}
+			out.push(key + ': ' + v);
+		});
+		return out.length ? ' style="' + escapeHtml(out.join('; ')) + '"' : '';
 	}
 
 	function buildDiscountToolsHtml(state, opts) {
