@@ -8,10 +8,14 @@
 namespace MP\CustomCheckout\Frontend\Hooks;
 
 use MP\CustomCheckout\DependencyFailureGuard;
+use MP\CustomCheckout\Hooks\CheckoutRouteHooks;
 use MP\CustomCheckout\Routing\PickupPointRegistry;
+use MP\CustomCheckout\Integrations\WooCommerce\GiftCardIntegration;
 use MP\CustomCheckout\Routing\CheckoutScenarioRules;
 use MP\CustomCheckout\Settings\DefaultLabelsRegistry;
 use MP\CustomCheckout\Settings\FeatureFlagResolver;
+use MP\CustomCheckout\Settings\MotionSettingsResolver;
+use MP\CustomCheckout\Settings\OptionKeys;
 use MP\CustomCheckout\Settings\SafeSettingsResolver;
 use MP\CustomCheckout\Settings\ScenarioStepRegistry;
 
@@ -42,6 +46,8 @@ final class FrontendAssetsHooks {
 
 		wp_enqueue_style( self::HANDLE_STYLE, MP_CUSTOM_CHECKOUT_URL . 'assets/css/checkout-frontend.css', array(), $version );
 		wp_add_inline_style( self::HANDLE_STYLE, self::build_design_tokens_css() );
+		wp_add_inline_style( self::HANDLE_STYLE, self::build_checkout_layout_css() );
+		wp_add_inline_style( self::HANDLE_STYLE, self::build_motion_runtime_css() );
 
 		wp_enqueue_script( self::HANDLE_SCRIPT, MP_CUSTOM_CHECKOUT_URL . 'assets/js/checkout-frontend.js', self::script_dependencies(), $version, true );
 		$initial_context = isset( $GLOBALS['mp_cc_checkout_context'] ) && is_array( $GLOBALS['mp_cc_checkout_context'] )
@@ -73,9 +79,13 @@ final class FrontendAssetsHooks {
 				'scenarioUiConfig' => self::scenario_ui_config(),
 				'stepThreeConfig' => self::step_three_config(),
 				'stepFourConfig'  => self::step_four_config(),
+				'deliveryConfig'  => self::delivery_config(),
 				'pickupConfig' => PickupPointRegistry::config(),
 				'scenarioStepMap' => self::scenario_step_map(),
 				'designTokens' => self::design_tokens_for_runtime(),
+				'motion'       => self::motion_config_for_runtime(),
+				'paymentCardArt' => self::payment_card_art_urls(),
+				'giftCardIntegrationAvailable' => ( new GiftCardIntegration() )->is_pw_gift_cards_available(),
 			)
 		);
 		do_action( 'mp_custom_checkout_enqueue_frontend_assets' );
@@ -90,6 +100,38 @@ final class FrontendAssetsHooks {
 				wp_enqueue_style( $handle );
 			}
 		}
+	}
+
+	/**
+	 * URL иллюстраций для визуальных карточек способов оплаты (PNG в assets/images/payment).
+	 *
+	 * @return array<string, string>
+	 */
+	private static function payment_card_art_urls(): array {
+		$base = MP_CUSTOM_CHECKOUT_URL . 'assets/images/payment/';
+		$dir  = MP_CUSTOM_CHECKOUT_PATH . 'assets/images/payment/';
+		$map  = array(
+			'bank'      => 'bank-card-generic.png',
+			'generic'   => 'bank-card-generic.png',
+			'robokassa' => 'robokassa-card_without_bg.png',
+			'yookassa'  => 'yookassa-card-no-bg-preview.png',
+			'gift_card' => 'gift-card-peer.png',
+		);
+		$out = array();
+		foreach ( $map as $key => $file ) {
+			$path = $dir . $file;
+			if ( is_readable( $path ) ) {
+				$url = $base . $file;
+				$m   = (int) filemtime( $path );
+				if ( $m > 0 ) {
+					$url .= '?ver=' . (string) $m;
+				}
+				$out[ $key ] = $url;
+			} else {
+				$out[ $key ] = '';
+			}
+		}
+		return $out;
 	}
 
 	private static function asset_version( string $style_path, string $script_path ): string {
@@ -113,8 +155,12 @@ final class FrontendAssetsHooks {
 		if ( empty( $stored ) ) {
 			$stored = DefaultLabelsRegistry::all();
 		}
+		$defaults_all = DefaultLabelsRegistry::all();
+		$def_checkout = isset( $defaults_all['checkout'] ) && is_array( $defaults_all['checkout'] ) ? $defaults_all['checkout'] : array();
+		$stored_checkout = isset( $stored['checkout'] ) && is_array( $stored['checkout'] ) ? $stored['checkout'] : array();
 		return array(
 			'common'       => isset( $stored['common'] ) && is_array( $stored['common'] ) ? $stored['common'] : array(),
+			'checkout'     => array_merge( $def_checkout, $stored_checkout ),
 			'step_1'       => isset( $stored['step_1'] ) && is_array( $stored['step_1'] ) ? $stored['step_1'] : array(),
 			'step_2'       => isset( $stored['step_2'] ) && is_array( $stored['step_2'] ) ? $stored['step_2'] : array(),
 			'step_3'       => isset( $stored['step_3'] ) && is_array( $stored['step_3'] ) ? $stored['step_3'] : array(),
@@ -178,6 +224,11 @@ final class FrontendAssetsHooks {
 		return $config;
 	}
 
+	private static function delivery_config(): array {
+		$config = SafeSettingsResolver::get_section( 'delivery' );
+		return is_array( $config ) ? $config : array();
+	}
+
 	private static function available_payment_gateways_for_runtime(): array {
 		if ( ! function_exists( 'WC' ) || ! WC() ) {
 			return array();
@@ -186,7 +237,17 @@ final class FrontendAssetsHooks {
 		if ( ! $gateways instanceof \WC_Payment_Gateways ) {
 			return array();
 		}
-		$available = $gateways->get_available_payment_gateways();
+		$force_checkout = CheckoutRouteHooks::is_checkout_route();
+		if ( $force_checkout ) {
+			add_filter( 'woocommerce_is_checkout', '__return_true', PHP_INT_MAX );
+		}
+		try {
+			$available = $gateways->get_available_payment_gateways();
+		} finally {
+			if ( $force_checkout ) {
+				remove_filter( 'woocommerce_is_checkout', '__return_true', PHP_INT_MAX );
+			}
+		}
 		$result    = array();
 		foreach ( $available as $gateway ) {
 			if ( ! $gateway instanceof \WC_Payment_Gateway ) {
@@ -216,9 +277,53 @@ final class FrontendAssetsHooks {
 		return ':root{' . implode( '', $lines ) . '}';
 	}
 
+	private static function build_checkout_layout_css(): string {
+		$general   = SafeSettingsResolver::get_section( OptionKeys::SECTION_GENERAL );
+		$layout    = ( is_array( $general ) && isset( $general['checkout_layout'] ) && is_array( $general['checkout_layout'] ) ) ? $general['checkout_layout'] : array();
+		$max_width = isset( $layout['max_width'] ) ? self::sanitize_css_size_value( (string) $layout['max_width'] ) : '';
+		if ( '' === $max_width ) {
+			$max_width = '1140px';
+		}
+		return '#mp-cc-checkout{--mp-cc-shell-max-width:' . $max_width . ';}';
+	}
+
 	private static function sanitize_css_token_value( string $value ): string {
 		$value = trim( wp_strip_all_tags( $value ) );
 		$value = str_replace( array( ';', '{', '}', "\n", "\r", "\t" ), '', $value );
 		return $value;
+	}
+
+	private static function sanitize_css_size_value( string $value ): string {
+		$raw = self::sanitize_css_token_value( $value );
+		if ( '' === $raw ) {
+			return '';
+		}
+		if ( preg_match( '/^\d+(?:\.\d+)?$/', $raw ) ) {
+			return $raw . 'px';
+		}
+		if ( preg_match( '/^\d+(?:\.\d+)?(px|rem|em|vw|%)$/', $raw ) ) {
+			return $raw;
+		}
+		return '';
+	}
+
+	/**
+	 * Motion-конфиг для checkout SPA (валидированный снимок раздела motion).
+	 *
+	 * @return array<string, mixed>
+	 */
+	private static function motion_config_for_runtime(): array {
+		$raw = SafeSettingsResolver::get_section( OptionKeys::SECTION_MOTION );
+		if ( ! is_array( $raw ) ) {
+			$raw = array();
+		}
+		return MotionSettingsResolver::runtime_payload( $raw );
+	}
+
+	/**
+	 * CSS custom properties для #mp-cc-checkout (длительности и easing в безопасном виде).
+	 */
+	private static function build_motion_runtime_css(): string {
+		return MotionSettingsResolver::build_inline_css( self::motion_config_for_runtime() );
 	}
 }

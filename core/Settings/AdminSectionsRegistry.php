@@ -28,25 +28,25 @@ final class AdminSectionsRegistry {
 				'sort'        => 10,
 			),
 			OptionKeys::SECTION_STEP_1 => array(
-				'label'       => 'Шаг 1',
+				'label'       => 'Шаг 1: Адрес и доставка',
 				'storage_key' => OptionKeys::SECTION_STEP_1,
 				'type'        => 'tab',
 				'sort'        => 20,
 			),
 			OptionKeys::SECTION_STEP_2 => array(
-				'label'       => 'Шаг 2',
+				'label'       => 'Шаг 2: Получатель',
 				'storage_key' => OptionKeys::SECTION_STEP_2,
 				'type'        => 'tab',
 				'sort'        => 30,
 			),
 			OptionKeys::SECTION_STEP_3 => array(
-				'label'       => 'Шаг 3',
+				'label'       => 'Шаг 3: Оплата',
 				'storage_key' => OptionKeys::SECTION_STEP_3,
 				'type'        => 'tab',
 				'sort'        => 40,
 			),
 			OptionKeys::SECTION_STEP_4 => array(
-				'label'       => 'Шаг 4',
+				'label'       => 'Шаг 4: Подтвердить',
 				'storage_key' => OptionKeys::SECTION_STEP_4,
 				'type'        => 'tab',
 				'sort'        => 50,
@@ -62,6 +62,12 @@ final class AdminSectionsRegistry {
 				'storage_key' => OptionKeys::SECTION_STYLES,
 				'type'        => 'tab',
 				'sort'        => 70,
+			),
+			OptionKeys::SECTION_MOTION => array(
+				'label'       => 'Анимации',
+				'storage_key' => OptionKeys::SECTION_MOTION,
+				'type'        => 'tab',
+				'sort'        => 75,
 			),
 			OptionKeys::SECTION_SERVICE => array(
 				'label'       => 'Служебное',

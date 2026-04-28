@@ -65,8 +65,10 @@ final class AdminTabRegistry {
 				return __( 'Управление платежными методами, состояниями и текстами оплаты.', 'mp-custom-checkout' );
 			case 'styles':
 				return __( 'Визуальные токены, плотность интерфейса и адаптивное поведение.', 'mp-custom-checkout' );
+			case 'motion':
+				return __( 'Длительности, easing, отдельные правила для mobile/desktop и live-preview анимаций checkout.', 'mp-custom-checkout' );
 			case 'service':
-				return __( 'Служебные переключатели, диагностика и режимы поддержки.', 'mp-custom-checkout' );
+				return __( 'Служебные переключатели, диагностика, режимы поддержки и экспорт/импорт всей конфигурации плагина в JSON.', 'mp-custom-checkout' );
 			default:
 				return __( 'Параметры раздела checkout.', 'mp-custom-checkout' );
 		}
@@ -83,6 +85,8 @@ final class AdminTabRegistry {
 				return __( 'Здесь сосредоточены контактные данные, скидки и оплата — проверяйте сценарии особенно внимательно.', 'mp-custom-checkout' );
 			case 'styles':
 				return __( 'Стили лучше менять после финализации логики шагов, чтобы не дублировать работу.', 'mp-custom-checkout' );
+			case 'motion':
+				return __( 'Сначала выберите пресет или задайте длительности вручную, затем проверьте live-preview и сохраните.', 'mp-custom-checkout' );
 			default:
 				return __( 'Сначала обновите ключевые тексты, затем логику и только после этого визуальные параметры.', 'mp-custom-checkout' );
 		}

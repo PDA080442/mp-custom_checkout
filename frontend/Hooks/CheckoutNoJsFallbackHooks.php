@@ -19,7 +19,7 @@ final class CheckoutNoJsFallbackHooks {
 
 	public static function render( array $context ): void {
 		unset( $context );
-		echo '<div id="mp-cc-checkout-app" class="mp-cc-checkout__app" aria-live="polite"></div>';
+		echo '<div id="mp-cc-checkout-app" class="mp-cc-checkout__app" aria-live="off"></div>';
 		self::render_nojs_fallback();
 	}
 

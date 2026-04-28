@@ -122,6 +122,7 @@
 		var pc = window.mpCcAdmin && window.mpCcAdmin.pickupConfig ? window.mpCcAdmin.pickupConfig : {};
 		var points = pc.points && Array.isArray(pc.points) ? pc.points : [];
 		var point = points.length ? points[0] : null;
+		var mapWidget = pc.map_widget && typeof pc.map_widget === 'object' ? pc.map_widget : {};
 		return {
 			previewEnabled: Boolean(copy.admin_preview && copy.admin_preview.enabled !== false),
 			officeBlockTitle: String(pickup.office_block_title || ''),
@@ -134,7 +135,17 @@
 			showMultiOfficeSlot: pickup.show_multi_office_slot !== false,
 			pointTitle: point && point.title ? String(point.title) : '',
 			pointAddress: point && point.address ? String(point.address) : '',
-			pointDescription: point && point.description ? String(point.description) : ''
+			pointDescription: point && point.description ? String(point.description) : '',
+			mapEnabled: mapWidget.enabled !== false,
+			mapLat: Number(mapWidget.center_lat || 56.010563),
+			mapLng: Number(mapWidget.center_lng || 92.852572),
+			mapZoom: Number(mapWidget.zoom || 14),
+			mapMarkerLabel: String(mapWidget.marker_label || 'Пункт самовывоза'),
+			mapMarkerHint: String(mapWidget.marker_hint || 'Заберите заказ в рабочие часы.'),
+			mapFallbackTitle: String(mapWidget.fallback_title || 'Карта временно недоступна'),
+			mapFallbackMessage: String(mapWidget.fallback_message || 'Посмотрите адрес пункта самовывоза выше и постройте маршрут в приложении карт.'),
+			mapDesktopHeight: Number(mapWidget.desktop_height || 250),
+			mapMobileHeight: Number(mapWidget.mobile_height || 190)
 		};
 	}
 
@@ -142,7 +153,7 @@
 		var source = window.mpCcAdmin && window.mpCcAdmin.stepFourConfig ? window.mpCcAdmin.stepFourConfig : {};
 		var contact = source.contact_block || {};
 		var address = source.address_block || {};
-		var payment = source.payment_block || {};
+		var payment = source.payment_block && typeof source.payment_block === 'object' ? source.payment_block : {};
 		return {
 			previewEnabled: true,
 			contact: {
@@ -167,10 +178,13 @@
 			},
 			discountLayout: source.discount_layout && typeof source.discount_layout === 'object' ? source.discount_layout : { placement: 'step_4', separate_step_enabled: false, order: ['coupon'] },
 			discountStyles: source.discount_block_styles && typeof source.discount_block_styles === 'object' ? source.discount_block_styles : { state_empty: 'default', state_success: 'success', state_error: 'error', focus_style: 'default' },
-			payment: payment && typeof payment === 'object' ? payment : {
+			payment: $.extend(true, {
 				title: 'Способ оплаты',
 				intro: 'Выберите удобный способ оплаты.',
 				gateway_order: [],
+				card_surface: 'visual',
+				auto_classic_on_empty_gateway_fields: true,
+				decorative_card_fields: true,
 				card_style: 'default',
 				card_active_style: 'accent',
 				radio_style: 'default',
@@ -180,12 +194,49 @@
 				error_message: 'Выберите способ оплаты.',
 				messages: { loading: '', success: '', error: '' },
 				layout: { desktop_columns: 2, tablet_columns: 2, mobile_columns: 1, grid_gap: '0.6rem 0.75rem' },
-				diagnostics: { enabled: true }
-			},
-			coupon: source.coupon_block && typeof source.coupon_block === 'object' ? source.coupon_block : {},
+				diagnostics: { enabled: true },
+				summary_mini_review: {
+					enabled: true,
+					title: '',
+					intro: '',
+					method_label: '',
+					id_label: '',
+					state_loading: '',
+					state_success: '',
+					state_error: '',
+					show_gateway_id: false,
+					show_gateway_description: true
+				}
+			}, payment),
+			coupon: $.extend(true, {
+				title: 'Промокод',
+				intro: '',
+				input_label: 'Код купона',
+				placeholder: '',
+				apply_label: 'Применить',
+				empty_message: '',
+				success_message: '',
+				error_message: '',
+				allow_remove_applied: true,
+				summary_section_title: ''
+			}, source.coupon_block && typeof source.coupon_block === 'object' ? source.coupon_block : {}),
 			giftCard: source.gift_card_block && typeof source.gift_card_block === 'object' ? source.gift_card_block : {},
 			geoPreview: source.geo_preview && source.geo_preview.enabled !== false,
 			geo: source.address_geo && typeof source.address_geo === 'object' ? source.address_geo : {}
+		};
+	}
+
+	function getDeliveryConfigFromRuntime() {
+		var source = window.mpCcAdmin && window.mpCcAdmin.deliveryConfig ? window.mpCcAdmin.deliveryConfig : {};
+		var catalog = source.shipping_catalog && typeof source.shipping_catalog === 'object' ? source.shipping_catalog : {};
+		return {
+			shippingCatalog: {
+				sortOrder: Array.isArray(catalog.sort_order) ? catalog.sort_order : [],
+				methods: catalog.methods && typeof catalog.methods === 'object' ? catalog.methods : {},
+				errorCopy: catalog.error_copy && typeof catalog.error_copy === 'object' ? catalog.error_copy : {},
+				bulkUpdate: catalog.bulk_update && typeof catalog.bulk_update === 'object' ? catalog.bulk_update : { enabled: true, seasonal_delta_pct: 0, seasonal_delta_abs: 0, eta_suffix: '' },
+				preview: catalog.preview && typeof catalog.preview === 'object' ? catalog.preview : { enabled: true, mock_subtotal: 3670, mock_discount: 200, mock_tax: 160 }
+			}
 		};
 	}
 
@@ -204,6 +255,17 @@
 		cfg.convenienceHelper = readFormValue(p + '[convenience_helper]', cfg.convenienceHelper);
 		cfg.criticalNotice = readFormValue(p + '[critical_notice]', cfg.criticalNotice);
 		cfg.showMultiOfficeSlot = Boolean(readFormValue(p + '[show_multi_office_slot]', cfg.showMultiOfficeSlot));
+		var pm = 'mp_custom_checkout_settings[pickup][map_widget]';
+		cfg.mapEnabled = Boolean(readFormValue(pm + '[enabled]', cfg.mapEnabled));
+		cfg.mapLat = Number(readFormValue(pm + '[center_lat]', cfg.mapLat));
+		cfg.mapLng = Number(readFormValue(pm + '[center_lng]', cfg.mapLng));
+		cfg.mapZoom = Number(readFormValue(pm + '[zoom]', cfg.mapZoom));
+		cfg.mapMarkerLabel = readFormValue(pm + '[marker_label]', cfg.mapMarkerLabel);
+		cfg.mapMarkerHint = readFormValue(pm + '[marker_hint]', cfg.mapMarkerHint);
+		cfg.mapFallbackTitle = readFormValue(pm + '[fallback_title]', cfg.mapFallbackTitle);
+		cfg.mapFallbackMessage = readFormValue(pm + '[fallback_message]', cfg.mapFallbackMessage);
+		cfg.mapDesktopHeight = Number(readFormValue(pm + '[desktop_height]', cfg.mapDesktopHeight));
+		cfg.mapMobileHeight = Number(readFormValue(pm + '[mobile_height]', cfg.mapMobileHeight));
 		return cfg;
 	}
 
@@ -284,6 +346,26 @@
 			html += '</div>';
 		}
 		html += '<p class="mp-cc-pickup-office__helper">' + escapeHtml(helper) + '</p>';
+		if (cfg.mapEnabled) {
+			var mapLabel = trimNonEmptyAdmin(cfg.mapMarkerLabel) || 'Пункт самовывоза';
+			var mapHint = trimNonEmptyAdmin(cfg.mapMarkerHint) || 'Заберите заказ в рабочие часы.';
+			html += '<section class="mp-cc-pickup-map mp-cc-pickup-map--admin-preview">';
+			html += '<div class="mp-cc-pickup-map__canvas mp-cc-pickup-map__canvas--admin">';
+			html += '<div class="mp-cc-admin-preview__pickup-map">';
+			html += '<strong>Yandex Map preview</strong><br />';
+			html += '<span>center: ' + escapeHtml(String(cfg.mapLat) + ', ' + String(cfg.mapLng)) + '</span><br />';
+			html += '<span>zoom: ' + escapeHtml(String(cfg.mapZoom)) + '</span><br />';
+			html += '<span>marker: ' + escapeHtml(mapLabel) + '</span><br />';
+			html += '<span>hint: ' + escapeHtml(mapHint) + '</span><br />';
+			html += '<span>height: ' + escapeHtml(String(cfg.mapDesktopHeight)) + 'px / mobile ' + escapeHtml(String(cfg.mapMobileHeight)) + 'px</span>';
+			html += '</div>';
+			html += '</div>';
+			html += '<div class="mp-cc-pickup-map__fallback">';
+			html += '<p class="mp-cc-pickup-map__fallback-title">' + escapeHtml(trimNonEmptyAdmin(cfg.mapFallbackTitle) || 'Карта временно недоступна') + '</p>';
+			html += '<p class="mp-cc-pickup-map__fallback-message">' + escapeHtml(trimNonEmptyAdmin(cfg.mapFallbackMessage) || 'Посмотрите адрес пункта самовывоза выше и постройте маршрут в приложении карт.') + '</p>';
+			html += '</div>';
+			html += '</section>';
+		}
 		if (showMulti) {
 			html += '<div class="mp-cc-pickup-office__multi-slot" data-mp-cc-multi-office="1">';
 			html += '<span class="mp-cc-pickup-office__multi-slot-label">' + escapeHtml('Дополнительные точки самовывоза будут отображаться здесь при подключении.') + '</span>';
@@ -715,6 +797,356 @@
 		return html;
 	}
 
+	function renderDeliveryConfigPreview(cfg) {
+		var cat = cfg.shippingCatalog || {};
+		var methods = cat.methods && typeof cat.methods === 'object' ? cat.methods : {};
+		var sort = Array.isArray(cat.sortOrder) ? cat.sortOrder : Object.keys(methods);
+		var mockSubtotal = Number((cat.preview && cat.preview.mock_subtotal) || 3670);
+		var mockDiscount = Number((cat.preview && cat.preview.mock_discount) || 200);
+		var mockTax = Number((cat.preview && cat.preview.mock_tax) || 160);
+		var html = '';
+		html += '<section class="mp-cc-admin-preview mp-cc-admin-preview--delivery" id="mp-cc-admin-delivery-preview">';
+		html += '<h2>Shipping Catalog Preview</h2>';
+		html += '<p>Sort order: <code>' + escapeHtml(sort.join(', ')) + '</code></p>';
+		html += '<div class="mp-cc-admin-preview__date-grid">';
+		for (var i = 0; i < sort.length; i += 1) {
+			var id = String(sort[i] || '');
+			var method = methods[id] && typeof methods[id] === 'object' ? methods[id] : null;
+			if (!method || method.active === false) {
+				continue;
+			}
+			var price = Number(method.price || 0);
+			var total = Math.max(0, mockSubtotal - mockDiscount + mockTax + price);
+			html += '<article>';
+			html += '<strong>' + escapeHtml(String(method.title || id)) + '</strong>';
+			html += '<p>id: <code>' + escapeHtml(id) + '</code></p>';
+			html += '<p>price: ' + escapeHtml(String(Math.round(price))) + ' ₽, eta: ' + escapeHtml(String(method.eta || '—')) + '</p>';
+			html += '<p>requires address: ' + escapeHtml(method.requires_address ? 'yes' : 'no') + '</p>';
+			var vis = Array.isArray(method.visibility_scenarios) ? method.visibility_scenarios : [];
+			html += '<p>visibility_scenarios: <code>' + escapeHtml(vis.length ? vis.join(', ') : '(пусто — метод доступен при любом сценарии)') + '</code></p>';
+			if (method.tariffs && typeof method.tariffs === 'object') {
+				var tks = Object.keys(method.tariffs);
+				var tj;
+				for (tj = 0; tj < tks.length; tj += 1) {
+					var tk = tks[tj];
+					var trw = method.tariffs[tk] && typeof method.tariffs[tk] === 'object' ? method.tariffs[tk] : {};
+					if (trw.active === false) {
+						continue;
+					}
+					html += '<p class="mp-cc-admin-preview__tariff-line"><code>' + escapeHtml(tk) + '</code> — ' + escapeHtml(String(trw.title || '')) + ', ' + escapeHtml(String(Math.round(Number(trw.price || 0)))) + ' ₽, eta ' + escapeHtml(String(trw.eta || '—')) + '</p>';
+				}
+			}
+			html += '<p><strong>Preview total:</strong> ' + escapeHtml(String(Math.round(total))) + ' ₽</p>';
+			html += '</article>';
+		}
+		html += '</div>';
+		html += '<div class="mp-cc-admin-preview__date-errors">';
+		html += '<p><strong>Error copy method:</strong> ' + escapeHtml(String((cat.errorCopy && cat.errorCopy.method_unavailable) || '—')) + '</p>';
+		html += '<p><strong>Error copy tariff:</strong> ' + escapeHtml(String((cat.errorCopy && cat.errorCopy.tariff_unavailable) || '—')) + '</p>';
+		html += '</div>';
+		html += '<p><button type="button" class="button button-secondary" data-mp-cc-delivery-bulk-apply="1">Применить bulk update к ценам/ETA в форме</button></p>';
+		html += '</section>';
+		return html;
+	}
+
+	function applyDeliveryBulkUpdate(liveCfg) {
+		var cat = liveCfg.shippingCatalog || {};
+		var methods = cat.methods && typeof cat.methods === 'object' ? cat.methods : {};
+		var bulk = cat.bulkUpdate || {};
+		var pct = Number(bulk.seasonal_delta_pct || 0);
+		var abs = Number(bulk.seasonal_delta_abs || 0);
+		var suffix = String(bulk.eta_suffix || '').trim();
+		var p = 'mp_custom_checkout_settings[delivery][shipping_catalog][methods]';
+		var methodIds = Object.keys(methods);
+		for (var i = 0; i < methodIds.length; i += 1) {
+			var id = methodIds[i];
+			var m = methods[id] || {};
+			if (m.active === false) {
+				continue;
+			}
+			var nextPrice = Number(m.price || 0);
+			if (pct) {
+				nextPrice = nextPrice + (nextPrice * pct / 100);
+			}
+			if (abs) {
+				nextPrice += abs;
+			}
+			nextPrice = Math.max(0, Math.round(nextPrice));
+			writeFormValue(p + '[' + id + '][price]', String(nextPrice));
+			if (suffix) {
+				var eta = String(m.eta || '');
+				var nextEta = eta.indexOf(suffix) > -1 ? eta : (eta ? eta + ' ' + suffix : suffix);
+				writeFormValue(p + '[' + id + '][eta]', nextEta);
+			}
+		}
+	}
+
+	function validateDeliveryConfigConsistency(cfg) {
+		var errors = [];
+		var allowedScenarios = { pickup: true, krasnoyarsk_delivery: true, other_city_delivery: true };
+		var cat = cfg.shippingCatalog || {};
+		var methods = cat.methods && typeof cat.methods === 'object' ? cat.methods : {};
+		var sort = Array.isArray(cat.sortOrder) ? cat.sortOrder : [];
+		for (var i = 0; i < sort.length; i += 1) {
+			if (!methods[sort[i]]) {
+				errors.push('sort_order содержит неизвестный метод: ' + sort[i]);
+			}
+		}
+		var methodIds = Object.keys(methods);
+		for (var m = 0; m < methodIds.length; m += 1) {
+			var id = methodIds[m];
+			var method = methods[id] || {};
+			if (method.active !== false && !String(method.title || '').trim()) {
+				errors.push('Пустое название у активного метода: ' + id);
+			}
+			if (Number(method.price || 0) < 0) {
+				errors.push('Отрицательная цена у метода: ' + id);
+			}
+			if (Array.isArray(method.visibility_scenarios)) {
+				for (var si = 0; si < method.visibility_scenarios.length; si += 1) {
+					var sc = String(method.visibility_scenarios[si] || '').trim();
+					if (!sc) {
+						continue;
+					}
+					if (!allowedScenarios[sc]) {
+						errors.push('Неизвестный сценарий в visibility_scenarios у метода «' + id + '»: ' + sc + ' (допустимо: pickup, krasnoyarsk_delivery, other_city_delivery)');
+					}
+				}
+			}
+			if (method.tariffs && typeof method.tariffs === 'object') {
+				var tariffKeys = Object.keys(method.tariffs);
+				var ti;
+				for (ti = 0; ti < tariffKeys.length; ti += 1) {
+					var tid = tariffKeys[ti];
+					var tr = method.tariffs[tid] && typeof method.tariffs[tid] === 'object' ? method.tariffs[tid] : {};
+					if (tr.active !== false && !String(tr.title || '').trim()) {
+						errors.push('Пустое название у активного тарифа «' + tid + '» (метод ' + id + ')');
+					}
+					if (Number(tr.price || 0) < 0) {
+						errors.push('Отрицательная цена у тарифа «' + tid + '» (метод ' + id + ')');
+					}
+				}
+			}
+		}
+		return errors;
+	}
+
+	var DELIVERY_STUDIO_CATALOG = 'mp_custom_checkout_settings[delivery][shipping_catalog]';
+
+	function deliveryStudioNotifyForm(name) {
+		var $f = $('[name="' + name + '"]').first();
+		if ($f.length) {
+			$f.trigger('input').trigger('change');
+		}
+	}
+
+	function readDeliverySortOrderArray() {
+		var raw = String(readFormValue(DELIVERY_STUDIO_CATALOG + '[sort_order]', '') || '');
+		var arr = raw.split(',').map(function (s) {
+			return String(s || '').trim();
+		}).filter(Boolean);
+		var base = getDeliveryConfigFromRuntime();
+		var live = readLiveDeliveryConfig(base);
+		var methods = live.shippingCatalog && live.shippingCatalog.methods ? live.shippingCatalog.methods : {};
+		var out = [];
+		var seen = {};
+		var i;
+		var id;
+		for (i = 0; i < arr.length; i += 1) {
+			id = arr[i];
+			if (methods[id] && !seen[id]) {
+				seen[id] = true;
+				out.push(id);
+			}
+		}
+		var keys = Object.keys(methods);
+		for (i = 0; i < keys.length; i += 1) {
+			id = keys[i];
+			if (!seen[id]) {
+				seen[id] = true;
+				out.push(id);
+			}
+		}
+		return out;
+	}
+
+	function writeDeliverySortOrderArray(order) {
+		writeFormValue(DELIVERY_STUDIO_CATALOG + '[sort_order]', order.join(', '));
+		deliveryStudioNotifyForm(DELIVERY_STUDIO_CATALOG + '[sort_order]');
+	}
+
+	function mountDeliveryStudioPanel() {
+		var section = detectActiveSettingsSection();
+		var $fields = $('.mp-cc-admin-shell__fields').first();
+		if (section !== 'delivery' || !$fields.length) {
+			$('#mp-cc-delivery-studio').remove();
+			return;
+		}
+		if (!$('[name^="mp_custom_checkout_settings[delivery]"]').length) {
+			return;
+		}
+		var base = getDeliveryConfigFromRuntime();
+		var live = readLiveDeliveryConfig(base);
+		var cat = live.shippingCatalog || {};
+		var methods = cat.methods && typeof cat.methods === 'object' ? cat.methods : {};
+		var displaySort = readDeliverySortOrderArray();
+		var html = '';
+		html += '<div id="mp-cc-delivery-studio" class="mp-cc-delivery-studio">';
+		html += '<header class="mp-cc-delivery-studio__head">';
+		html += '<h3 class="mp-cc-delivery-studio__title">Каталог доставки</h3>';
+		html += '<p class="mp-cc-delivery-studio__lead">Порядок способов синхронизируется с полем <code>sort_order</code>. Тарифы курьера и ПВЗ — с соответствующими полями формы. Дополнительные позиции используют резервные слоты <code>slot_1</code> / <code>slot_2</code> (так сохранение совместимо с деревом настроек).</p>';
+		html += '</header>';
+		html += '<section class="mp-cc-delivery-studio__block">';
+		html += '<h4>Порядок на витрине</h4>';
+		html += '<ol class="mp-cc-delivery-studio__sort-list">';
+		var i;
+		for (i = 0; i < displaySort.length; i += 1) {
+			var mid = String(displaySort[i] || '');
+			if (!mid || !methods[mid]) {
+				continue;
+			}
+			var mm = methods[mid];
+			var label = String(mm.title || mid);
+			var inactive = mm.active === false;
+			html += '<li class="mp-cc-delivery-studio__sort-item"' + (inactive ? ' data-inactive="1"' : '') + '>';
+			html += '<span class="mp-cc-delivery-studio__sort-label">' + escapeHtml(label) + ' <code>' + escapeHtml(mid) + '</code></span>';
+			html += '<span class="mp-cc-delivery-studio__sort-actions">';
+			html += '<button type="button" class="button button-small" data-mp-cc-delivery-sort-up="' + escapeHtml(mid) + '"' + (i === 0 ? ' disabled' : '') + '>↑</button>';
+			html += '<button type="button" class="button button-small" data-mp-cc-delivery-sort-down="' + escapeHtml(mid) + '"' + (i >= displaySort.length - 1 ? ' disabled' : '') + '>↓</button>';
+			html += '</span></li>';
+		}
+		html += '</ol></section>';
+		var tariffMethods = ['courier', 'pvz'];
+		for (var tm = 0; tm < tariffMethods.length; tm += 1) {
+			var methodId = tariffMethods[tm];
+			var method = methods[methodId];
+			if (!method || !method.tariffs || typeof method.tariffs !== 'object') {
+				continue;
+			}
+			html += '<section class="mp-cc-delivery-studio__block">';
+			html += '<h4>Тарифы: ' + escapeHtml(String(method.title || methodId)) + ' <code>' + escapeHtml(methodId) + '</code></h4>';
+			html += '<table class="mp-cc-delivery-studio__tariff-table"><thead><tr><th>ID</th><th>Название</th><th>Цена</th><th>ETA</th><th>Активен</th><th></th></tr></thead><tbody>';
+			var tariffIds = Object.keys(method.tariffs);
+			var ti2;
+			for (ti2 = 0; ti2 < tariffIds.length; ti2 += 1) {
+				var tariffId = tariffIds[ti2];
+				var tr = method.tariffs[tariffId] && typeof method.tariffs[tariffId] === 'object' ? method.tariffs[tariffId] : {};
+				var isSlot = tariffId === 'slot_1' || tariffId === 'slot_2';
+				var active = tr.active !== false;
+				html += '<tr>';
+				html += '<td><code>' + escapeHtml(tariffId) + '</code></td>';
+				html += '<td><input type="text" class="regular-text mp-cc-delivery-studio__input" data-mp-cc-tariff-field="title" data-method="' + escapeHtml(methodId) + '" data-tariff="' + escapeHtml(tariffId) + '" value="' + escapeHtml(String(tr.title || '')) + '" /></td>';
+				html += '<td><input type="number" min="0" step="1" class="small-text mp-cc-delivery-studio__input" data-mp-cc-tariff-field="price" data-method="' + escapeHtml(methodId) + '" data-tariff="' + escapeHtml(tariffId) + '" value="' + escapeHtml(String(Math.max(0, Math.round(Number(tr.price || 0))))) + '" /></td>';
+				html += '<td><input type="text" class="regular-text mp-cc-delivery-studio__input" data-mp-cc-tariff-field="eta" data-method="' + escapeHtml(methodId) + '" data-tariff="' + escapeHtml(tariffId) + '" value="' + escapeHtml(String(tr.eta || '')) + '" /></td>';
+				html += '<td><label class="mp-cc-delivery-studio__check"><input type="checkbox" data-mp-cc-tariff-field="active" data-method="' + escapeHtml(methodId) + '" data-tariff="' + escapeHtml(tariffId) + '"' + (active ? ' checked' : '') + ' /> да</label></td>';
+				html += '<td>';
+				if (isSlot) {
+					if (active) {
+						html += '<button type="button" class="button button-small" data-mp-cc-tariff-slot-off="' + escapeHtml(methodId) + '" data-tariff="' + escapeHtml(tariffId) + '">Очистить слот</button>';
+					} else {
+						html += '<button type="button" class="button button-small button-primary" data-mp-cc-tariff-slot-on="' + escapeHtml(methodId) + '" data-tariff="' + escapeHtml(tariffId) + '">Включить слот</button>';
+					}
+				} else {
+					html += '<span class="description">базовый</span>';
+				}
+				html += '</td></tr>';
+			}
+			html += '</tbody></table></section>';
+		}
+		html += '</div>';
+		var $existing = $('#mp-cc-delivery-studio');
+		if ($existing.length) {
+			$existing.replaceWith(html);
+		} else {
+			$fields.prepend(html);
+		}
+	}
+
+	var deliveryStudioInteractionsBound = false;
+
+	function bindDeliveryStudioInteractions() {
+		if (deliveryStudioInteractionsBound) {
+			return;
+		}
+		deliveryStudioInteractionsBound = true;
+		$(document).on('click', '[data-mp-cc-delivery-sort-up]', function () {
+			var mid = String($(this).attr('data-mp-cc-delivery-sort-up') || '');
+			var order = readDeliverySortOrderArray();
+			var idx = order.indexOf(mid);
+			if (idx <= 0) {
+				return;
+			}
+			var prev = order[idx - 1];
+			order[idx - 1] = mid;
+			order[idx] = prev;
+			writeDeliverySortOrderArray(order);
+			mountDeliveryStudioPanel();
+		});
+		$(document).on('click', '[data-mp-cc-delivery-sort-down]', function () {
+			var mid = String($(this).attr('data-mp-cc-delivery-sort-down') || '');
+			var order = readDeliverySortOrderArray();
+			var idx = order.indexOf(mid);
+			if (idx < 0 || idx >= order.length - 1) {
+				return;
+			}
+			var nxt = order[idx + 1];
+			order[idx + 1] = mid;
+			order[idx] = nxt;
+			writeDeliverySortOrderArray(order);
+			mountDeliveryStudioPanel();
+		});
+		$(document).on('input change', '#mp-cc-delivery-studio [data-mp-cc-tariff-field]', function () {
+			var $el = $(this);
+			var field = String($el.attr('data-mp-cc-tariff-field') || '');
+			var methodId = String($el.attr('data-method') || '');
+			var tariffId = String($el.attr('data-tariff') || '');
+			if (!field || !methodId || !tariffId) {
+				return;
+			}
+			var name = DELIVERY_STUDIO_CATALOG + '[methods][' + methodId + '][tariffs][' + tariffId + '][' + field + ']';
+			if (field === 'active') {
+				writeFormValue(name, $el.is(':checked'));
+			} else {
+				writeFormValue(name, $el.val());
+			}
+			deliveryStudioNotifyForm(name);
+		});
+		$(document).on('click', '[data-mp-cc-tariff-slot-on]', function () {
+			var methodId = String($(this).attr('data-mp-cc-tariff-slot-on') || '');
+			var tariffId = String($(this).attr('data-tariff') || '');
+			if (!methodId || !tariffId) {
+				return;
+			}
+			var basePath = DELIVERY_STUDIO_CATALOG + '[methods][' + methodId + '][tariffs][' + tariffId + ']';
+			writeFormValue(basePath + '[active]', true);
+			writeFormValue(basePath + '[title]', 'Доп. тариф');
+			writeFormValue(basePath + '[price]', '0');
+			writeFormValue(basePath + '[eta]', '');
+			deliveryStudioNotifyForm(basePath + '[active]');
+			mountDeliveryStudioPanel();
+		});
+		$(document).on('click', '[data-mp-cc-tariff-slot-off]', function () {
+			var methodId = String($(this).attr('data-mp-cc-tariff-slot-off') || '');
+			var tariffId = String($(this).attr('data-tariff') || '');
+			if (!methodId || !tariffId) {
+				return;
+			}
+			var basePath = DELIVERY_STUDIO_CATALOG + '[methods][' + methodId + '][tariffs][' + tariffId + ']';
+			writeFormValue(basePath + '[active]', false);
+			writeFormValue(basePath + '[title]', '');
+			writeFormValue(basePath + '[price]', '0');
+			writeFormValue(basePath + '[eta]', '');
+			deliveryStudioNotifyForm(basePath + '[active]');
+			mountDeliveryStudioPanel();
+		});
+	}
+
+	function refreshDeliveryAdminUi() {
+		enhanceDeliveryFields();
+		bindDeliveryStudioInteractions();
+		mountDeliveryStudioPanel();
+	}
+
 	function renderStepFourPreview(cfg, previewState) {
 		var order = Array.isArray(cfg.contact.fieldOrder) ? cfg.contact.fieldOrder : [];
 		var runtimeState = previewState && previewState.runtimeState ? String(previewState.runtimeState) : 'default';
@@ -781,20 +1213,58 @@
 		html += '<div class="mp-cc-admin-preview__date-rules">';
 		html += '<p><strong>Coupon placement:</strong> ' + escapeHtml(String(cfg.discountLayout.placement || 'step_4')) + ', separate-step ready=' + escapeHtml(cfg.discountLayout.separate_step_enabled ? 'yes' : 'no') + '</p>';
 		html += '<p><strong>Discount styles:</strong> empty=' + escapeHtml(String(cfg.discountStyles.state_empty || 'default')) + ', success=' + escapeHtml(String(cfg.discountStyles.state_success || 'success')) + ', error=' + escapeHtml(String(cfg.discountStyles.state_error || 'error')) + '</p>';
-		html += '<p><strong>Payment block:</strong> title="' + escapeHtml(String(cfg.payment.title || 'Способ оплаты')) + '", style=' + escapeHtml(String(cfg.payment.card_style || 'default')) + ', description=' + escapeHtml(cfg.payment.show_description === false ? 'off' : 'on') + '</p>';
+		html += '<p><strong>Payment block:</strong> title="' + escapeHtml(String(cfg.payment.title || 'Способ оплаты')) + '", surface=' + escapeHtml(String(cfg.payment.card_surface || 'visual')) + ', auto_classic_if_empty=' + escapeHtml(cfg.payment.auto_classic_on_empty_gateway_fields === false ? 'off' : 'on') + ', decorative=' + escapeHtml(cfg.payment.decorative_card_fields === false ? 'off' : 'on') + ', style=' + escapeHtml(String(cfg.payment.card_style || 'default')) + ', description=' + escapeHtml(cfg.payment.show_description === false ? 'off' : 'on') + '</p>';
 		html += '<p><strong>Payment states:</strong> loading="' + escapeHtml(String((cfg.payment.messages && cfg.payment.messages.loading) || '—')) + '", success="' + escapeHtml(String((cfg.payment.messages && cfg.payment.messages.success) || '—')) + '", error="' + escapeHtml(String((cfg.payment.messages && cfg.payment.messages.error) || '—')) + '"</p>';
 		html += '<p><strong>Payment diagnostics:</strong> ' + escapeHtml(cfg.payment.diagnostics && cfg.payment.diagnostics.enabled === false ? 'off' : 'on') + '</p>';
+		var smrCfg = cfg.payment.summary_mini_review && typeof cfg.payment.summary_mini_review === 'object' ? cfg.payment.summary_mini_review : {};
+		html += '<p><strong>Summary mini-review:</strong> enabled=' + escapeHtml(smrCfg.enabled === false ? 'off' : 'on') + ', show_gateway_id=' + escapeHtml(smrCfg.show_gateway_id ? 'on' : 'off') + ', show_description=' + escapeHtml(smrCfg.show_gateway_description === false ? 'off' : 'on') + '</p>';
 		html += '</div>';
+		html += '<div class="mp-cc-admin-preview__date-grid mp-cc-admin-step4-sidebar-mock">';
+		html += '<article class="mp-cc-admin-sidebar-mock">';
+		html += '<strong>Превью: правая колонка (промо + итоги + оплата)</strong>';
+		html += '<p>coupon <code>allow_remove_applied</code>=' + escapeHtml(cfg.coupon.allow_remove_applied === false ? 'off' : 'on') + ', <code>summary_section_title</code>=' + escapeHtml(trimNonEmptyAdmin(cfg.coupon.summary_section_title) || '—') + '</p>';
+		html += '<div class="mp-cc-admin-sidebar-mock__card">';
+		html += '<p class="mp-cc-admin-sidebar-mock__pret">' + escapeHtml(trimNonEmptyAdmin(cfg.coupon.summary_section_title) || 'Промокоды и скидки') + '</p>';
+		html += '<div class="mp-cc-admin-sidebar-mock__chiprow"><span class="mp-cc-admin-sidebar-mock__chip">PROMO10: −500 ₽</span><span class="mp-cc-admin-sidebar-mock__x">×</span></div>';
+		html += '<div class="mp-cc-admin-sidebar-mock__chiprow"><span class="mp-cc-admin-sidebar-mock__chip">Подарочная карта: −200 ₽</span></div>';
+		html += '<p class="mp-cc-admin-sidebar-mock__pret">Итоги</p>';
+		html += '<p class="mp-cc-admin-sidebar-mock__row">Подытог: <strong>3 670 ₽</strong></p>';
+		html += '<p class="mp-cc-admin-sidebar-mock__row">Итого: <strong>2 970 ₽</strong></p>';
+		html += '<div class="mp-cc-admin-sidebar-mock__mini">';
+		html += '<p class="mp-cc-admin-sidebar-mock__mint">' + escapeHtml(trimNonEmptyAdmin(smrCfg.title) || 'Способ оплаты') + '</p>';
+		html += '<p class="mp-cc-admin-sidebar-mock__minm">' + escapeHtml(trimNonEmptyAdmin(smrCfg.intro) || 'Выбранный метод проведения платежа.') + '</p>';
+		html += '<p class="mp-cc-admin-sidebar-mock__minl"><span>Метод</span> <strong>Банковская карта</strong></p>';
+		if (smrCfg.show_gateway_id) {
+			html += '<p class="mp-cc-admin-sidebar-mock__minl mp-cc-admin-sidebar-mock__minl--muted"><span>Код</span> <code>card_gateway</code></p>';
+		}
+		html += '<p class="mp-cc-admin-sidebar-mock__minst">' + escapeHtml(trimNonEmptyAdmin(smrCfg.state_loading) || 'Сохраняем выбор…') + '</p>';
+		html += '</div></div></article></div>';
 		html += '<div class="mp-cc-admin-preview__date-grid">';
 		html += '<article>';
-		html += '<strong>' + escapeHtml(String(cfg.coupon.title || cfg.giftCard.title || 'Подарочная карта')) + '</strong>';
-		html += '<p>' + escapeHtml(String(cfg.coupon.intro || cfg.giftCard.intro || '')) + '</p>';
-		html += '<p>Label: ' + escapeHtml(String(cfg.coupon.input_label || cfg.giftCard.input_label || 'Код подарочной карты')) + '</p>';
+		html += '<strong>' + escapeHtml(String(cfg.coupon.title || cfg.giftCard.title || 'Промокод (купон WooCommerce)')) + '</strong>';
+		html += '<p>' + escapeHtml(String(trimNonEmptyAdmin(cfg.coupon.intro) || 'Введите промокод.')) + '</p>';
+		html += '<p>Label: ' + escapeHtml(String(cfg.coupon.input_label || cfg.giftCard.input_label || 'Промокод')) + '</p>';
 		html += '<p>Placeholder: ' + escapeHtml(String(cfg.coupon.placeholder || cfg.giftCard.placeholder || '')) + '</p>';
 		html += '<p><em>States:</em> empty="' + escapeHtml(String(cfg.coupon.empty_message || cfg.giftCard.empty_message || '')) + '", success="' + escapeHtml(String(cfg.coupon.success_message || cfg.giftCard.success_message || '')) + '", error="' + escapeHtml(String(cfg.coupon.error_message || cfg.giftCard.error_message || '')) + '"</p>';
-		html += '<p><em>Одно поле на шаге 4:</em> тексты из <code>coupon_block</code>, при пустых полях подставляются из <code>gift_card_block</code>.</p>';
+		html += '<p><em>Нижнее поле на шаге оплаты:</em> <code>coupon_block</code> — промокод (купоны WC). Текст подсказки промокода не подставляется из подарочной карты. Карточка «Подарок» — только <code>gift_card_block</code> (Pimwick и т.п.).</p>';
 		html += '</article>';
 		html += '</div>';
+		html += '<div class="mp-cc-admin-preview__date-grid">';
+		html += '<article class="mp-cc-admin-gift-peer-preview">';
+		html += '<strong>Превью: подарочная карта рядом с оплатой</strong>';
+		html += '<p>Карточный UI: <code>gift_card_block.peer_next_to_payment</code>=' + escapeHtml(cfg.giftCard.peer_next_to_payment === false ? 'off' : 'on') + ', <code>allow_remove_applied</code>=' + escapeHtml(cfg.giftCard.allow_remove_applied === false ? 'off' : 'on') + '</p>';
+		var gTitle = trimNonEmptyAdmin(cfg.giftCard.card_title) || trimNonEmptyAdmin(cfg.giftCard.title) || 'Подарочная карта';
+		var gSub = trimNonEmptyAdmin(cfg.giftCard.card_subtitle) || trimNonEmptyAdmin(cfg.giftCard.intro) || 'Введите код подарочной карты.';
+		html += '<div class="mp-cc-admin-gift-peer-preview__mock" aria-hidden="true">';
+		html += '<div class="mp-cc-admin-gift-peer-preview__shell"><span class="mp-cc-admin-gift-peer-preview__badge">Подарок</span>';
+		html += '<p class="mp-cc-admin-gift-peer-preview__t">' + escapeHtml(gTitle) + '</p>';
+		html += '<p class="mp-cc-admin-gift-peer-preview__s">' + escapeHtml(gSub) + '</p></div>';
+		html += '<div class="mp-cc-admin-gift-peer-preview__inlay">';
+		html += '<span class="mp-cc-admin-gift-peer-preview__ph"></span>';
+		html += '<span class="mp-cc-admin-gift-peer-preview__btn">' + escapeHtml(trimNonEmptyAdmin(cfg.giftCard.apply_label) || 'Применить') + '</span>';
+		html += '</div></div>';
+		html += '<p class="mp-cc-admin-preview__muted"><code>card_title</code> / <code>card_subtitle</code> / <code>unavailable_message</code> — опционально; пустые значения берутся из основных полей блока.</p>';
+		html += '</article></div>';
 		html += '<div class="mp-cc-admin-preview__date-grid">';
 		html += '<article>';
 		html += '<strong>Payment preview: loading</strong>';
@@ -829,14 +1299,28 @@
 	}
 
 	function readFormValue(name, fallback) {
+		var $checkbox = $('[name="' + name + '"]').filter('[type="checkbox"]');
+		if ($checkbox.length) {
+			return $checkbox.is(':checked');
+		}
 		var $field = $('[name="' + name + '"]').first();
 		if (!$field.length) {
 			return fallback;
 		}
-		if ($field.is(':checkbox')) {
-			return $field.is(':checked');
-		}
 		return String($field.val() || '');
+	}
+
+	function writeFormValue(name, value) {
+		var $checkbox = $('[name="' + name + '"]').filter('[type="checkbox"]');
+		if ($checkbox.length) {
+			$checkbox.prop('checked', Boolean(value));
+			return;
+		}
+		var $field = $('[name="' + name + '"]').first();
+		if (!$field.length) {
+			return;
+		}
+		$field.val(String(value == null ? '' : value));
 	}
 
 	function readLiveConfig(baseConfig) {
@@ -955,6 +1439,9 @@
 		var py = 'mp_custom_checkout_settings[step_4][payment_block]';
 		cfg.payment.title = readFormValue(py + '[title]', cfg.payment.title || 'Способ оплаты');
 		cfg.payment.intro = readFormValue(py + '[intro]', cfg.payment.intro || 'Выберите удобный способ оплаты.');
+		cfg.payment.card_surface = readFormValue(py + '[card_surface]', cfg.payment.card_surface || 'visual');
+		cfg.payment.auto_classic_on_empty_gateway_fields = Boolean(readFormValue(py + '[auto_classic_on_empty_gateway_fields]', cfg.payment.auto_classic_on_empty_gateway_fields !== false));
+		cfg.payment.decorative_card_fields = Boolean(readFormValue(py + '[decorative_card_fields]', cfg.payment.decorative_card_fields !== false));
 		cfg.payment.card_style = readFormValue(py + '[card_style]', cfg.payment.card_style || 'default');
 		cfg.payment.show_description = Boolean(readFormValue(py + '[show_description]', cfg.payment.show_description !== false));
 		cfg.payment.required = Boolean(readFormValue(py + '[required]', cfg.payment.required !== false));
@@ -976,6 +1463,18 @@
 		cfg.payment.messages.error = readFormValue(py + '[messages][error]', cfg.payment.messages.error || 'Не удалось переключить способ оплаты.');
 		cfg.payment.diagnostics = cfg.payment.diagnostics && typeof cfg.payment.diagnostics === 'object' ? cfg.payment.diagnostics : {};
 		cfg.payment.diagnostics.enabled = Boolean(readFormValue(py + '[diagnostics][enabled]', cfg.payment.diagnostics.enabled !== false));
+		var mrPath = py + '[summary_mini_review]';
+		cfg.payment.summary_mini_review = cfg.payment.summary_mini_review && typeof cfg.payment.summary_mini_review === 'object' ? cfg.payment.summary_mini_review : {};
+		cfg.payment.summary_mini_review.enabled = Boolean(readFormValue(mrPath + '[enabled]', cfg.payment.summary_mini_review.enabled !== false));
+		cfg.payment.summary_mini_review.title = readFormValue(mrPath + '[title]', cfg.payment.summary_mini_review.title || '');
+		cfg.payment.summary_mini_review.intro = readFormValue(mrPath + '[intro]', cfg.payment.summary_mini_review.intro || '');
+		cfg.payment.summary_mini_review.method_label = readFormValue(mrPath + '[method_label]', cfg.payment.summary_mini_review.method_label || '');
+		cfg.payment.summary_mini_review.id_label = readFormValue(mrPath + '[id_label]', cfg.payment.summary_mini_review.id_label || '');
+		cfg.payment.summary_mini_review.state_loading = readFormValue(mrPath + '[state_loading]', cfg.payment.summary_mini_review.state_loading || '');
+		cfg.payment.summary_mini_review.state_success = readFormValue(mrPath + '[state_success]', cfg.payment.summary_mini_review.state_success || '');
+		cfg.payment.summary_mini_review.state_error = readFormValue(mrPath + '[state_error]', cfg.payment.summary_mini_review.state_error || '');
+		cfg.payment.summary_mini_review.show_gateway_id = Boolean(readFormValue(mrPath + '[show_gateway_id]', cfg.payment.summary_mini_review.show_gateway_id === true));
+		cfg.payment.summary_mini_review.show_gateway_description = Boolean(readFormValue(mrPath + '[show_gateway_description]', cfg.payment.summary_mini_review.show_gateway_description !== false));
 		var cp = 'mp_custom_checkout_settings[step_4][coupon_block]';
 		cfg.coupon.title = readFormValue(cp + '[title]', cfg.coupon.title || 'Подарочная карта');
 		cfg.coupon.intro = readFormValue(cp + '[intro]', cfg.coupon.intro || '');
@@ -985,6 +1484,8 @@
 		cfg.coupon.empty_message = readFormValue(cp + '[empty_message]', cfg.coupon.empty_message || '');
 		cfg.coupon.success_message = readFormValue(cp + '[success_message]', cfg.coupon.success_message || '');
 		cfg.coupon.error_message = readFormValue(cp + '[error_message]', cfg.coupon.error_message || '');
+		cfg.coupon.allow_remove_applied = Boolean(readFormValue(cp + '[allow_remove_applied]', cfg.coupon.allow_remove_applied !== false));
+		cfg.coupon.summary_section_title = readFormValue(cp + '[summary_section_title]', cfg.coupon.summary_section_title || '');
 		var gc = 'mp_custom_checkout_settings[step_4][gift_card_block]';
 		cfg.giftCard.title = readFormValue(gc + '[title]', cfg.giftCard.title || 'Подарочная карта');
 		cfg.giftCard.intro = readFormValue(gc + '[intro]', cfg.giftCard.intro || '');
@@ -994,6 +1495,60 @@
 		cfg.giftCard.empty_message = readFormValue(gc + '[empty_message]', cfg.giftCard.empty_message || '');
 		cfg.giftCard.success_message = readFormValue(gc + '[success_message]', cfg.giftCard.success_message || '');
 		cfg.giftCard.error_message = readFormValue(gc + '[error_message]', cfg.giftCard.error_message || '');
+		cfg.giftCard.peer_next_to_payment = Boolean(readFormValue(gc + '[peer_next_to_payment]', cfg.giftCard.peer_next_to_payment !== false));
+		cfg.giftCard.allow_remove_applied = Boolean(readFormValue(gc + '[allow_remove_applied]', cfg.giftCard.allow_remove_applied !== false));
+		cfg.giftCard.card_title = readFormValue(gc + '[card_title]', cfg.giftCard.card_title || '');
+		cfg.giftCard.card_subtitle = readFormValue(gc + '[card_subtitle]', cfg.giftCard.card_subtitle || '');
+		cfg.giftCard.unavailable_message = readFormValue(gc + '[unavailable_message]', cfg.giftCard.unavailable_message || '');
+		return cfg;
+	}
+
+	function readLiveDeliveryConfig(base) {
+		var cfg = $.extend(true, {}, base);
+		var p = 'mp_custom_checkout_settings[delivery][shipping_catalog]';
+		var methods = cfg.shippingCatalog.methods && typeof cfg.shippingCatalog.methods === 'object' ? cfg.shippingCatalog.methods : {};
+		var methodIds = Object.keys(methods);
+		for (var i = 0; i < methodIds.length; i += 1) {
+			var id = methodIds[i];
+			var mPath = p + '[methods][' + id + ']';
+			methods[id].title = readFormValue(mPath + '[title]', methods[id].title);
+			methods[id].price = Number(readFormValue(mPath + '[price]', methods[id].price));
+			methods[id].eta = readFormValue(mPath + '[eta]', methods[id].eta);
+			methods[id].description = readFormValue(mPath + '[description]', methods[id].description);
+			methods[id].active = Boolean(readFormValue(mPath + '[active]', methods[id].active));
+			methods[id].requires_address = Boolean(readFormValue(mPath + '[requires_address]', methods[id].requires_address));
+			var visFallback = Array.isArray(methods[id].visibility_scenarios) ? methods[id].visibility_scenarios.join(',') : '';
+			methods[id].visibility_scenarios = String(readFormValue(mPath + '[visibility_scenarios]', visFallback)).split(',').map(function (s) {
+				return String(s || '').trim();
+			}).filter(Boolean);
+			if (methods[id].tariffs && typeof methods[id].tariffs === 'object') {
+				var tIds = Object.keys(methods[id].tariffs);
+				var ti;
+				for (ti = 0; ti < tIds.length; ti += 1) {
+					var tid = tIds[ti];
+					var tPath = mPath + '[tariffs][' + tid + ']';
+					var tBase = methods[id].tariffs[tid] && typeof methods[id].tariffs[tid] === 'object' ? methods[id].tariffs[tid] : {};
+					methods[id].tariffs[tid] = {
+						title: readFormValue(tPath + '[title]', tBase.title),
+						price: Number(readFormValue(tPath + '[price]', tBase.price)),
+						eta: readFormValue(tPath + '[eta]', tBase.eta),
+						active: Boolean(readFormValue(tPath + '[active]', tBase.active))
+					};
+				}
+			}
+		}
+		cfg.shippingCatalog.methods = methods;
+		cfg.shippingCatalog.sortOrder = String(readFormValue(p + '[sort_order]', cfg.shippingCatalog.sortOrder.join(','))).split(',').map(function (s) {
+			return String(s || '').trim();
+		}).filter(Boolean);
+		cfg.shippingCatalog.bulkUpdate.seasonal_delta_pct = Number(readFormValue(p + '[bulk_update][seasonal_delta_pct]', cfg.shippingCatalog.bulkUpdate.seasonal_delta_pct));
+		cfg.shippingCatalog.bulkUpdate.seasonal_delta_abs = Number(readFormValue(p + '[bulk_update][seasonal_delta_abs]', cfg.shippingCatalog.bulkUpdate.seasonal_delta_abs));
+		cfg.shippingCatalog.bulkUpdate.eta_suffix = readFormValue(p + '[bulk_update][eta_suffix]', cfg.shippingCatalog.bulkUpdate.eta_suffix);
+		cfg.shippingCatalog.preview.mock_subtotal = Number(readFormValue(p + '[preview][mock_subtotal]', cfg.shippingCatalog.preview.mock_subtotal));
+		cfg.shippingCatalog.preview.mock_discount = Number(readFormValue(p + '[preview][mock_discount]', cfg.shippingCatalog.preview.mock_discount));
+		cfg.shippingCatalog.preview.mock_tax = Number(readFormValue(p + '[preview][mock_tax]', cfg.shippingCatalog.preview.mock_tax));
+		cfg.shippingCatalog.errorCopy.method_unavailable = readFormValue(p + '[error_copy][method_unavailable]', cfg.shippingCatalog.errorCopy.method_unavailable || '');
+		cfg.shippingCatalog.errorCopy.tariff_unavailable = readFormValue(p + '[error_copy][tariff_unavailable]', cfg.shippingCatalog.errorCopy.tariff_unavailable || '');
 		return cfg;
 	}
 
@@ -1173,6 +1728,14 @@
 		$rows.addClass('mp-cc-admin-step4-row');
 	}
 
+	function enhanceDeliveryFields() {
+		var $rows = $('input[name^="mp_custom_checkout_settings[delivery]"], select[name^="mp_custom_checkout_settings[delivery]"], textarea[name^="mp_custom_checkout_settings[delivery]"]').closest('tr');
+		if (!$rows.length) {
+			return;
+		}
+		$rows.addClass('mp-cc-admin-delivery-row');
+	}
+
 	function refreshStepThreeEmptyIndicators() {
 		var selectors = [
 			'input[name="mp_custom_checkout_settings[step_3][copy][title]"]',
@@ -1216,6 +1779,7 @@
 		var dateStepConfig = getDateStepConfigFromRuntime();
 		var officeHoursPreviewConfig = getOfficeHoursPreviewConfigFromRuntime();
 		var stepFourConfig = getStepFourConfigFromRuntime();
+		var deliveryConfig = getDeliveryConfigFromRuntime();
 		var defaults = getDefaults();
 		var settingsDefaults = getSettingsDefaults();
 		var previewStore = createPreviewStore({
@@ -1244,8 +1808,31 @@
 		enhanceStepThreeFields();
 		enhanceStepFourFields();
 		refreshStepThreeEmptyIndicators();
+		(function mountStepOnePresetButtons() {
+			var inputName = 'mp_custom_checkout_settings[step_1][address_form_style_preset]';
+			var $presetInput = $('[name="' + inputName + '"]').first();
+			if (!$presetInput.length || $presetInput.prev('.mp-cc-admin-preset-toolbar').length) {
+				return;
+			}
+			var presets = [
+				{ id: 'concept_a', label: 'Concept A' },
+				{ id: 'clean', label: 'Clean' },
+				{ id: 'compact', label: 'Compact' }
+			];
+			var current = String($presetInput.val() || 'concept_a');
+			var html = '<div class="mp-cc-admin-preset-toolbar" style="margin:10px 0 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
+			html += '<strong style="margin-right:4px;">Стиль полей шага 1:</strong>';
+			for (var pi = 0; pi < presets.length; pi += 1) {
+				var p = presets[pi];
+				var activeClass = p.id === current ? ' button-primary' : '';
+				html += '<button type="button" class="button' + activeClass + '" data-mp-cc-step1-preset="' + escapeHtml(p.id) + '">' + escapeHtml(p.label) + '</button>';
+			}
+			html += '<span style="color:#6b7280;font-size:12px;">переключение в 1 клик</span>';
+			html += '</div>';
+			$presetInput.before(html);
+		})();
 
-		var mountPreviews = function (nextConfig, nextScenarioConfig, nextDateConfig, nextOfficeConfig, nextStepFourConfig) {
+		var mountPreviews = function (nextConfig, nextScenarioConfig, nextDateConfig, nextOfficeConfig, nextStepFourConfig, nextDeliveryConfig) {
 			var previewState = previewStore.getState();
 			var activeStep = previewState.activeStep || 'step_1';
 			var progressStyle = previewState.progressStyle || 'digits';
@@ -1254,6 +1841,7 @@
 				html += renderPreview(nextConfig, previewState);
 			} else if (activeStep === 'step_2' && nextDateConfig.previewEnabled) {
 				html += renderDatePreview(nextDateConfig, previewState);
+				html += renderDeliveryConfigPreview(nextDeliveryConfig);
 			} else if (activeStep === 'step_3' && nextOfficeConfig.previewEnabled) {
 				html += renderOfficeHoursPreview(nextOfficeConfig);
 				if (nextScenarioConfig.previewEnabled) {
@@ -1300,12 +1888,13 @@
 			var nextDateConfig = readLiveDateStepConfig(dateStepConfig);
 			var nextOfficeCfg = readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig);
 			var nextStepFourCfg = readLiveStepFourConfig(stepFourConfig);
-			mountPreviews(nextConfig, nextScenarioConfig, nextDateConfig, nextOfficeCfg, nextStepFourCfg);
+			var nextDeliveryCfg = readLiveDeliveryConfig(deliveryConfig);
+			mountPreviews(nextConfig, nextScenarioConfig, nextDateConfig, nextOfficeCfg, nextStepFourCfg, nextDeliveryCfg);
 			previewStore.setState({ dirty: true });
 			updatePreviewWarning();
 		};
 		var rerenderDebounced = debounce(rerender, 120);
-		mountPreviews(config, scenarioConfig, dateStepConfig, officeHoursPreviewConfig, stepFourConfig);
+		mountPreviews(config, scenarioConfig, dateStepConfig, officeHoursPreviewConfig, stepFourConfig, deliveryConfig);
 		$('[data-mp-cc-progress-style-select="1"]').val('digits');
 		$('[data-mp-cc-scenario-select="1"]').val('pickup');
 		$('[data-mp-cc-device-select="1"]').val('desktop');
@@ -1327,9 +1916,12 @@
 		$(document).on('input change', '[name^="mp_custom_checkout_settings[step_4]"]', function () {
 			rerenderDebounced();
 		});
+		$(document).on('input change', '[name^="mp_custom_checkout_settings[delivery]"]', function () {
+			rerenderDebounced();
+		});
 		$(document).on('click', '[data-mp-cc-preview-reset]', function () {
 			previewStore.reset();
-			mountPreviews(config, scenarioConfig, dateStepConfig, officeHoursPreviewConfig, stepFourConfig);
+			mountPreviews(config, scenarioConfig, dateStepConfig, officeHoursPreviewConfig, stepFourConfig, deliveryConfig);
 			updatePreviewWarning();
 		});
 		$(document).on('click', '[data-mp-cc-preview-step]', function () {
@@ -1338,7 +1930,7 @@
 				return;
 			}
 			previewStore.setState({ activeStep: stepId, dirty: true });
-			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig), readLiveDeliveryConfig(deliveryConfig));
 			updatePreviewWarning();
 		});
 		$(document).on('click', '[data-mp-cc-progress-style]', function () {
@@ -1347,7 +1939,7 @@
 				return;
 			}
 			previewStore.setState({ progressStyle: style, dirty: true });
-			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig), readLiveDeliveryConfig(deliveryConfig));
 			updatePreviewWarning();
 		});
 		$(document).on('change', '[data-mp-cc-progress-style-select]', function () {
@@ -1356,7 +1948,7 @@
 				return;
 			}
 			previewStore.setState({ progressStyle: styleSelect, dirty: true });
-			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig), readLiveDeliveryConfig(deliveryConfig));
 			updatePreviewWarning();
 		});
 		$(document).on('click', '[data-mp-cc-scenario]', function () {
@@ -1365,7 +1957,7 @@
 				return;
 			}
 			previewStore.setState({ scenario: scenario, dirty: true });
-			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig), readLiveDeliveryConfig(deliveryConfig));
 			updatePreviewWarning();
 		});
 		$(document).on('change', '[data-mp-cc-scenario-select]', function () {
@@ -1374,7 +1966,7 @@
 				return;
 			}
 			previewStore.setState({ scenario: scenarioSelect, dirty: true });
-			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig), readLiveDeliveryConfig(deliveryConfig));
 			updatePreviewWarning();
 		});
 		$(document).on('click', '[data-mp-cc-device]', function () {
@@ -1383,7 +1975,7 @@
 				return;
 			}
 			previewStore.setState({ device: device, dirty: true });
-			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig), readLiveDeliveryConfig(deliveryConfig));
 			updatePreviewWarning();
 		});
 		$(document).on('change', '[data-mp-cc-device-select]', function () {
@@ -1392,7 +1984,7 @@
 				return;
 			}
 			previewStore.setState({ device: deviceSelect, dirty: true });
-			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig), readLiveDeliveryConfig(deliveryConfig));
 			updatePreviewWarning();
 		});
 		$(document).on('click', '[data-mp-cc-interaction]', function () {
@@ -1401,7 +1993,7 @@
 				return;
 			}
 			previewStore.setState({ interactionState: interaction, dirty: true });
-			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig), readLiveDeliveryConfig(deliveryConfig));
 			updatePreviewWarning();
 		});
 		$(document).on('change', '[data-mp-cc-interaction-select]', function () {
@@ -1410,7 +2002,7 @@
 				return;
 			}
 			previewStore.setState({ interactionState: interactionSelect, dirty: true });
-			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig), readLiveDeliveryConfig(deliveryConfig));
 			updatePreviewWarning();
 		});
 		$(document).on('click', '[data-mp-cc-runtime]', function () {
@@ -1419,7 +2011,7 @@
 				return;
 			}
 			previewStore.setState({ runtimeState: runtimeState, dirty: true });
-			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig), readLiveDeliveryConfig(deliveryConfig));
 			updatePreviewWarning();
 		});
 		$(document).on('change', '[data-mp-cc-runtime-select]', function () {
@@ -1428,14 +2020,14 @@
 				return;
 			}
 			previewStore.setState({ runtimeState: runtimeSelect, dirty: true });
-			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig), readLiveDeliveryConfig(deliveryConfig));
 			updatePreviewWarning();
 		});
 		$(document).on('change', '[data-mp-cc-sandbox-select]', function () {
 			var sandbox = String($(this).val() || '');
 			applySandboxScenario(previewStore, sandbox);
 			previewStore.setState({ dirty: true });
-			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig), readLiveDeliveryConfig(deliveryConfig));
 			updatePreviewWarning();
 		});
 		$(document).on('click', '[data-mp-cc-test-util]', function () {
@@ -1461,8 +2053,13 @@
 			} else if (util === 'validation_payment') {
 				previewStore.setState({ runtimeState: 'error', interactionState: 'focus', dirty: true });
 			}
-			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig));
+			mountPreviews(readLiveConfig(config), readLiveScenarioConfig(scenarioConfig), readLiveDateStepConfig(dateStepConfig), readLiveOfficeHoursPreviewConfig(officeHoursPreviewConfig), readLiveStepFourConfig(stepFourConfig), readLiveDeliveryConfig(deliveryConfig));
 			updatePreviewWarning();
+		});
+		$(document).on('click', '[data-mp-cc-delivery-bulk-apply]', function () {
+			var liveDelivery = readLiveDeliveryConfig(deliveryConfig);
+			applyDeliveryBulkUpdate(liveDelivery);
+			rerenderDebounced();
 		});
 		$(document).on('click', '[data-mp-cc-tab-reset]', function () {
 			var activeSection = detectActiveSettingsSection();
@@ -1480,9 +2077,226 @@
 			applyDefaultsToForm(defaultsMap);
 			rerender();
 		});
-		$(document).on('submit', 'form', function () {
+		$(document).on('click', '[data-mp-cc-step1-preset]', function () {
+			var inputName = 'mp_custom_checkout_settings[step_1][address_form_style_preset]';
+			var $presetInput = $('[name="' + inputName + '"]').first();
+			if (!$presetInput.length) {
+				return;
+			}
+			var next = String($(this).attr('data-mp-cc-step1-preset') || '');
+			if (!next) {
+				return;
+			}
+			$presetInput.val(next).trigger('change');
+			$('[data-mp-cc-step1-preset]').removeClass('button-primary');
+			$(this).addClass('button-primary');
+			rerenderDebounced();
+		});
+		function validateMotionFormBeforeSave() {
+			var errs = [];
+			var keys = ['step_transition', 'rail', 'step_screen', 'field_state', 'summary_numbers', 'skeleton_shimmer'];
+			keys.forEach(function (k) {
+				var el = document.getElementsByName('mp_custom_checkout_settings[motion][durations_ms][' + k + ']')[0];
+				if (!el) {
+					return;
+				}
+				var n = parseInt(String(el.value || ''), 10);
+				if (!Number.isFinite(n) || n < 0 || n > 4000) {
+					errs.push('durations_ms.' + k + ': 0–4000 мс');
+				}
+			});
+			var useDesk = document.getElementsByName('mp_custom_checkout_settings[motion][mobile][use_desktop_durations]')[0];
+			if (!useDesk || !useDesk.checked) {
+				keys.forEach(function (k) {
+					var el = document.getElementsByName('mp_custom_checkout_settings[motion][mobile][durations_ms][' + k + ']')[0];
+					if (!el) {
+						return;
+					}
+					var n = parseInt(String(el.value || ''), 10);
+					if (!Number.isFinite(n) || n < 0 || n > 4000) {
+						errs.push('mobile.durations_ms.' + k + ': 0–4000 мс');
+					}
+				});
+			}
+			var profEl = document.getElementsByName('mp_custom_checkout_settings[motion][ease_profile]')[0];
+			if (profEl) {
+				var p = String(profEl.value || '').trim().toLowerCase();
+				var allowed = (window.mpCcAdmin && window.mpCcAdmin.motionEasePresetIds) ? window.mpCcAdmin.motionEasePresetIds.concat(['custom']) : ['snappy', 'balanced', 'smooth', 'custom'];
+				if (allowed.indexOf(p) < 0) {
+					errs.push('ease_profile: допустимо ' + allowed.join(', '));
+				}
+				if (p === 'custom') {
+					var s = document.getElementsByName('mp_custom_checkout_settings[motion][ease][standard]')[0];
+					var e = document.getElementsByName('mp_custom_checkout_settings[motion][ease][emphasized]')[0];
+					if (!s || !String(s.value || '').trim()) {
+						errs.push('ease.standard обязателен для custom');
+					}
+					if (!e || !String(e.value || '').trim()) {
+						errs.push('ease.emphasized обязателен для custom');
+					}
+				}
+			}
+			var thEl = document.getElementsByName('mp_custom_checkout_settings[motion][throttle][min_interval_ms]')[0];
+			if (thEl) {
+				var t = parseInt(String(thEl.value || ''), 10);
+				if (!Number.isFinite(t) || t < 0 || t > 2000) {
+					errs.push('throttle.min_interval_ms: 0–2000');
+				}
+			}
+			return errs;
+		}
+
+		$(document).on('submit', 'form', function (event) {
+			var activeSection = detectActiveSettingsSection();
+			if (activeSection === 'delivery') {
+				var deliveryErrors = validateDeliveryConfigConsistency(readLiveDeliveryConfig(deliveryConfig));
+				if (deliveryErrors.length) {
+					event.preventDefault();
+					window.alert('Проверьте конфигурацию доставки:\n- ' + deliveryErrors.join('\n- '));
+					return;
+				}
+			}
+			if ($('[name^="mp_custom_checkout_settings[motion]"]').length) {
+				var motionErrors = validateMotionFormBeforeSave();
+				if (motionErrors.length) {
+					event.preventDefault();
+					window.alert('Проверьте раздел «Анимации»:\n- ' + motionErrors.join('\n- '));
+					return;
+				}
+			}
 			previewStore.setState({ dirty: false });
 			updatePreviewWarning();
 		});
+	});
+
+	$(function () {
+		if (!$('.mp-cc-admin-shell').length) {
+			return;
+		}
+		refreshDeliveryAdminUi();
+		$(document).on('click', '.mp-cc-admin-shell__tab', function () {
+			window.setTimeout(refreshDeliveryAdminUi, 0);
+		});
+	});
+
+	$(function () {
+		var $preview = $('[data-mp-cc-motion-preview="1"]');
+		if (!$preview.length) {
+			return;
+		}
+		var $stage = $preview.find('[data-mp-cc-motion-stage="1"]');
+		var $rail = $preview.find('[data-mp-cc-motion-rail-fill="1"]');
+		var $panel = $preview.find('[data-mp-cc-motion-panel="1"]');
+		var $amount = $preview.find('[data-mp-cc-motion-amount="1"]');
+		var durationKeys = ['step_transition', 'rail', 'step_screen', 'field_state', 'summary_numbers', 'skeleton_shimmer'];
+
+		function motionInputName(branch, key) {
+			return 'mp_custom_checkout_settings[motion][' + branch + '][' + key + ']';
+		}
+
+		function readIntByName(name, fallback) {
+			var el = document.getElementsByName(name)[0];
+			var n = parseInt(String(el && el.value != null ? el.value : ''), 10);
+			if (!Number.isFinite(n)) {
+				return fallback;
+			}
+			return Math.max(0, Math.min(4000, n));
+		}
+
+		function resolveEaseFromForm() {
+			var profileEl = document.getElementsByName('mp_custom_checkout_settings[motion][ease_profile]')[0];
+			var profile = profileEl ? String(profileEl.value || '').trim().toLowerCase() : 'balanced';
+			var map = (window.mpCcAdmin && window.mpCcAdmin.motionEasePresetsMap) ? window.mpCcAdmin.motionEasePresetsMap : {};
+			if (profile !== 'custom' && map[profile] && map[profile].standard) {
+				return String(map[profile].standard || 'ease');
+			}
+			var stdEl = document.getElementsByName('mp_custom_checkout_settings[motion][ease][standard]')[0];
+			return String(stdEl && stdEl.value ? stdEl.value : 'ease');
+		}
+
+		function applyPreviewCssFromForm() {
+			if (!$stage.length) {
+				return;
+			}
+			var railMs = readIntByName(motionInputName('durations_ms', 'rail'), 420);
+			var panelMs = readIntByName(motionInputName('durations_ms', 'step_screen'), 200);
+			var fieldMs = readIntByName(motionInputName('durations_ms', 'field_state'), 220);
+			var sumMs = readIntByName(motionInputName('durations_ms', 'summary_numbers'), 340);
+			var ease = resolveEaseFromForm();
+			var railS = Math.max(0, railMs / 1000).toFixed(4) + 's';
+			var panelS = Math.max(0, panelMs / 1000).toFixed(4) + 's';
+			var sumS = Math.max(0, sumMs / 1000).toFixed(4) + 's';
+			$stage[0].style.setProperty('--mp-cc-ap-rail', railS);
+			$stage[0].style.setProperty('--mp-cc-ap-panel', panelS);
+			$stage[0].style.setProperty('--mp-cc-ap-field', Math.max(0, fieldMs / 1000).toFixed(4) + 's');
+			$stage[0].style.setProperty('--mp-cc-ap-sum', sumS);
+			$stage[0].style.setProperty('--mp-cc-ap-ease', ease);
+		}
+
+		function applyDesktopPreset(presetId) {
+			var raw = $preview.attr('data-motion-duration-presets') || '{}';
+			var presets = {};
+			try {
+				presets = JSON.parse(raw) || {};
+			} catch (e0) {
+				presets = {};
+			}
+			var pack = presets[presetId];
+			if (!pack || typeof pack !== 'object') {
+				return;
+			}
+			durationKeys.forEach(function (key) {
+				if (!Object.prototype.hasOwnProperty.call(pack, key)) {
+					return;
+				}
+				var el = document.getElementsByName(motionInputName('durations_ms', key))[0];
+				if (el) {
+					el.value = String(pack[key]);
+				}
+			});
+			applyPreviewCssFromForm();
+		}
+
+		function playPreview() {
+			applyPreviewCssFromForm();
+			$rail.removeClass('is-mp-cc-ap-play');
+			$panel.removeClass('is-mp-cc-ap-play');
+			$amount.removeClass('is-mp-cc-ap-play');
+			window.requestAnimationFrame(function () {
+				$rail.addClass('is-mp-cc-ap-play');
+				$panel.addClass('is-mp-cc-ap-play');
+				$amount.addClass('is-mp-cc-ap-play');
+			});
+			var railMs = readIntByName(motionInputName('durations_ms', 'rail'), 420);
+			var panelMs = readIntByName(motionInputName('durations_ms', 'step_screen'), 200);
+			var sumMs = readIntByName(motionInputName('durations_ms', 'summary_numbers'), 340);
+			var resetMs = Math.max(railMs, panelMs, sumMs) + 80;
+			window.setTimeout(function () {
+				$rail.removeClass('is-mp-cc-ap-play');
+				$panel.removeClass('is-mp-cc-ap-play');
+				$amount.removeClass('is-mp-cc-ap-play');
+			}, resetMs);
+		}
+
+		$preview.on('click', '[data-mp-cc-motion-preset]', function () {
+			var id = String($(this).attr('data-mp-cc-motion-preset') || '');
+			if (!id) {
+				return;
+			}
+			applyDesktopPreset(id);
+		});
+		$preview.on('click', '[data-mp-cc-motion-play]', function () {
+			playPreview();
+		});
+
+		$(document).on('input change', '.mp-cc-admin-shell input, .mp-cc-admin-shell textarea', function () {
+			var n = String(this.name || '');
+			if (n.indexOf('[motion]') < 0) {
+				return;
+			}
+			applyPreviewCssFromForm();
+		});
+
+		applyPreviewCssFromForm();
 	});
 })(jQuery);

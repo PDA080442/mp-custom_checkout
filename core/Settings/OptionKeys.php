@@ -17,7 +17,7 @@ final class OptionKeys {
 	/**
 	 * Версия схемы настроек в коде (миграции).
 	 */
-	public const SETTINGS_SCHEMA_VERSION = '1';
+	public const SETTINGS_SCHEMA_VERSION = '10';
 
 	/**
 	 * Основной массив настроек (все вкладки и служебные данные).
@@ -74,6 +74,9 @@ final class OptionKeys {
 	/** Сущность «Логи». */
 	public const SECTION_LOGS = 'logs';
 
+	/** Motion / анимации checkout. */
+	public const SECTION_MOTION = 'motion';
+
 	/**
 	 * Глобальные UI-тексты (реестр лейблов).
 	 */
@@ -116,6 +119,7 @@ final class OptionKeys {
 			self::SECTION_COUPONS,
 			self::SECTION_PREVIEW,
 			self::SECTION_LOGS,
+			self::SECTION_MOTION,
 			self::KEY_LABELS,
 			self::KEY_FEATURE_FLAGS,
 			self::KEY_DESIGN_TOKENS,

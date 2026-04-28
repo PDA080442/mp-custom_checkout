@@ -6,7 +6,7 @@
  * Version:           0.1.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
- * Author:            Metaphysics Parfum
+ * Author:            Popravkin Danil
  * Text Domain:       mp-custom-checkout
  * Domain Path:       /languages
  *

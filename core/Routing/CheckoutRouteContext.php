@@ -8,6 +8,7 @@
 namespace MP\CustomCheckout\Routing;
 
 use MP\CustomCheckout\Checkout\Routing\CheckoutPermalinkCompatibility;
+use MP\CustomCheckout\Checkout\Hooks\CheckoutAjaxHooks;
 use MP\CustomCheckout\Checkout\Routing\CheckoutSessionService;
 use MP\CustomCheckout\Integrations\WooCommerce\GiftCardIntegration;
 use MP\CustomCheckout\Settings\FeatureFlagResolver;
@@ -51,6 +52,15 @@ final class CheckoutRouteContext {
 				'visible_steps' => $step_manager->get_visible_step_ids(),
 				'scenario_rules' => CheckoutScenarioRules::build( $scenario ),
 			);
+		}
+
+		if ( function_exists( 'WC' ) && WC() ) {
+			$payment_fields                     = CheckoutAjaxHooks::get_payment_fields_for_context();
+			$context['payment_fields_html']     = isset( $payment_fields['payment_fields_html'] ) ? (string) $payment_fields['payment_fields_html'] : '';
+			$context['payment_fields_gateway']  = isset( $payment_fields['payment_fields_gateway'] ) ? (string) $payment_fields['payment_fields_gateway'] : '';
+		} else {
+			$context['payment_fields_html']    = '';
+			$context['payment_fields_gateway'] = '';
 		}
 
 		$lang = self::detect_current_language();
@@ -169,13 +179,18 @@ final class CheckoutRouteContext {
 		$result['summary']['items_count'] = (int) $cart->get_cart_contents_count();
 		$result['summary']['subtotal']    = (string) $cart->get_cart_subtotal();
 		$shipping_total                   = (float) $cart->get_shipping_total() + (float) $cart->get_shipping_tax();
+		$cart_shipping_total              = $shipping_total;
 		$flow_for_totals      = CheckoutSessionService::get_public_state();
 		$current_step_id      = isset( $flow_for_totals['current_step'] ) ? sanitize_key( (string) $flow_for_totals['current_step'] ) : '';
 		$scenario_for_shipping = isset( $flow_for_totals['scenario'] ) ? CheckoutScenarioRules::sanitize_scenario( (string) $flow_for_totals['scenario'] ) : '';
+		$answers_for_totals   = isset( $flow_for_totals['answers'] ) && is_array( $flow_for_totals['answers'] ) ? $flow_for_totals['answers'] : array();
+		$date_answers         = isset( $answers_for_totals['date_conditions'] ) && is_array( $answers_for_totals['date_conditions'] ) ? $answers_for_totals['date_conditions'] : array();
+		if ( isset( $date_answers['shipping_price'] ) && is_numeric( $date_answers['shipping_price'] ) ) {
+			$shipping_total = max( 0.0, (float) $date_answers['shipping_price'] );
+		}
 		$steps_pre_payment     = array(
-			ScenarioStepRegistry::STEP_CART,
-			ScenarioStepRegistry::STEP_DATE,
-			ScenarioStepRegistry::STEP_CONDITIONS,
+			ScenarioStepRegistry::STEP_ADDRESS_DELIVERY,
+			ScenarioStepRegistry::STEP_RECIPIENT,
 		);
 		$suppress_shipping_in_summary = false;
 		if ( $cart->needs_shipping() ) {
@@ -212,6 +227,8 @@ final class CheckoutRouteContext {
 			$ship_amt = (float) $cart->get_shipping_total();
 			$total_tax_display = max( 0.0, $total_tax_display - $ship_tax );
 			$total_edit        = max( 0.0, $total_edit - $ship_tax - $ship_amt );
+		} elseif ( isset( $date_answers['shipping_price'] ) && is_numeric( $date_answers['shipping_price'] ) ) {
+			$total_edit = max( 0.0, $total_edit - $cart_shipping_total + $shipping_total );
 		}
 		$result['summary']['tax']   = (string) wc_price( $total_tax_display );
 		$result['summary']['total'] = (string) wc_price( $total_edit );

@@ -16,6 +16,8 @@ final class DefaultFeatureFlagsRegistry {
 
 	public const FLAG_CUSTOM_CHECKOUT_ROUTE = 'custom_checkout_route';
 
+	public const FLAG_CHECKOUT_UI_V2 = 'checkout_ui_v2';
+
 	public const FLAG_MULTI_STEP_FLOW = 'multi_step_flow';
 
 	public const FLAG_MULTI_PICKUP_POINTS = 'multi_pickup_points';
@@ -36,6 +38,7 @@ final class DefaultFeatureFlagsRegistry {
 	public static function all(): array {
 		return array(
 			self::FLAG_CUSTOM_CHECKOUT_ROUTE     => true,
+			self::FLAG_CHECKOUT_UI_V2            => false,
 			self::FLAG_MULTI_STEP_FLOW           => true,
 			self::FLAG_MULTI_PICKUP_POINTS       => false,
 			self::FLAG_CONDITIONS_STEP           => true,

@@ -7,7 +7,10 @@
 
 namespace MP\CustomCheckout\Admin\Hooks;
 
+use MP\CustomCheckout\Settings\DefaultMotionSettingsRegistry;
 use MP\CustomCheckout\Settings\FeatureFlagResolver;
+use MP\CustomCheckout\Settings\MotionSettingsResolver;
+use MP\CustomCheckout\Settings\OptionKeys;
 use MP\CustomCheckout\Settings\SafeSettingsResolver;
 use MP\CustomCheckout\Routing\PickupPointRegistry;
 
@@ -44,8 +47,18 @@ final class AdminAssetsHooks {
 				'scenarioUiConfig' => SafeSettingsResolver::get_section( 'step_2' ),
 				'stepThreeConfig' => SafeSettingsResolver::get_section( 'step_3' ),
 				'stepFourConfig' => SafeSettingsResolver::get_section( 'step_4' ),
+				'deliveryConfig' => SafeSettingsResolver::get_section( 'delivery' ),
 				'pickupConfig' => PickupPointRegistry::config(),
 				'labels' => SafeSettingsResolver::get_section( 'labels' ),
+				'motionSection' => MotionSettingsResolver::sanitize_section(
+					array_replace_recursive(
+						DefaultMotionSettingsRegistry::all(),
+						SafeSettingsResolver::get_section( OptionKeys::SECTION_MOTION )
+					)
+				),
+				'motionDurationPresetsDesktop' => MotionSettingsResolver::duration_presets_desktop_ms(),
+				'motionEasePresetIds'          => array_keys( MotionSettingsResolver::ease_presets() ),
+				'motionEasePresetsMap'         => MotionSettingsResolver::ease_presets(),
 			)
 		);
 		do_action( 'mp_custom_checkout_enqueue_admin_assets', $hook_suffix );
