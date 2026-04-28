@@ -2238,6 +2238,113 @@
 	margin-top: 0.35rem;
 }
 
+.mp-cc-coupon--in-summary {
+	--mp-cc-coupon-summary-glow: #a78bfa;
+	/* Presets: soft | intense(default) */
+	--mp-cc-coupon-glow-ring-alpha: 40%;
+	--mp-cc-coupon-glow-outer-alpha: 58%;
+	--mp-cc-coupon-glow-focus-alpha: 46%;
+	--mp-cc-coupon-btn-glow-alpha: 42%;
+	margin-top: 0.75rem;
+	margin-bottom: 0.65rem;
+	padding: 0.75rem;
+	border-radius: 12px;
+	border: 1px solid color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 48%, #e9ddff);
+	background: linear-gradient(180deg, color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 14%, #fff) 0%, #fff 100%);
+	box-shadow:
+		0 0 0 1px color-mix(in srgb, var(--mp-cc-coupon-summary-glow) var(--mp-cc-coupon-glow-ring-alpha, 30%), transparent),
+		0 0 0 3px color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 14%, transparent),
+		0 0 26px color-mix(in srgb, var(--mp-cc-coupon-summary-glow) var(--mp-cc-coupon-glow-outer-alpha, 45%), transparent),
+		0 14px 30px rgba(15, 23, 42, 0.08);
+}
+
+.mp-cc-coupon--in-summary .mp-cc-coupon__title {
+	margin-bottom: 0.2rem;
+	font-size: 0.86rem;
+	font-weight: 700;
+}
+
+.mp-cc-coupon--in-summary .mp-cc-coupon__intro {
+	display: none;
+}
+
+.mp-cc-coupon--in-summary .mp-cc-coupon__row {
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 0.45rem;
+}
+
+.mp-cc-coupon--in-summary .mp-cc-coupon__row .mp-cc-field-label {
+	display: none;
+}
+
+.mp-cc-coupon--in-summary .mp-cc-input {
+	min-height: 2.4rem;
+	border-radius: 9px;
+	border-color: color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 35%, var(--mp-cc-color-border));
+	background: rgba(255, 255, 255, 0.95);
+	box-shadow:
+		inset 0 0 0 1px color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 16%, transparent),
+		inset 0 8px 18px color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 9%, #fff);
+	transition:
+		border-color var(--mp-cc-transition-duration) ease,
+		box-shadow var(--mp-cc-transition-duration) ease,
+		background var(--mp-cc-transition-duration) ease;
+}
+
+.mp-cc-coupon--in-summary .mp-cc-input:focus {
+	outline: 2px solid color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 65%, transparent);
+	outline-offset: 1px;
+	border-color: color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 62%, transparent);
+	background: #fff;
+	box-shadow:
+		inset 0 0 0 1px color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 32%, transparent),
+		0 0 0 4px color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 22%, transparent),
+		0 0 20px color-mix(in srgb, var(--mp-cc-coupon-summary-glow) var(--mp-cc-coupon-glow-focus-alpha, 32%), transparent);
+}
+
+.mp-cc-coupon--in-summary .mp-cc-coupon__apply {
+	min-width: 7.2rem;
+	min-height: 2.4rem;
+	border-radius: 9px;
+	border: 1px solid color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 62%, #111);
+	background:
+		linear-gradient(180deg, color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 40%, #232323) 0%, #191919 100%);
+	color: #fff;
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.3),
+		0 10px 20px color-mix(in srgb, var(--mp-cc-coupon-summary-glow) var(--mp-cc-coupon-btn-glow-alpha, 30%), transparent);
+}
+
+.mp-cc-coupon--in-summary .mp-cc-coupon__apply:hover:not([disabled]) {
+	background:
+		linear-gradient(180deg, color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 50%, #2f2f2f) 0%, #232323 100%);
+	border-color: color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 74%, #2f2f2f);
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.34),
+		0 12px 26px color-mix(in srgb, var(--mp-cc-coupon-summary-glow) calc(var(--mp-cc-coupon-btn-glow-alpha, 30%) + 8%), transparent);
+}
+
+/* Quick preset toggles (add class to #mp-cc-checkout): */
+#mp-cc-checkout.mp-cc-coupon-glow-soft .mp-cc-coupon--in-summary {
+	--mp-cc-coupon-glow-ring-alpha: 22%;
+	--mp-cc-coupon-glow-outer-alpha: 30%;
+	--mp-cc-coupon-glow-focus-alpha: 24%;
+	--mp-cc-coupon-btn-glow-alpha: 22%;
+}
+
+#mp-cc-checkout.mp-cc-coupon-glow-intense .mp-cc-coupon--in-summary {
+	--mp-cc-coupon-glow-ring-alpha: 40%;
+	--mp-cc-coupon-glow-outer-alpha: 58%;
+	--mp-cc-coupon-glow-focus-alpha: 46%;
+	--mp-cc-coupon-btn-glow-alpha: 42%;
+}
+
+.mp-cc-coupon--in-summary .mp-cc-field-hint {
+	margin-top: 0.35rem;
+	font-size: 0.76rem;
+}
+
 .mp-cc-discount-tools[data-discount-on-cart="1"] {
 	margin-top: 1rem;
 	padding-top: 0.75rem;

@@ -428,7 +428,7 @@ final class SafeSettingsResolver {
 					),
 					'coupon_block' => array(
 						'title'                 => 'Промокод',
-						'intro'                 => '',
+						'intro'                 => 'Введите промокод.',
 						'input_label'           => 'Промокод',
 						'placeholder'           => 'Например, SALE10',
 						'apply_label'           => 'Применить',
@@ -834,6 +834,45 @@ final class SafeSettingsResolver {
 	}
 
 	/**
+	 * Исторически в `coupon_block.intro` часто копировали текст подарочной карты — для промокода это неверно.
+	 *
+	 * @param array<string, mixed> $merged
+	 * @return array<string, mixed>
+	 */
+	private static function normalize_merged_coupon_intro( array $merged ): array {
+		if ( ! isset( $merged[ OptionKeys::SECTION_STEP_4 ] ) || ! is_array( $merged[ OptionKeys::SECTION_STEP_4 ] ) ) {
+			return $merged;
+		}
+		$s4 = &$merged[ OptionKeys::SECTION_STEP_4 ];
+		if ( ! isset( $s4['coupon_block'] ) || ! is_array( $s4['coupon_block'] ) ) {
+			return $merged;
+		}
+		$cb = &$s4['coupon_block'];
+		if ( ! isset( $cb['intro'] ) ) {
+			return $merged;
+		}
+		$intro = trim( (string) $cb['intro'] );
+		if ( '' === $intro ) {
+			return $merged;
+		}
+		$gift_intro = '';
+		if ( isset( $s4['gift_card_block'] ) && is_array( $s4['gift_card_block'] ) && isset( $s4['gift_card_block']['intro'] ) ) {
+			$gift_intro = trim( (string) $s4['gift_card_block']['intro'] );
+		}
+		$legacy_gift_phrases = array(
+			'Введите код подарочной карты.',
+			'Введите код подарочной карты',
+		);
+		$should_fix = ( '' !== $gift_intro && $intro === $gift_intro )
+			|| in_array( $intro, $legacy_gift_phrases, true )
+			|| (bool) preg_match( '/подарочн(ой|ая)?\s+карт/i', $intro );
+		if ( $should_fix ) {
+			$cb['intro'] = 'Введите промокод.';
+		}
+		return $merged;
+	}
+
+	/**
 	 * Слияние сохранённых настроек с дефолтами (пользователь перекрывает дефолты).
 	 *
 	 * @return array<string, mixed>
@@ -850,6 +889,7 @@ final class SafeSettingsResolver {
 
 		$defaults       = self::get_defaults_tree();
 		self::$merged_cache = array_replace_recursive( $defaults, $stored );
+		self::$merged_cache = self::normalize_merged_coupon_intro( self::$merged_cache );
 
 		return self::$merged_cache;
 	}

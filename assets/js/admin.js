@@ -1242,11 +1242,11 @@
 		html += '<div class="mp-cc-admin-preview__date-grid">';
 		html += '<article>';
 		html += '<strong>' + escapeHtml(String(cfg.coupon.title || cfg.giftCard.title || 'Промокод (купон WooCommerce)')) + '</strong>';
-		html += '<p>' + escapeHtml(String(cfg.coupon.intro || cfg.giftCard.intro || '')) + '</p>';
+		html += '<p>' + escapeHtml(String(trimNonEmptyAdmin(cfg.coupon.intro) || 'Введите промокод.')) + '</p>';
 		html += '<p>Label: ' + escapeHtml(String(cfg.coupon.input_label || cfg.giftCard.input_label || 'Промокод')) + '</p>';
 		html += '<p>Placeholder: ' + escapeHtml(String(cfg.coupon.placeholder || cfg.giftCard.placeholder || '')) + '</p>';
 		html += '<p><em>States:</em> empty="' + escapeHtml(String(cfg.coupon.empty_message || cfg.giftCard.empty_message || '')) + '", success="' + escapeHtml(String(cfg.coupon.success_message || cfg.giftCard.success_message || '')) + '", error="' + escapeHtml(String(cfg.coupon.error_message || cfg.giftCard.error_message || '')) + '"</p>';
-		html += '<p><em>Нижнее поле на шаге оплаты:</em> <code>coupon_block</code> — промокод (стандартные купоны WC). При пустых полях подставляются запасные тексты из <code>gift_card_block</code>. Карточка «Подарок» — только <code>gift_card_block</code> (Pimwick и т.п.).</p>';
+		html += '<p><em>Нижнее поле на шаге оплаты:</em> <code>coupon_block</code> — промокод (купоны WC). Текст подсказки промокода не подставляется из подарочной карты. Карточка «Подарок» — только <code>gift_card_block</code> (Pimwick и т.п.).</p>';
 		html += '</article>';
 		html += '</div>';
 		html += '<div class="mp-cc-admin-preview__date-grid">';

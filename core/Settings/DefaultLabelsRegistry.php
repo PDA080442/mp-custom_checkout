@@ -122,7 +122,7 @@ final class DefaultLabelsRegistry {
 				'address_region_placeholder' => 'Выберите регион',
 				'address_city_placeholder' => 'Выберите населённый пункт',
 				'coupon_title' => 'Промокод',
-				'coupon_intro' => '',
+				'coupon_intro' => 'Введите промокод.',
 				'coupon_input_label' => 'Промокод',
 				'coupon_placeholder' => 'Например, SALE10',
 				'coupon_apply' => 'Применить',

@@ -366,6 +366,38 @@ final class SettingsMigrationManager {
 
 			return $settings;
 		};
+
+		self::$migrations['9'] = static function ( array $settings ): array {
+			$s4 = isset( $settings[ OptionKeys::SECTION_STEP_4 ] ) && is_array( $settings[ OptionKeys::SECTION_STEP_4 ] )
+				? $settings[ OptionKeys::SECTION_STEP_4 ]
+				: array();
+			if ( ! isset( $s4['coupon_block'] ) || ! is_array( $s4['coupon_block'] ) || ! isset( $s4['coupon_block']['intro'] ) ) {
+				return $settings;
+			}
+			$intro = trim( (string) $s4['coupon_block']['intro'] );
+			if ( '' === $intro ) {
+				return $settings;
+			}
+			$gift_intro = '';
+			if ( isset( $s4['gift_card_block'] ) && is_array( $s4['gift_card_block'] ) && isset( $s4['gift_card_block']['intro'] ) ) {
+				$gift_intro = trim( (string) $s4['gift_card_block']['intro'] );
+			}
+			$fix = ( '' !== $gift_intro && $intro === $gift_intro )
+				|| in_array( $intro, array( 'Введите код подарочной карты.', 'Введите код подарочной карты' ), true )
+				|| (bool) preg_match( '/подарочн(ой|ая)?\s+карт/i', $intro );
+			if ( ! $fix ) {
+				return $settings;
+			}
+			if ( ! isset( $settings[ OptionKeys::SECTION_STEP_4 ] ) || ! is_array( $settings[ OptionKeys::SECTION_STEP_4 ] ) ) {
+				$settings[ OptionKeys::SECTION_STEP_4 ] = array();
+			}
+			if ( ! isset( $settings[ OptionKeys::SECTION_STEP_4 ]['coupon_block'] ) || ! is_array( $settings[ OptionKeys::SECTION_STEP_4 ]['coupon_block'] ) ) {
+				$settings[ OptionKeys::SECTION_STEP_4 ]['coupon_block'] = array();
+			}
+			$settings[ OptionKeys::SECTION_STEP_4 ]['coupon_block']['intro'] = 'Введите промокод.';
+
+			return $settings;
+		};
 	}
 
 	/**
@@ -382,7 +414,8 @@ final class SettingsMigrationManager {
 			'6' => '7',
 			'7' => '8',
 			'8' => '9',
-			'9' => null,
+			'9' => '10',
+			'10' => null,
 		);
 
 		return array_key_exists( $current, $chain ) ? $chain[ $current ] : null;

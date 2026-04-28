@@ -1459,13 +1459,30 @@
 		state.frontendStore.discounts = discounts;
 	}
 
+	function normalizeCouponBlockIntro(rawIntro, giftBlock) {
+		var s = trimNonEmpty(rawIntro);
+		if (!s) {
+			return '';
+		}
+		giftBlock = giftBlock && typeof giftBlock === 'object' ? giftBlock : {};
+		var giftIntro = trimNonEmpty(giftBlock.intro);
+		var giftUi = getUiText('step_4.gift_card_intro', 'Введите код подарочной карты.');
+		if (s === giftUi || (giftIntro && s === giftIntro) || s === 'Введите код подарочной карты.' || s === 'Введите код подарочной карты') {
+			return '';
+		}
+		if (s.indexOf('подарочн') !== -1 && s.indexOf('карт') !== -1) {
+			return '';
+		}
+		return s;
+	}
+
 	function getCouponCopy() {
 		var cfg = getStepFourConfig();
 		var c = cfg.coupon_block || {};
 		var g = cfg.gift_card_block || {};
 		return {
 			title: trimNonEmpty(c.title) || trimNonEmpty(g.title) || getUiText('step_4.coupon_title', 'Промокод'),
-			intro: trimNonEmpty(c.intro) || trimNonEmpty(g.intro) || getUiText('step_4.coupon_intro', ''),
+			intro: normalizeCouponBlockIntro(c.intro, g) || getUiText('step_4.coupon_intro', 'Введите промокод.'),
 			inputLabel: trimNonEmpty(c.input_label) || trimNonEmpty(g.input_label) || getUiText('step_4.coupon_input_label', 'Промокод'),
 			placeholder: trimNonEmpty(c.placeholder) || trimNonEmpty(g.placeholder) || getUiText('step_4.coupon_placeholder', 'Например, SALE10'),
 			applyLabel: trimNonEmpty(c.apply_label) || trimNonEmpty(g.apply_label) || getUiText('step_4.coupon_apply', 'Применить'),
@@ -3240,7 +3257,8 @@
 	function buildCouponBlockHtml(state, opts) {
 		opts = opts || {};
 		var cartStep = opts.cartStep === true;
-		var couponInputId = cartStep ? 'mp-cc-coupon-code-cart' : 'mp-cc-coupon-code';
+		var inSummary = opts.inSummary === true;
+		var couponInputId = inSummary ? 'mp-cc-coupon-code-summary' : (cartStep ? 'mp-cc-coupon-code-cart' : 'mp-cc-coupon-code');
 		var copy = getCouponCopy();
 		var cfg = getStepFourConfig();
 		var styles = cfg.discount_block_styles || {};
@@ -3262,7 +3280,7 @@
 		var msg = trimNonEmpty(rt.message);
 		var html = '';
 		var stateClass = runtimeState === 'success' ? String(styles.state_success || 'success') : (runtimeState === 'error' ? String(styles.state_error || 'error') : String(styles.state_empty || 'default'));
-		html += '<article class="mp-cc-coupon mp-cc-coupon--' + escapeHtml(stateClass) + '" data-coupon-block="1">';
+		html += '<article class="mp-cc-coupon mp-cc-coupon--' + escapeHtml(stateClass) + (inSummary ? ' mp-cc-coupon--in-summary' : '') + '" data-coupon-block="1">';
 		html += '<h4 class="mp-cc-coupon__title">' + escapeHtml(copy.title) + '</h4>';
 		if (copy.intro) {
 			html += '<p class="mp-cc-coupon__intro">' + escapeHtml(copy.intro) + '</p>';
@@ -5232,7 +5250,6 @@
 			}
 			if (screen && screen.id === 'payment_screen') {
 				v2html += buildPaymentGatewaysHtml(state);
-				v2html += buildDiscountToolsHtml(state, {});
 			}
 			if (screen && screen.id === 'confirm_screen') {
 				v2html += buildConfirmationScreenHtml(state);
@@ -5267,7 +5284,6 @@
 				}
 				if (step.id === 'payment') {
 					html += buildPaymentGatewaysHtml(state);
-					html += buildDiscountToolsHtml(state, {});
 				}
 				if (step.id === 'confirm') {
 					html += buildConfirmationScreenHtml(state);
@@ -5916,6 +5932,7 @@
 			if (trimNonEmpty(taxText)) {
 				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(taxLabel) + ': <span class="mp-cc-summary-card__amount--inline" data-summary-amount="1">' + wcPriceHtmlFragment(taxText) + '</span></p>';
 			}
+			html += buildCouponBlockHtml(state, { inSummary: true });
 			if (trimNonEmpty(totalText)) {
 				html += '<p class="mp-cc-summary-card__scenario-meta"><strong>' + escapeHtml(totalLabel) + ':</strong> <span class="mp-cc-summary-card__amount--inline" data-summary-amount="1">' + wcPriceHtmlFragment(totalText) + '</span></p>';
 			}
