@@ -3020,23 +3020,28 @@
 
 /* Payment layout C: two-up brand cards (match attached ref). */
 .mp-cc-payment--layout-two-up .mp-cc-payment__deck {
-	grid-template-columns: minmax(0, 1fr) minmax(212px, 228px);
-	gap: 0.9rem;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 0.85rem;
 }
 
 .mp-cc-payment--layout-two-up .mp-cc-payment__grid {
 	grid-template-columns: repeat(2, minmax(0, 1fr));
-	gap: 0.75rem;
+	gap: var(--mp-cc-pay-two-up-gap, 0.85rem);
+}
+
+.mp-cc-payment--layout-two-up .mp-cc-payment-card--brand-yookassa,
+.mp-cc-payment--layout-two-up .mp-cc-payment-card--brand-robokassa {
+	min-height: 25rem;
 }
 
 .mp-cc-payment--layout-two-up .mp-cc-payment-card--surface:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art) {
 	position: relative;
-	border: 1px solid #dfe4ea;
-	border-radius: 12px;
+	border: 1px solid var(--mp-cc-pay-two-up-card-border, #e6e1da);
+	border-radius: var(--mp-cc-pay-two-up-card-radius, 14px);
 	background: #fff;
-	box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
-	padding: 0.82rem 0.82rem 0.9rem;
-	gap: 0.52rem;
+	box-shadow: var(--mp-cc-pay-two-up-card-shadow, 0 2px 10px rgba(17, 24, 39, 0.03));
+	padding: var(--mp-cc-pay-two-up-card-padding, 0.95rem 1rem 1rem);
+	gap: 0.5rem;
 	align-content: start;
 	justify-items: stretch;
 	text-align: left;
@@ -3045,23 +3050,26 @@
 .mp-cc-payment--layout-two-up .mp-cc-payment-card--surface:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art)::before {
 	content: '';
 	position: absolute;
-	left: 0.72rem;
-	top: 0.72rem;
-	width: 16px;
-	height: 16px;
+	left: 0.92rem;
+	top: 0.92rem;
+	width: var(--mp-cc-pay-two-up-radio-size, 18px);
+	height: var(--mp-cc-pay-two-up-radio-size, 18px);
 	border-radius: 50%;
-	border: 1.5px solid #b6bec9;
+	border: 1.5px solid #c8c3bc;
 	background: #fff;
 }
 
 .mp-cc-payment--layout-two-up .mp-cc-payment-card--surface.is-active:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art) {
-	border-color: #3b82f6;
-	box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.22), 0 8px 20px rgba(37, 99, 235, 0.12);
+	border-color: var(--mp-cc-pay-two-up-active-border, #b9a9ff);
+	box-shadow:
+		0 0 0 1px rgba(167, 139, 250, 0.36),
+		0 0 0 3px var(--mp-cc-pay-two-up-active-glow-outer, rgba(167, 139, 250, 0.12)),
+		var(--mp-cc-pay-two-up-active-glow-shadow, 0 8px 18px rgba(111, 76, 193, 0.08));
 }
 
 .mp-cc-payment--layout-two-up .mp-cc-payment-card--surface.is-active:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art)::before {
-	border-color: #1d4ed8;
-	box-shadow: inset 0 0 0 4px #2563eb;
+	border-color: #9e83f3;
+	box-shadow: inset 0 0 0 5px #a78bfa;
 }
 
 .mp-cc-payment--layout-two-up .mp-cc-payment-card__check-pill {
@@ -3069,19 +3077,37 @@
 }
 
 .mp-cc-payment--layout-two-up .mp-cc-payment-card--surface:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art) .mp-cc-payment-card__shell {
-	border-radius: 10px;
-	border: 1px solid #eef2f6;
-	background: #fff;
+	border-radius: 0;
+	border: none;
+	background: transparent;
 	box-shadow: none;
-	aspect-ratio: 1.64 / 1;
+	aspect-ratio: auto;
 	max-height: none;
 	min-height: 8.8rem;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding-left: 0;
+	padding-top: 0;
+	overflow: visible;
 }
 
 .mp-cc-payment--layout-two-up .mp-cc-payment-card__shell-art {
+	position: static;
+	inset: auto;
+	width: auto;
+	height: var(--mp-cc-pay-two-up-logo-height, 14.5rem);
+	max-width: var(--mp-cc-pay-two-up-logo-max-width, 26rem);
 	object-fit: contain;
-	background: #fff;
-	padding: 0.55rem;
+	background: transparent;
+	padding: 0;
+	transform: scale(1.7);
+	transform-origin: center center;
+	will-change: transform;
+}
+
+.mp-cc-payment--layout-two-up .mp-cc-payment-card--brand-robokassa .mp-cc-payment-card__shell-art {
+	transform: scale(2.15);
 }
 
 .mp-cc-payment--layout-two-up .mp-cc-payment-card__shell-bg,
@@ -3090,11 +3116,11 @@
 }
 
 .mp-cc-payment--layout-two-up .mp-cc-payment-card__title--text {
-	font-size: 0.95rem;
-	font-weight: 700;
+	font-size: var(--mp-cc-pay-two-up-title-size, 0.94rem);
+	font-weight: 650;
 	line-height: 1.3;
 	margin: 0.12rem 0 0;
-	color: #111827;
+	color: #242424;
 	text-align: left;
 }
 
@@ -3102,30 +3128,125 @@
 	display: none;
 }
 
+.mp-cc-payment--layout-two-up .mp-cc-payment-card__desc {
+	margin: 0;
+	font-size: var(--mp-cc-pay-two-up-desc-size, 0.88rem);
+	line-height: 1.36;
+	color: #7b7b7b;
+	min-height: 3.45rem;
+}
+
+.mp-cc-payment--layout-two-up .mp-cc-payment-card__perks {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.48rem;
+	padding-top: 0.62rem;
+	margin-top: 0.18rem;
+	border-top: 1px solid #ece8e2;
+}
+
+.mp-cc-payment--layout-two-up .mp-cc-payment-card__perk {
+	display: inline-flex;
+	align-items: center;
+	padding: var(--mp-cc-pay-two-up-perk-padding, 0.36rem 0.62rem);
+	border: 1px solid #e5dfd8;
+	border-radius: var(--mp-cc-pay-two-up-perk-radius, 9px);
+	background: #fff;
+	font-size: var(--mp-cc-pay-two-up-perk-size, 0.72rem);
+	line-height: 1.15;
+	color: #76716a;
+	white-space: nowrap;
+}
+
 .mp-cc-payment--layout-two-up .mp-cc-payment__deck-aside .mp-cc-gift-peer {
-	min-height: 100%;
+	width: 100%;
+	max-width: 100%;
+	display: grid;
+	grid-template-columns: minmax(220px, 0.95fr) minmax(0, 1.65fr);
+	align-items: stretch;
+	min-height: 0;
+	border-radius: 14px;
 }
 
 .mp-cc-payment--layout-two-up .mp-cc-payment__deck-aside .mp-cc-gift-peer__shell-body {
-	padding: 0.7rem 0.75rem 0.5rem;
+	padding: 0.62rem 0.8rem 0.52rem;
 }
 
 .mp-cc-payment--layout-two-up .mp-cc-payment__deck-aside .mp-cc-gift-peer__headline {
-	font-size: 0.92rem;
+	font-size: 1rem;
+	position: relative;
+	padding-bottom: 0.9rem;
+}
+
+.mp-cc-payment--layout-two-up .mp-cc-payment__deck-aside .mp-cc-gift-peer__headline::after {
+	content: '';
+	position: absolute;
+	left: 0;
+	bottom: 0.05rem;
+	width: 7.2rem;
+	height: 0.55rem;
+	background-repeat: no-repeat;
+	background-size: contain;
+	background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='14' viewBox='0 0 180 14' fill='none'><path d='M1 7H76' stroke='%23b08c66' stroke-opacity='0.55'/><path d='M104 7H179' stroke='%23b08c66' stroke-opacity='0.55'/><path d='M90 1l2.2 3.6h4.2l-3.4 2.6 1.3 4-3.3-2.4-3.3 2.4 1.3-4-3.4-2.6h4.2L90 1z' fill='%23b08c66'/></svg>");
 }
 
 .mp-cc-payment--layout-two-up .mp-cc-payment__deck-aside .mp-cc-gift-peer__inlay {
-	padding: 0.45rem 0.72rem 0.7rem;
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 0.7rem;
+	padding: 0.7rem 0.9rem;
 }
 
 .mp-cc-payment--layout-two-up .mp-cc-payment__deck-aside .mp-cc-gift-peer__input {
-	font-size: 0.8rem;
-	padding: 0.48rem 0.55rem;
+	font-size: 0.88rem;
+	padding: 0.5rem 0.65rem;
+	max-width: 18rem;
 }
 
 .mp-cc-payment--layout-two-up .mp-cc-payment__deck-aside .mp-cc-gift-peer__apply {
-	font-size: 0.76rem;
-	padding: 0.45rem 1rem;
+	font-size: 0.84rem;
+	padding: 0.5rem 1.2rem;
+}
+
+.mp-cc-payment--layout-two-up .mp-cc-payment__deck-aside .mp-cc-gift-peer__controls {
+	max-width: none;
+	width: 100%;
+	display: flex;
+	flex-direction: row;
+	justify-content: flex-end;
+	align-items: center;
+	gap: 0.7rem;
+	margin: 0;
+}
+
+.mp-cc-payment--layout-two-up .mp-cc-payment__deck-aside .mp-cc-gift-peer__lede,
+.mp-cc-payment--layout-two-up .mp-cc-payment__deck-aside .mp-cc-gift-peer__rule,
+.mp-cc-payment--layout-two-up .mp-cc-payment__deck-aside .mp-cc-gift-peer__bow {
+	display: none;
+}
+
+.mp-cc-payment--layout-two-up .mp-cc-payment__deck-aside .mp-cc-gift-peer__hint {
+	max-width: none;
+	text-align: right;
+	font-size: 0.72rem;
+}
+
+@media (max-width: 980px) {
+	.mp-cc-payment--layout-two-up .mp-cc-payment__deck-aside .mp-cc-gift-peer {
+		grid-template-columns: 1fr;
+	}
+
+	.mp-cc-payment--layout-two-up .mp-cc-payment__deck-aside .mp-cc-gift-peer__inlay {
+		justify-content: center;
+	}
+
+	.mp-cc-payment--layout-two-up .mp-cc-payment__deck-aside .mp-cc-gift-peer__controls {
+		flex-direction: column;
+		align-items: stretch;
+		max-width: 22rem;
+		margin: 0 auto;
+	}
 }
 
 /* Check pill rendered as <span> from JS so it sits right between card and title. */
