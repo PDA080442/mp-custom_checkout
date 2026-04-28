@@ -2661,7 +2661,7 @@
 
 	function normalizePaymentCardSurface(raw) {
 		var s = String(raw || '').toLowerCase().trim();
-		if (s === 'classic' || s === 'visual' || s === 'in_card') {
+		if (s === 'classic' || s === 'visual' || s === 'in_card' || s === 'segment_preview') {
 			return s;
 		}
 		return 'visual';
@@ -2669,6 +2669,9 @@
 
 	function resolvePaymentRenderSurface(state, pb) {
 		var requested = normalizePaymentCardSurface(pb.card_surface);
+		if (requested === 'segment_preview') {
+			return requested;
+		}
 		if (requested === 'classic') {
 			return requested;
 		}
@@ -2735,6 +2738,90 @@
 			robokassa: trimNonEmpty(box.robokassa),
 			yookassa: trimNonEmpty(box.yookassa)
 		};
+	}
+
+	function getGatewayArtUrl(gatewayId) {
+		var brand = classifyPaymentGatewayBrand(gatewayId);
+		var art = getPaymentCardArtUrls();
+		if (brand === 'robokassa') {
+			return art.robokassa || '';
+		}
+		if (brand === 'yookassa') {
+			return art.yookassa || '';
+		}
+		if (brand === 'bank') {
+			return art.bank || '';
+		}
+		return art.generic || '';
+	}
+
+	function isSegmentPreviewEligible(gateways) {
+		if (!Array.isArray(gateways) || gateways.length !== 2) {
+			return false;
+		}
+		var brands = {};
+		var i;
+		for (i = 0; i < gateways.length; i += 1) {
+			brands[classifyPaymentGatewayBrand(gateways[i].id)] = true;
+		}
+		return !!(brands.robokassa && brands.yookassa);
+	}
+
+	function buildPaymentSegmentPreviewMarkup(gateways, selected, errPayment, payRadioA11y) {
+		var html = '';
+		var previewGateway = null;
+		var i;
+		for (i = 0; i < gateways.length; i += 1) {
+			if (String(gateways[i].id) === String(selected)) {
+				previewGateway = gateways[i];
+				break;
+			}
+		}
+		if (!previewGateway && gateways.length) {
+			previewGateway = gateways[0];
+		}
+		html += '<div class="mp-cc-payment-segment" role="tablist" aria-label="' + escapeHtml(getUiText('step_4.payment_method_group_label', 'Выбор способа оплаты')) + '">';
+		for (i = 0; i < gateways.length; i += 1) {
+			var g = gateways[i];
+			var isSelected = String(g.id) === String(selected);
+			var pseudoSelected = !trimNonEmpty(selected) && i === 0;
+			html += '<label class="mp-cc-payment-segment__tab' + (isSelected || pseudoSelected ? ' is-active' : '') + '" role="tab" aria-selected="' + (isSelected || pseudoSelected ? 'true' : 'false') + '">';
+			html += '<input type="radio" class="mp-cc-payment-segment__radio mp-cc-payment-card__radio' + (errPayment ? ' is-invalid' : '') + '" name="mp_cc_payment_gateway" value="' + escapeHtml(g.id) + '" data-payment-gateway="1"' + payRadioA11y + (isSelected ? ' checked' : '') + ' autocomplete="off" />';
+			html += '<span class="mp-cc-payment-segment__label">' + escapeHtml(g.title) + '</span>';
+			html += '</label>';
+		}
+		html += '</div>';
+		if (previewGateway) {
+			var previewArt = getGatewayArtUrl(previewGateway.id);
+			html += '<article class="mp-cc-payment-preview">';
+			html += '<div class="mp-cc-payment-preview__art-wrap">';
+			if (previewArt) {
+				html += '<img class="mp-cc-payment-preview__art" src="' + escapeHtml(previewArt) + '" alt="" decoding="async" loading="lazy" />';
+			}
+			html += '</div>';
+			html += '<p class="mp-cc-payment-preview__title">' + escapeHtml(previewGateway.title) + '</p>';
+			html += '</article>';
+		}
+		if (gateways.length > 1) {
+			for (i = 0; i < gateways.length; i += 1) {
+				if (previewGateway && String(gateways[i].id) === String(previewGateway.id)) {
+					continue;
+				}
+				var ghost = gateways[i];
+				var ghostArt = getGatewayArtUrl(ghost.id);
+				html += '<div class="mp-cc-payment-preview-ghost" aria-hidden="true">';
+				html += '<div class="mp-cc-payment-preview-ghost__thumb">';
+				if (ghostArt) {
+					html += '<img class="mp-cc-payment-preview-ghost__art" src="' + escapeHtml(ghostArt) + '" alt="" decoding="async" loading="lazy" />';
+				}
+				html += '</div>';
+				html += '<span class="mp-cc-payment-preview-ghost__name">' + escapeHtml(ghost.title) + '</span>';
+				html += '<span class="mp-cc-payment-preview-ghost__percent">40%</span>';
+				html += '</div>';
+				break;
+			}
+		}
+		return html;
 	}
 
 	function buildPaymentCardShellMarkup(g, brand, surfaceMode) {
@@ -3114,6 +3201,7 @@
 		}
 		var messages = pb.messages && typeof pb.messages === 'object' ? pb.messages : {};
 		var paymentState = state.frontendStore && state.frontendStore.payment ? String(state.frontendStore.payment.state || 'idle') : 'idle';
+		var twoUpBrands = isSegmentPreviewEligible(gateways);
 		var diagnosticsIssues = [];
 		if (trimNonEmpty(selected)) {
 			var selectedPresent = false;
@@ -3129,11 +3217,24 @@
 		}
 		maybeSendGatewayRenderDiagnostics(state, diagnosticsIssues);
 		var surface = resolvePaymentRenderSurface(state, pb);
-		var surfaceClass = surface === 'classic' ? 'mp-cc-payment--surface-classic' : (surface === 'in_card' ? 'mp-cc-payment--surface-in-card' : 'mp-cc-payment--surface-visual');
+		if (surface === 'segment_preview' && twoUpBrands) {
+			// For current redesign keep two-up cards even if old preset remains in settings.
+			surface = 'visual';
+		}
+		var surfaceClass = surface === 'classic'
+			? 'mp-cc-payment--surface-classic'
+			: (surface === 'in_card'
+				? 'mp-cc-payment--surface-in-card'
+				: (surface === 'segment_preview' ? 'mp-cc-payment--surface-segment-preview' : 'mp-cc-payment--surface-visual'));
+		if (surface === 'visual' && twoUpBrands) {
+			// Two-up layout: keep cards clean, avoid duplicate long text below each card.
+			showDescription = false;
+		}
+		var layoutClass = (surface === 'visual' && twoUpBrands) ? ' mp-cc-payment--layout-two-up' : '';
 		var stateClass = paymentState === 'success' ? ' mp-cc-payment--state-success' : (paymentState === 'error' ? ' mp-cc-payment--state-error' : '');
 		var errClass = errPayment ? ' mp-cc-payment--has-field-error' : '';
 		var html = '';
-		html += '<section class="mp-cc-payment mp-cc-payment--' + escapeHtml(trimNonEmpty(pb.card_style) || 'default') + ' mp-cc-payment--radio-' + escapeHtml(trimNonEmpty(pb.radio_style) || 'default') + ' mp-cc-payment--desc-' + escapeHtml(trimNonEmpty(pb.description_style) || 'muted') + ' ' + surfaceClass + stateClass + errClass + (paymentState === 'syncing' ? ' is-loading' : '') + '" aria-labelledby="mp-cc-payment-title">';
+		html += '<section class="mp-cc-payment mp-cc-payment--' + escapeHtml(trimNonEmpty(pb.card_style) || 'default') + ' mp-cc-payment--radio-' + escapeHtml(trimNonEmpty(pb.radio_style) || 'default') + ' mp-cc-payment--desc-' + escapeHtml(trimNonEmpty(pb.description_style) || 'muted') + ' ' + surfaceClass + layoutClass + stateClass + errClass + (paymentState === 'syncing' ? ' is-loading' : '') + '" aria-labelledby="mp-cc-payment-title">';
 		html += '<header class="mp-cc-payment__header">';
 		html += '<h4 class="mp-cc-payment__title" id="mp-cc-payment-title">' + escapeHtml(title) + '</h4>';
 		if (intro) {
@@ -3150,64 +3251,68 @@
 			html += '<div class="mp-cc-payment__deck">';
 			html += '<div class="mp-cc-payment__deck-main">';
 		}
-		html += '<div class="mp-cc-payment__grid" role="group" aria-label="' + escapeHtml(getUiText('step_4.payment_method_group_label', 'Выбор способа оплаты')) + '" style="--mp-cc-payment-cols:' + escapeHtml(String(desktopCols)) + ';--mp-cc-payment-cols-tablet:' + escapeHtml(String(tabletCols)) + ';--mp-cc-payment-cols-mobile:' + escapeHtml(String(mobileCols)) + ';--mp-cc-payment-gap:' + escapeHtml(trimNonEmpty(layout.grid_gap) || '0.6rem 0.75rem') + ';">';
 		var gi;
-		for (gi = 0; gi < gateways.length; gi += 1) {
-			var g = gateways[gi];
-			var isSelected = String(g.id) === String(selected);
-			var brand = classifyPaymentGatewayBrand(g.id);
-			var activeMod = escapeHtml(trimNonEmpty(pb.card_active_style) || 'accent');
-			if (surface === 'classic') {
-				html += '<label class="mp-cc-payment-card mp-cc-payment-card--active-' + activeMod + (isSelected ? ' is-active' : '') + '">';
-				html += '<input type="radio" class="mp-cc-payment-card__radio' + (errPayment ? ' is-invalid' : '') + '" name="mp_cc_payment_gateway" value="' + escapeHtml(g.id) + '" data-payment-gateway="1"' + payRadioA11y + (isSelected ? ' checked' : '') + ' />';
-				html += '<span class="mp-cc-payment-card__title">' + escapeHtml(g.title) + '</span>';
-				if (showDescription && g.description) {
-					html += '<span class="mp-cc-payment-card__desc">' + escapeHtml(g.description) + '</span>';
-				}
-				html += '</label>';
-			} else {
-				var shellRt = '';
-				if (isSelected) {
-					if (paymentState === 'syncing') {
-						shellRt = ' mp-cc-payment-card--rt-loading';
-					} else if (paymentState === 'error') {
-						shellRt = ' mp-cc-payment-card--rt-error';
-					} else if (paymentState === 'success') {
-						shellRt = ' mp-cc-payment-card--rt-success';
+		if (surface === 'segment_preview') {
+			html += buildPaymentSegmentPreviewMarkup(gateways, selected, errPayment, payRadioA11y);
+		} else {
+			html += '<div class="mp-cc-payment__grid" role="group" aria-label="' + escapeHtml(getUiText('step_4.payment_method_group_label', 'Выбор способа оплаты')) + '" style="--mp-cc-payment-cols:' + escapeHtml(String(desktopCols)) + ';--mp-cc-payment-cols-tablet:' + escapeHtml(String(tabletCols)) + ';--mp-cc-payment-cols-mobile:' + escapeHtml(String(mobileCols)) + ';--mp-cc-payment-gap:' + escapeHtml(trimNonEmpty(layout.grid_gap) || '0.6rem 0.75rem') + ';">';
+			for (gi = 0; gi < gateways.length; gi += 1) {
+				var g = gateways[gi];
+				var isSelected = String(g.id) === String(selected);
+				var brand = classifyPaymentGatewayBrand(g.id);
+				var activeMod = escapeHtml(trimNonEmpty(pb.card_active_style) || 'accent');
+				if (surface === 'classic') {
+					html += '<label class="mp-cc-payment-card mp-cc-payment-card--active-' + activeMod + (isSelected ? ' is-active' : '') + '">';
+					html += '<input type="radio" class="mp-cc-payment-card__radio' + (errPayment ? ' is-invalid' : '') + '" name="mp_cc_payment_gateway" value="' + escapeHtml(g.id) + '" data-payment-gateway="1"' + payRadioA11y + (isSelected ? ' checked' : '') + ' />';
+					html += '<span class="mp-cc-payment-card__title">' + escapeHtml(g.title) + '</span>';
+					if (showDescription && g.description) {
+						html += '<span class="mp-cc-payment-card__desc">' + escapeHtml(g.description) + '</span>';
 					}
-				}
-				var bankVisualCfg = isGlowPaymentBrand(brand) ? getBankCardVisualConfig() : null;
-				var userConfirmedClass = '';
-				if (bankVisualCfg && bankVisualCfg.enabled && isSelected) {
-					var requireClick = bankVisualCfg.confirmOnClickOnly;
-					if (!requireClick || isPaymentUserConfirmed(state)) {
-						userConfirmedClass = ' is-user-confirmed';
+					html += '</label>';
+				} else {
+					var shellRt = '';
+					if (isSelected) {
+						if (paymentState === 'syncing') {
+							shellRt = ' mp-cc-payment-card--rt-loading';
+						} else if (paymentState === 'error') {
+							shellRt = ' mp-cc-payment-card--rt-error';
+						} else if (paymentState === 'success') {
+							shellRt = ' mp-cc-payment-card--rt-success';
+						}
 					}
-				}
-				var bankInlineStyle = '';
-				if (bankVisualCfg && bankVisualCfg.enabled) {
-					var bankCssVars = buildBankCardCssVarsStyle(bankVisualCfg);
-					if (bankCssVars) {
-						bankInlineStyle = ' style="' + escapeHtml(bankCssVars) + '"';
+					var bankVisualCfg = isGlowPaymentBrand(brand) ? getBankCardVisualConfig() : null;
+					var userConfirmedClass = '';
+					if (bankVisualCfg && bankVisualCfg.enabled && isSelected) {
+						var requireClick = bankVisualCfg.confirmOnClickOnly;
+						if (!requireClick || isPaymentUserConfirmed(state)) {
+							userConfirmedClass = ' is-user-confirmed';
+						}
 					}
+					var bankInlineStyle = '';
+					if (bankVisualCfg && bankVisualCfg.enabled) {
+						var bankCssVars = buildBankCardCssVarsStyle(bankVisualCfg);
+						if (bankCssVars) {
+							bankInlineStyle = ' style="' + escapeHtml(bankCssVars) + '"';
+						}
+					}
+					html += '<label class="mp-cc-payment-card mp-cc-payment-card--surface mp-cc-payment-card--brand-' + escapeHtml(brand) + ' mp-cc-payment-card--active-' + activeMod + (isSelected ? ' is-active' : '') + userConfirmedClass + shellRt + '"' + bankInlineStyle + '>';
+					html += '<input type="radio" class="mp-cc-payment-card__radio' + (errPayment ? ' is-invalid' : '') + '" name="mp_cc_payment_gateway" value="' + escapeHtml(g.id) + '" data-payment-gateway="1"' + payRadioA11y + (isSelected ? ' checked' : '') + ' autocomplete="off" />';
+					html += buildPaymentCardShellMarkup(g, brand, surface);
+					if (bankVisualCfg && bankVisualCfg.enabled && bankVisualCfg.showCheckPill) {
+						html += '<span class="mp-cc-payment-card__check-pill" aria-hidden="true"></span>';
+					}
+					html += '<span class="mp-cc-payment-card__title mp-cc-payment-card__title--text">' + escapeHtml(g.title) + '</span>';
+					if (showDescription && g.description) {
+						html += '<span class="mp-cc-payment-card__desc">' + escapeHtml(g.description) + '</span>';
+					}
+					if (surface === 'in_card' && isSelected) {
+						html += buildPaymentGatewayFieldsBlock(state, selected, surface, 'in_card');
+					}
+					html += '</label>';
 				}
-				html += '<label class="mp-cc-payment-card mp-cc-payment-card--surface mp-cc-payment-card--brand-' + escapeHtml(brand) + ' mp-cc-payment-card--active-' + activeMod + (isSelected ? ' is-active' : '') + userConfirmedClass + shellRt + '"' + bankInlineStyle + '>';
-				html += '<input type="radio" class="mp-cc-payment-card__radio' + (errPayment ? ' is-invalid' : '') + '" name="mp_cc_payment_gateway" value="' + escapeHtml(g.id) + '" data-payment-gateway="1"' + payRadioA11y + (isSelected ? ' checked' : '') + ' autocomplete="off" />';
-				html += buildPaymentCardShellMarkup(g, brand, surface);
-				if (bankVisualCfg && bankVisualCfg.enabled && bankVisualCfg.showCheckPill) {
-					html += '<span class="mp-cc-payment-card__check-pill" aria-hidden="true"></span>';
-				}
-				html += '<span class="mp-cc-payment-card__title mp-cc-payment-card__title--text">' + escapeHtml(g.title) + '</span>';
-				if (showDescription && g.description) {
-					html += '<span class="mp-cc-payment-card__desc">' + escapeHtml(g.description) + '</span>';
-				}
-				if (surface === 'in_card' && isSelected) {
-					html += buildPaymentGatewayFieldsBlock(state, selected, surface, 'in_card');
-				}
-				html += '</label>';
 			}
+			html += '</div>';
 		}
-		html += '</div>';
 		if (hasPeer) {
 			html += '</div>';
 			html += '<aside class="mp-cc-payment__deck-aside" aria-label="' + escapeHtml(getGiftCardPeerCopy().cardTitle) + '">' + peerHtml + '</aside>';

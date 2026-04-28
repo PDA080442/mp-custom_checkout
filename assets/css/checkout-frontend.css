@@ -2437,6 +2437,130 @@
 	gap: var(--mp-cc-payment-gap, 0.6rem 0.75rem);
 }
 
+.mp-cc-payment--surface-segment-preview .mp-cc-payment__deck-main {
+	display: grid;
+	gap: 0.85rem;
+}
+
+.mp-cc-payment-segment {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.6rem;
+}
+
+.mp-cc-payment-segment__tab {
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0.55rem 0.75rem;
+	border: 1px solid #d7dbe2;
+	border-radius: 10px;
+	background: #fff;
+	color: #7a8089;
+	font-size: 0.98rem;
+	font-weight: 500;
+	cursor: pointer;
+	transition: border-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease, background-color 0.2s ease;
+}
+
+.mp-cc-payment-segment__tab.is-active {
+	border-color: #1f2733;
+	color: #111827;
+	box-shadow: 0 1px 0 rgba(17, 24, 39, 0.07);
+}
+
+.mp-cc-payment-segment__tab:has(.mp-cc-payment-segment__radio:checked) {
+	border-color: #1f2733;
+	color: #111827;
+	box-shadow: 0 1px 0 rgba(17, 24, 39, 0.07);
+}
+
+.mp-cc-payment-segment__radio {
+	position: absolute;
+	opacity: 0;
+	pointer-events: none;
+}
+
+.mp-cc-payment-preview {
+	border: 1px solid #eceff3;
+	border-radius: 14px;
+	padding: 0.9rem 0.9rem 0.75rem;
+	background: #fff;
+	box-shadow: 0 12px 26px rgba(15, 23, 42, 0.06);
+	display: grid;
+	gap: 0.65rem;
+}
+
+.mp-cc-payment-preview__art-wrap {
+	border-radius: 12px;
+	background: linear-gradient(180deg, #f9fafb 0%, #f3f4f6 100%);
+	min-height: 15.25rem;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0.5rem;
+}
+
+.mp-cc-payment-preview__art {
+	display: block;
+	max-width: 100%;
+	max-height: 13.8rem;
+	width: auto;
+	height: auto;
+	object-fit: contain;
+}
+
+.mp-cc-payment-preview__title {
+	margin: 0;
+	text-align: center;
+	font-size: 2rem;
+	font-weight: 500;
+	letter-spacing: -0.01em;
+	color: #0f172a;
+}
+
+.mp-cc-payment-preview-ghost {
+	display: grid;
+	grid-template-columns: 9.5rem 1fr auto;
+	align-items: center;
+	gap: 0.7rem;
+	padding: 0.8rem 0.9rem;
+	border: 1px solid #eceff3;
+	border-radius: 10px;
+	background: #fff;
+	opacity: 0.5;
+}
+
+.mp-cc-payment-preview-ghost__thumb {
+	height: 3.6rem;
+	border-radius: 9px;
+	background: #f3f4f6;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0.35rem;
+}
+
+.mp-cc-payment-preview-ghost__art {
+	display: block;
+	max-width: 100%;
+	max-height: 100%;
+	object-fit: contain;
+}
+
+.mp-cc-payment-preview-ghost__name {
+	font-size: 2rem;
+	line-height: 1;
+	color: #6b7280;
+}
+
+.mp-cc-payment-preview-ghost__percent {
+	font-size: 1.7rem;
+	line-height: 1;
+	color: #9ca3af;
+}
+
 /* Payment + gift card peer (21.2) */
 .mp-cc-payment__deck {
 	display: grid;
@@ -2894,6 +3018,116 @@
 	margin-top: 0.2rem;
 }
 
+/* Payment layout C: two-up brand cards (match attached ref). */
+.mp-cc-payment--layout-two-up .mp-cc-payment__deck {
+	grid-template-columns: minmax(0, 1fr) minmax(212px, 228px);
+	gap: 0.9rem;
+}
+
+.mp-cc-payment--layout-two-up .mp-cc-payment__grid {
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.75rem;
+}
+
+.mp-cc-payment--layout-two-up .mp-cc-payment-card--surface:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art) {
+	position: relative;
+	border: 1px solid #dfe4ea;
+	border-radius: 12px;
+	background: #fff;
+	box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
+	padding: 0.82rem 0.82rem 0.9rem;
+	gap: 0.52rem;
+	align-content: start;
+	justify-items: stretch;
+	text-align: left;
+}
+
+.mp-cc-payment--layout-two-up .mp-cc-payment-card--surface:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art)::before {
+	content: '';
+	position: absolute;
+	left: 0.72rem;
+	top: 0.72rem;
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	border: 1.5px solid #b6bec9;
+	background: #fff;
+}
+
+.mp-cc-payment--layout-two-up .mp-cc-payment-card--surface.is-active:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art) {
+	border-color: #3b82f6;
+	box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.22), 0 8px 20px rgba(37, 99, 235, 0.12);
+}
+
+.mp-cc-payment--layout-two-up .mp-cc-payment-card--surface.is-active:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art)::before {
+	border-color: #1d4ed8;
+	box-shadow: inset 0 0 0 4px #2563eb;
+}
+
+.mp-cc-payment--layout-two-up .mp-cc-payment-card__check-pill {
+	display: none;
+}
+
+.mp-cc-payment--layout-two-up .mp-cc-payment-card--surface:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art) .mp-cc-payment-card__shell {
+	border-radius: 10px;
+	border: 1px solid #eef2f6;
+	background: #fff;
+	box-shadow: none;
+	aspect-ratio: 1.64 / 1;
+	max-height: none;
+	min-height: 8.8rem;
+}
+
+.mp-cc-payment--layout-two-up .mp-cc-payment-card__shell-art {
+	object-fit: contain;
+	background: #fff;
+	padding: 0.55rem;
+}
+
+.mp-cc-payment--layout-two-up .mp-cc-payment-card__shell-bg,
+.mp-cc-payment--layout-two-up .mp-cc-payment-card__shell-body {
+	display: none;
+}
+
+.mp-cc-payment--layout-two-up .mp-cc-payment-card__title--text {
+	font-size: 0.95rem;
+	font-weight: 700;
+	line-height: 1.3;
+	margin: 0.12rem 0 0;
+	color: #111827;
+	text-align: left;
+}
+
+.mp-cc-payment--layout-two-up .mp-cc-payment-card__redirect-hint {
+	display: none;
+}
+
+.mp-cc-payment--layout-two-up .mp-cc-payment__deck-aside .mp-cc-gift-peer {
+	min-height: 100%;
+}
+
+.mp-cc-payment--layout-two-up .mp-cc-payment__deck-aside .mp-cc-gift-peer__shell-body {
+	padding: 0.7rem 0.75rem 0.5rem;
+}
+
+.mp-cc-payment--layout-two-up .mp-cc-payment__deck-aside .mp-cc-gift-peer__headline {
+	font-size: 0.92rem;
+}
+
+.mp-cc-payment--layout-two-up .mp-cc-payment__deck-aside .mp-cc-gift-peer__inlay {
+	padding: 0.45rem 0.72rem 0.7rem;
+}
+
+.mp-cc-payment--layout-two-up .mp-cc-payment__deck-aside .mp-cc-gift-peer__input {
+	font-size: 0.8rem;
+	padding: 0.48rem 0.55rem;
+}
+
+.mp-cc-payment--layout-two-up .mp-cc-payment__deck-aside .mp-cc-gift-peer__apply {
+	font-size: 0.76rem;
+	padding: 0.45rem 1rem;
+}
+
 /* Check pill rendered as <span> from JS so it sits right between card and title. */
 .mp-cc-payment-card__check-pill {
 	display: inline-flex;
@@ -3282,7 +3516,7 @@
 }
 
 .mp-cc-checkout__inner {
-	max-width: 1140px;
+	max-width: var(--mp-cc-shell-max-width, 1140px);
 	margin-left: auto;
 	margin-right: auto;
 	padding-left: 1rem;

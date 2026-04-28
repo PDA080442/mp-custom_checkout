@@ -50,6 +50,9 @@ final class SafeSettingsResolver {
 					'route_slug'          => 'mp-checkout',
 					'require_entry_gate'  => true,
 					'success_route_slug'  => 'mp-checkout-success',
+					'checkout_layout'     => array(
+						'max_width' => '1140px',
+					),
 					'admin_branding'      => array(
 						'title'         => 'MP Custom Checkout — Настройки',
 						'description'   => 'Единый экран управления сценариями checkout, текстами, валидацией и визуальным поведением шагов.',

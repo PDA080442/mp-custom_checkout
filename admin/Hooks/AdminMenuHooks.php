@@ -362,6 +362,61 @@ final class AdminMenuHooks {
 				var status = document.querySelector('[data-mp-cc-search-status="1"]');
 				var isDirty = false;
 				var activeFilter = 'all';
+				var installCheckoutWidthPresets = function () {
+					var field = form.querySelector('.mp-cc-admin-shell__field[data-setting-path="general.checkout_layout.max_width"]');
+					if (!field) { return; }
+					var input = field.querySelector('input[type="text"], input[type="number"]');
+					if (!input) { return; }
+					if (field.querySelector('[data-mp-cc-width-presets="1"]')) { return; }
+					var presets = [
+						{ label: 'Компакт', value: '1140px' },
+						{ label: 'Стандарт', value: '1280px' },
+						{ label: 'Шире', value: '1360px' },
+						{ label: 'Широкий', value: '1440px' },
+						{ label: 'Full', value: '94%' }
+					];
+					var toolbar = document.createElement('div');
+					toolbar.setAttribute('data-mp-cc-width-presets', '1');
+					toolbar.style.display = 'flex';
+					toolbar.style.flexWrap = 'wrap';
+					toolbar.style.gap = '8px';
+					toolbar.style.marginTop = '8px';
+					toolbar.style.marginBottom = '2px';
+					var current = String(input.value || '').trim();
+					presets.forEach(function (preset) {
+						var btn = document.createElement('button');
+						btn.type = 'button';
+						btn.className = 'button button-small' + (current === preset.value ? ' button-primary' : '');
+						btn.textContent = preset.label;
+						btn.setAttribute('data-width-value', preset.value);
+						toolbar.appendChild(btn);
+					});
+					var hint = document.createElement('small');
+					hint.className = 'description';
+					hint.textContent = 'Быстрые пресеты + ручной ввод (например: 1320px, 82rem, 94%).';
+					hint.style.display = 'block';
+					hint.style.marginTop = '6px';
+					field.appendChild(toolbar);
+					field.appendChild(hint);
+					var syncPresetButtons = function () {
+						var val = String(input.value || '').trim();
+						Array.prototype.forEach.call(toolbar.querySelectorAll('button[data-width-value]'), function (btn) {
+							btn.classList.toggle('button-primary', String(btn.getAttribute('data-width-value') || '') === val);
+						});
+					};
+					toolbar.addEventListener('click', function (event) {
+						var btn = event.target && event.target.closest('button[data-width-value]');
+						if (!btn) { return; }
+						var nextValue = String(btn.getAttribute('data-width-value') || '').trim();
+						if (!nextValue) { return; }
+						input.value = nextValue;
+						input.dispatchEvent(new Event('input', { bubbles: true }));
+						input.dispatchEvent(new Event('change', { bubbles: true }));
+						syncPresetButtons();
+					});
+					input.addEventListener('input', syncPresetButtons);
+					input.addEventListener('change', syncPresetButtons);
+				};
 				var getScopePass = function (node) {
 					if (activeFilter === 'all') { return true; }
 					var scopes = String(node.getAttribute('data-setting-filters') || '');
@@ -406,6 +461,7 @@ final class AdminMenuHooks {
 						applySearch();
 					});
 				}
+				installCheckoutWidthPresets();
 				applySearch();
 				window.addEventListener('beforeunload', onBeforeUnload);
 			})();
@@ -912,7 +968,7 @@ final class AdminMenuHooks {
 		$filters = self::build_filters_for_path( $path );
 		$risky = self::is_risky_path( $path );
 		$scenario = self::scenario_scope_for_path( $path );
-		echo '<label class="mp-cc-admin-shell__field' . ( $risky ? ' is-risky' : '' ) . '" data-setting-filters="' . esc_attr( implode( ',', $filters ) ) . '" data-setting-scenario="' . esc_attr( $scenario ) . '">';
+		echo '<label class="mp-cc-admin-shell__field' . ( $risky ? ' is-risky' : '' ) . '" data-setting-path="' . esc_attr( $path ) . '" data-setting-filters="' . esc_attr( implode( ',', $filters ) ) . '" data-setting-scenario="' . esc_attr( $scenario ) . '">';
 		echo '<span class="mp-cc-admin-shell__field-label">' . esc_html( ucfirst( $label ) ) . '</span>';
 		if ( 'all' !== $scenario ) {
 			echo '<span class="mp-cc-admin-shell__scenario-badge">' . esc_html( self::scenario_scope_label( $scenario ) ) . '</span>';
@@ -949,6 +1005,7 @@ final class AdminMenuHooks {
 	private static function localized_label_for_path( string $path ): string {
 		$leaf = basename( str_replace( '.', '/', $path ) );
 		$map = array(
+			'general.checkout_layout.max_width'          => __( 'Максимальная ширина страницы checkout', 'mp-custom-checkout' ),
 			'step_1.address_form_style_preset'          => __( 'Пресет стиля формы адреса', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.card_bg'        => __( 'Фон карточки', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.card_border'    => __( 'Рамка карточки', 'mp-custom-checkout' ),
@@ -1018,6 +1075,7 @@ final class AdminMenuHooks {
 	 */
 	private static function localized_group_label_for_path( string $path, string $fallback_key ): string {
 		$map = array(
+			'general.checkout_layout'                    => __( 'Макет страницы checkout', 'mp-custom-checkout' ),
 			'step_1.address_form_styles'                 => __( 'Стили формы адреса и доставки (шаг 1)', 'mp-custom-checkout' ),
 			'step_4.contact_block'                       => __( 'Контактные данные (шаг 4)', 'mp-custom-checkout' ),
 			'step_4.contact_block.layout'                => __( 'Сетка полей контактов', 'mp-custom-checkout' ),
