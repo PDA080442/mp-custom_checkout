@@ -362,6 +362,112 @@ final class AdminMenuHooks {
 				var status = document.querySelector('[data-mp-cc-search-status="1"]');
 				var isDirty = false;
 				var activeFilter = 'all';
+				var installCheckoutWidthPresets = function () {
+					var field = form.querySelector('.mp-cc-admin-shell__field[data-setting-path="general.checkout_layout.max_width"]');
+					if (!field) { return; }
+					var input = field.querySelector('input[type="text"], input[type="number"]');
+					if (!input) { return; }
+					if (field.querySelector('[data-mp-cc-width-presets="1"]')) { return; }
+					var presets = [
+						{ label: 'Компакт', value: '1140px' },
+						{ label: 'Стандарт', value: '1280px' },
+						{ label: 'Шире', value: '1360px' },
+						{ label: 'Широкий', value: '1440px' },
+						{ label: 'Full', value: '94%' }
+					];
+					var toolbar = document.createElement('div');
+					toolbar.setAttribute('data-mp-cc-width-presets', '1');
+					toolbar.style.display = 'flex';
+					toolbar.style.flexWrap = 'wrap';
+					toolbar.style.gap = '8px';
+					toolbar.style.marginTop = '8px';
+					toolbar.style.marginBottom = '2px';
+					var current = String(input.value || '').trim();
+					presets.forEach(function (preset) {
+						var btn = document.createElement('button');
+						btn.type = 'button';
+						btn.className = 'button button-small' + (current === preset.value ? ' button-primary' : '');
+						btn.textContent = preset.label;
+						btn.setAttribute('data-width-value', preset.value);
+						toolbar.appendChild(btn);
+					});
+					var hint = document.createElement('small');
+					hint.className = 'description';
+					hint.textContent = 'Быстрые пресеты + ручной ввод (например: 1320px, 82rem, 94%).';
+					hint.style.display = 'block';
+					hint.style.marginTop = '6px';
+					field.appendChild(toolbar);
+					field.appendChild(hint);
+					var syncPresetButtons = function () {
+						var val = String(input.value || '').trim();
+						Array.prototype.forEach.call(toolbar.querySelectorAll('button[data-width-value]'), function (btn) {
+							btn.classList.toggle('button-primary', String(btn.getAttribute('data-width-value') || '') === val);
+						});
+					};
+					toolbar.addEventListener('click', function (event) {
+						var btn = event.target && event.target.closest('button[data-width-value]');
+						if (!btn) { return; }
+						var nextValue = String(btn.getAttribute('data-width-value') || '').trim();
+						if (!nextValue) { return; }
+						input.value = nextValue;
+						input.dispatchEvent(new Event('input', { bubbles: true }));
+						input.dispatchEvent(new Event('change', { bubbles: true }));
+						syncPresetButtons();
+					});
+					input.addEventListener('input', syncPresetButtons);
+					input.addEventListener('change', syncPresetButtons);
+				};
+				var installGiftBarStylePresets = function () {
+					var field = form.querySelector('.mp-cc-admin-shell__field[data-setting-path="step_4.payment_block.card_styles.gift_bar_style"]');
+					if (!field) { return; }
+					var input = field.querySelector('input[type="text"]');
+					if (!input) { return; }
+					if (field.querySelector('[data-mp-cc-giftbar-presets="1"]')) { return; }
+					var presets = [
+						{ label: 'Seal Inline', value: 'seal-inline' }
+					];
+					var toolbar = document.createElement('div');
+					toolbar.setAttribute('data-mp-cc-giftbar-presets', '1');
+					toolbar.style.display = 'flex';
+					toolbar.style.flexWrap = 'wrap';
+					toolbar.style.gap = '8px';
+					toolbar.style.marginTop = '8px';
+					toolbar.style.marginBottom = '2px';
+					var current = String(input.value || '').trim().toLowerCase() || 'seal-inline';
+					presets.forEach(function (preset) {
+						var btn = document.createElement('button');
+						btn.type = 'button';
+						btn.className = 'button button-small' + (current === preset.value ? ' button-primary' : '');
+						btn.textContent = preset.label;
+						btn.setAttribute('data-giftbar-value', preset.value);
+						toolbar.appendChild(btn);
+					});
+					var hint = document.createElement('small');
+					hint.className = 'description';
+					hint.textContent = 'Единственный поддерживаемый вариант: seal-inline.';
+					hint.style.display = 'block';
+					hint.style.marginTop = '6px';
+					field.appendChild(toolbar);
+					field.appendChild(hint);
+					var syncPresetButtons = function () {
+						var val = String(input.value || '').trim().toLowerCase();
+						Array.prototype.forEach.call(toolbar.querySelectorAll('button[data-giftbar-value]'), function (btn) {
+							btn.classList.toggle('button-primary', String(btn.getAttribute('data-giftbar-value') || '') === val);
+						});
+					};
+					toolbar.addEventListener('click', function (event) {
+						var btn = event.target && event.target.closest('button[data-giftbar-value]');
+						if (!btn) { return; }
+						var nextValue = String(btn.getAttribute('data-giftbar-value') || '').trim();
+						if (!nextValue) { return; }
+						input.value = nextValue;
+						input.dispatchEvent(new Event('input', { bubbles: true }));
+						input.dispatchEvent(new Event('change', { bubbles: true }));
+						syncPresetButtons();
+					});
+					input.addEventListener('input', syncPresetButtons);
+					input.addEventListener('change', syncPresetButtons);
+				};
 				var getScopePass = function (node) {
 					if (activeFilter === 'all') { return true; }
 					var scopes = String(node.getAttribute('data-setting-filters') || '');
@@ -406,6 +512,8 @@ final class AdminMenuHooks {
 						applySearch();
 					});
 				}
+				installCheckoutWidthPresets();
+				installGiftBarStylePresets();
 				applySearch();
 				window.addEventListener('beforeunload', onBeforeUnload);
 			})();
@@ -912,7 +1020,7 @@ final class AdminMenuHooks {
 		$filters = self::build_filters_for_path( $path );
 		$risky = self::is_risky_path( $path );
 		$scenario = self::scenario_scope_for_path( $path );
-		echo '<label class="mp-cc-admin-shell__field' . ( $risky ? ' is-risky' : '' ) . '" data-setting-filters="' . esc_attr( implode( ',', $filters ) ) . '" data-setting-scenario="' . esc_attr( $scenario ) . '">';
+		echo '<label class="mp-cc-admin-shell__field' . ( $risky ? ' is-risky' : '' ) . '" data-setting-path="' . esc_attr( $path ) . '" data-setting-filters="' . esc_attr( implode( ',', $filters ) ) . '" data-setting-scenario="' . esc_attr( $scenario ) . '">';
 		echo '<span class="mp-cc-admin-shell__field-label">' . esc_html( ucfirst( $label ) ) . '</span>';
 		if ( 'all' !== $scenario ) {
 			echo '<span class="mp-cc-admin-shell__scenario-badge">' . esc_html( self::scenario_scope_label( $scenario ) ) . '</span>';
@@ -949,6 +1057,7 @@ final class AdminMenuHooks {
 	private static function localized_label_for_path( string $path ): string {
 		$leaf = basename( str_replace( '.', '/', $path ) );
 		$map = array(
+			'general.checkout_layout.max_width'          => __( 'Максимальная ширина страницы checkout', 'mp-custom-checkout' ),
 			'step_1.address_form_style_preset'          => __( 'Пресет стиля формы адреса', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.card_bg'        => __( 'Фон карточки', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.card_border'    => __( 'Рамка карточки', 'mp-custom-checkout' ),
@@ -1006,6 +1115,34 @@ final class AdminMenuHooks {
 			'step_4.recipient_styles.address_header_divider' => __( 'Шаг 2: разделитель заголовка адреса', 'mp-custom-checkout' ),
 			'step_4.recipient_styles.address_title_size'  => __( 'Шаг 2: размер заголовка адреса', 'mp-custom-checkout' ),
 			'step_4.recipient_styles.address_intro_size'  => __( 'Шаг 2: размер подзаголовка адреса', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.grid_gap'      => __( 'Оплата: расстояние между карточками', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.card_padding'  => __( 'Оплата: внутренние отступы карточки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.card_radius'   => __( 'Оплата: скругление карточки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.card_border'   => __( 'Оплата: цвет рамки карточки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.card_shadow'   => __( 'Оплата: тень карточки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.active_border' => __( 'Оплата: цвет рамки активной карточки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.active_glow_outer' => __( 'Оплата: свечение активной карточки (внешнее)', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.active_glow_shadow' => __( 'Оплата: тень активной карточки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.radio_size'    => __( 'Оплата: размер радиокнопки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.logo_height'   => __( 'Оплата: высота логотипа/картинки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.logo_max_width'=> __( 'Оплата: максимальная ширина логотипа/картинки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.title_size'    => __( 'Оплата: размер заголовка карточки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.desc_size'     => __( 'Оплата: размер описания карточки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.perk_font_size'=> __( 'Оплата: размер текста плашек преимуществ', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.perk_radius'   => __( 'Оплата: скругление плашек преимуществ', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.perk_padding'  => __( 'Оплата: внутренние отступы плашек преимуществ', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_card_width' => __( 'Оплата: ширина карточки подарочной карты рядом', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_style' => __( 'Оплата: стиль нижней карточки подарочной карты', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_bg' => __( 'Подарочная карта (нижний блок): фон', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_border' => __( 'Подарочная карта (нижний блок): цвет рамки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_shadow' => __( 'Подарочная карта (нижний блок): тень', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_title_color' => __( 'Подарочная карта (нижний блок): цвет заголовка', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_text_color' => __( 'Подарочная карта (нижний блок): цвет описания', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_input_bg' => __( 'Подарочная карта (нижний блок): фон поля ввода', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_input_border' => __( 'Подарочная карта (нижний блок): рамка поля ввода', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_input_text' => __( 'Подарочная карта (нижний блок): цвет текста поля ввода', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_button_bg' => __( 'Подарочная карта (нижний блок): фон кнопки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_bar_button_text' => __( 'Подарочная карта (нижний блок): цвет текста кнопки', 'mp-custom-checkout' ),
 		);
 		if ( isset( $map[ $path ] ) ) {
 			return (string) $map[ $path ];
@@ -1018,6 +1155,7 @@ final class AdminMenuHooks {
 	 */
 	private static function localized_group_label_for_path( string $path, string $fallback_key ): string {
 		$map = array(
+			'general.checkout_layout'                    => __( 'Макет страницы checkout', 'mp-custom-checkout' ),
 			'step_1.address_form_styles'                 => __( 'Стили формы адреса и доставки (шаг 1)', 'mp-custom-checkout' ),
 			'step_4.contact_block'                       => __( 'Контактные данные (шаг 4)', 'mp-custom-checkout' ),
 			'step_4.contact_block.layout'                => __( 'Сетка полей контактов', 'mp-custom-checkout' ),
@@ -1033,6 +1171,7 @@ final class AdminMenuHooks {
 			'step_4.address_block.subfields_visible'     => __( 'Видимость полей адреса', 'mp-custom-checkout' ),
 			'step_4.address_block.subfields_order'       => __( 'Порядок полей адреса', 'mp-custom-checkout' ),
 			'step_4.recipient_styles'                    => __( 'Стили шага 2: Получатель', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles'           => __( 'Стили карточек оплаты', 'mp-custom-checkout' ),
 		);
 		if ( isset( $map[ $path ] ) ) {
 			return (string) $map[ $path ];
