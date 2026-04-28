@@ -1399,6 +1399,11 @@
 				syncFromFlow(state, data.flow || {}, data.cart || {});
 			}
 			render(state, $app);
+			var gatewayRedirect = trimNonEmpty(data && data.gateway_redirect ? data.gateway_redirect : '');
+			if (gatewayRedirect) {
+				window.location.href = gatewayRedirect;
+				return;
+			}
 			if (data && data.confirmed && trimNonEmpty(data.success_url)) {
 				window.location.href = String(data.success_url);
 				return;
