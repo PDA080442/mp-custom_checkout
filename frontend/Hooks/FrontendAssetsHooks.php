@@ -27,7 +27,28 @@ final class FrontendAssetsHooks {
 	public const HANDLE_SCRIPT = 'mp-cc-checkout-frontend';
 
 	public static function register(): void {
+		// Раньше основного enqueue: без этого при отложенном CSS (оптимизаторы темы / RUCSS)
+		// переменные из inline handle не успевают — #mp-cc-checkout наследует body (часто тёмная тема)
+		// и даёт «белый на белом», заголовок на чёрном фоне, сломанный stacked-timeline до загрузки файла.
+		add_action( 'wp_head', array( __CLASS__, 'print_critical_checkout_shell_css' ), 1 );
 		add_action( 'wp_enqueue_scripts', array( __CLASS__, 'enqueue' ), 20 );
+	}
+
+	/**
+	 * Минимальные стили и дизайн-токены в &lt;head&gt; до отложенных стилей темы/плагинов оптимизации.
+	 */
+	public static function print_critical_checkout_shell_css(): void {
+		if ( ! CheckoutRouteHooks::is_checkout_route() ) {
+			return;
+		}
+		if ( ! DependencyFailureGuard::is_woocommerce_integration_ready() ) {
+			return;
+		}
+		$css = self::build_critical_checkout_shell_css();
+		if ( '' === $css ) {
+			return;
+		}
+		echo '<style id="mp-cc-checkout-critical-shell">' . esc_html( $css ) . '</style>' . "\n";
 	}
 
 	public static function enqueue(): void {
@@ -260,6 +281,67 @@ final class FrontendAssetsHooks {
 			);
 		}
 		return $result;
+	}
+
+	private static function default_shell_design_variables(): array {
+		return array(
+			'color-text'         => '#1a1a1a',
+			'color-text-muted'   => '#666666',
+			'color-background'   => '#ffffff',
+			'color-border'       => '#e5e5e5',
+			'color-accent'       => '#111111',
+			'color-rail'         => '#2563eb',
+			'color-error'        => '#b91c1c',
+			'color-success'      => '#15803d',
+			'radius-sm'          => '6px',
+			'radius-md'          => '10px',
+			'transition-duration' => '0.2s',
+			'summary-receipt-bg' => '#f3f4f6',
+			'font-family-base'   => 'system-ui,-apple-system,Segoe UI,Roboto,sans-serif',
+			'font-size-base'     => '16px',
+		);
+	}
+
+	/**
+	 * Слияние дефолтов с design_tokens из настроек (ключи из БД могут быть с подчёркиванием).
+	 *
+	 * @return array<string, string>
+	 */
+	private static function merged_shell_design_variables(): array {
+		$out = self::default_shell_design_variables();
+		foreach ( self::design_tokens_for_runtime() as $key => $value ) {
+			if ( ! is_string( $key ) || '' === $value ) {
+				continue;
+			}
+			$hyphen = str_replace( '_', '-', sanitize_key( $key ) );
+			if ( '' === $hyphen ) {
+				continue;
+			}
+			$out[ $hyphen ] = self::sanitize_css_token_value( (string) $value );
+		}
+		return $out;
+	}
+
+	/**
+	 * Компактный CSS для первого кадра: токены на #mp-cc-checkout, фон body, stacked-timeline.
+	 */
+	private static function build_critical_checkout_shell_css(): string {
+		$vars = self::merged_shell_design_variables();
+		$decl = array();
+		foreach ( $vars as $name => $value ) {
+			$decl[] = '--mp-cc-' . $name . ':' . $value . ';';
+		}
+		$bg = isset( $vars['color-background'] ) ? $vars['color-background'] : '#ffffff';
+		$fg = isset( $vars['color-text'] ) ? $vars['color-text'] : '#1a1a1a';
+
+		$parts   = array();
+		$parts[] = 'body.mp-custom-checkout{background:' . $bg . ';color:' . $fg . ';}';
+		$parts[] = '#mp-cc-checkout{' . implode( '', $decl ) . 'color:var(--mp-cc-color-text);background:var(--mp-cc-color-background);min-height:100vh;font-family:var(--mp-cc-font-family-base);font-size:var(--mp-cc-font-size-base);line-height:1.45;}';
+		$parts[] = '.mp-cc-v2-shell-head__title{color:var(--mp-cc-color-text);}';
+		$parts[] = '.mp-cc-layout--stacked-timeline .mp-cc-region--progress,.mp-cc-layout--stacked-timeline .mp-cc-region--actions{display:none;}';
+		$parts[] = '.mp-cc-layout--stacked-timeline .mp-cc-region--content{position:relative;padding-left:2.5rem;}';
+
+		return implode( '', $parts );
 	}
 
 	private static function build_design_tokens_css(): string {

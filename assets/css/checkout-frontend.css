@@ -37,10 +37,10 @@
 }
 
 #mp-cc-checkout {
-	color: var(--mp-cc-color-text);
-	background: var(--mp-cc-color-background);
-	font-family: var(--mp-cc-font-family-base);
-	font-size: var(--mp-cc-font-size-base);
+	color: var(--mp-cc-color-text, #1a1a1a);
+	background: var(--mp-cc-color-background, #ffffff);
+	font-family: var(--mp-cc-font-family-base, system-ui, -apple-system, Segoe UI, Roboto, sans-serif);
+	font-size: var(--mp-cc-font-size-base, 16px);
 	line-height: 1.45;
 	--mp-cc-keyboard-inset: 0px;
 	scroll-padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px) + var(--mp-cc-keyboard-inset, 0px));
