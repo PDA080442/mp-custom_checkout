@@ -469,6 +469,11 @@ final class SafeSettingsResolver {
 						'address_title_size'       => '1.1rem',
 						'address_intro_size'       => '0.92rem',
 					),
+					'recipient_step_panel_styles' => array(
+						'border_width' => '',
+						'border_color' => '',
+						'box_shadow'   => '',
+					),
 					'discount_layout' => array(
 						'placement'             => 'step_4',
 						'separate_step_enabled' => false,
@@ -540,6 +545,8 @@ final class SafeSettingsResolver {
 						'radio_style' => 'default',
 						'description_style' => 'muted',
 						'show_description' => true,
+						'two_up_show_card_description' => true,
+						'two_up_show_perk_tags'          => true,
 						'required' => true,
 						'bank_card_visual' => array(
 							'enabled'                 => true,
@@ -564,6 +571,8 @@ final class SafeSettingsResolver {
 							'radio_size'           => '18px',
 							'logo_height'          => '12rem',
 							'logo_max_width'       => '22rem',
+							'two_up_card_min_height'  => '',
+							'two_up_shell_min_height' => '',
 							'title_size'           => '2rem',
 							'desc_size'            => '1.15rem',
 							'perk_font_size'       => '0.92rem',

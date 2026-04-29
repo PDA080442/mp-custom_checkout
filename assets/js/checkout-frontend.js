@@ -661,6 +661,8 @@
 				radio_style: 'default',
 				description_style: 'muted',
 				show_description: true,
+				two_up_show_card_description: true,
+				two_up_show_perk_tags: true,
 				required: true,
 				bank_card_visual: {
 					enabled: true,
@@ -685,6 +687,8 @@
 					radio_size: '18px',
 					logo_height: '12rem',
 					logo_max_width: '22rem',
+					two_up_card_min_height: '',
+					two_up_shell_min_height: '',
 					title_size: '2rem',
 					desc_size: '1.15rem',
 					perk_font_size: '0.92rem',
@@ -744,6 +748,11 @@
 				}
 			},
 			address_geo: {},
+			recipient_step_panel_styles: {
+				border_width: '',
+				border_color: '',
+				box_shadow: ''
+			},
 			discount_layout: {
 				placement: 'step_4',
 				separate_step_enabled: false,
@@ -2872,6 +2881,19 @@
 		return html;
 	}
 
+	function normalizePaymentToggle(val, defaultTrue) {
+		if (val === false || val === 0 || val === '0') {
+			return false;
+		}
+		if (val === true || val === 1 || val === '1') {
+			return true;
+		}
+		if (val === undefined || val === null) {
+			return defaultTrue;
+		}
+		return defaultTrue;
+	}
+
 	function buildPaymentCardStylesAttr(pb, twoUpMode) {
 		if (!pb || typeof pb !== 'object') {
 			return '';
@@ -2895,6 +2917,8 @@
 			vars['--mp-cc-pay-two-up-radio-size'] = trimNonEmpty(s.radio_size);
 			vars['--mp-cc-pay-two-up-logo-height'] = trimNonEmpty(s.logo_height);
 			vars['--mp-cc-pay-two-up-logo-max-width'] = trimNonEmpty(s.logo_max_width);
+			vars['--mp-cc-pay-two-up-card-min-height'] = trimNonEmpty(s.two_up_card_min_height);
+			vars['--mp-cc-pay-two-up-shell-min-height'] = trimNonEmpty(s.two_up_shell_min_height);
 			vars['--mp-cc-pay-two-up-title-size'] = trimNonEmpty(s.title_size);
 			vars['--mp-cc-pay-two-up-desc-size'] = trimNonEmpty(s.desc_size);
 			vars['--mp-cc-pay-two-up-perk-size'] = trimNonEmpty(s.perk_font_size);
@@ -3344,7 +3368,9 @@
 		var errPayment = getContactFieldError(state, 'payment_gateway');
 		var title = trimNonEmpty(pb.title) || getUiText('step_4.payment_title', 'Способ оплаты');
 		var intro = trimNonEmpty(pb.intro) || getUiText('step_4.payment_intro', 'Выберите удобный способ оплаты.');
-		var showDescription = pb.show_description !== false;
+		var showDescription = normalizePaymentToggle(pb.show_description, true);
+		var twoUpShowCardDesc = normalizePaymentToggle(pb.two_up_show_card_description, true);
+		var twoUpShowPerkTags = normalizePaymentToggle(pb.two_up_show_perk_tags, true);
 		var layout = pb.layout && typeof pb.layout === 'object' ? pb.layout : {};
 		var desktopCols = Math.max(1, Number(layout.desktop_columns || 2));
 		var tabletCols = Math.max(1, Number(layout.tablet_columns || 1));
@@ -3471,9 +3497,10 @@
 						html += '<span class="mp-cc-payment-card__check-pill" aria-hidden="true"></span>';
 					}
 					html += '<span class="mp-cc-payment-card__title mp-cc-payment-card__title--text">' + escapeHtml(g.title) + '</span>';
-					if (showDescription && (g.description || twoUpMode)) {
+					var cardDescAllowed = twoUpMode ? twoUpShowCardDesc : showDescription;
+					if (cardDescAllowed && (g.description || twoUpMode)) {
 						var descText = trimNonEmpty(g.description);
-						if (!descText && twoUpMode) {
+						if (!descText && twoUpMode && twoUpShowCardDesc) {
 							if (brand === 'yookassa') {
 								descText = getUiText('step_4.payment_desc_yookassa', 'Онлайн-платежи через ЮKassa — быстро, безопасно и без комиссии.');
 							} else if (brand === 'robokassa') {
@@ -3484,7 +3511,7 @@
 							html += '<span class="mp-cc-payment-card__desc">' + escapeHtml(descText) + '</span>';
 						}
 					}
-					if (twoUpMode) {
+					if (twoUpMode && twoUpShowPerkTags) {
 						html += buildPaymentTwoUpPerksHtml(brand);
 					}
 					if (surface === 'in_card' && isSelected) {
@@ -6718,6 +6745,38 @@
 		}
 	}
 
+	function applyRecipientStepPanelStyles() {
+		var root = document.querySelector(selectors.root);
+		if (!root) {
+			return;
+		}
+		var cfg = getStepFourConfig();
+		var panelRaw = cfg.recipient_step_panel_styles && typeof cfg.recipient_step_panel_styles === 'object' ? cfg.recipient_step_panel_styles : {};
+		var panelMerged = $.extend({ border_width: '', border_color: '', box_shadow: '' }, panelRaw);
+		var bwRaw = panelMerged.border_width;
+		var panelBw = trimNonEmpty(bwRaw);
+		if (!panelBw && (bwRaw === 0 || String(bwRaw || '').trim() === '0')) {
+			panelBw = '0';
+		}
+		if (panelBw) {
+			root.style.setProperty('--mp-cc-step-panel-recipient-border-width', panelBw);
+		} else {
+			root.style.removeProperty('--mp-cc-step-panel-recipient-border-width');
+		}
+		var panelBc = trimNonEmpty(panelMerged.border_color);
+		if (panelBc) {
+			root.style.setProperty('--mp-cc-step-panel-recipient-border-color', panelBc);
+		} else {
+			root.style.removeProperty('--mp-cc-step-panel-recipient-border-color');
+		}
+		var panelBs = trimNonEmpty(panelMerged.box_shadow);
+		if (panelBs) {
+			root.style.setProperty('--mp-cc-step-panel-recipient-box-shadow', panelBs);
+		} else {
+			root.style.removeProperty('--mp-cc-step-panel-recipient-box-shadow');
+		}
+	}
+
 	function logPickupMapIssue(state, code, message) {
 		var cfg = getPickupMapConfig();
 		if (!cfg.diagnosticsEnabled) {
@@ -6929,6 +6988,7 @@
 			animateSummaryUpdate(state, $summary);
 		}
 		applyStepOnePresentation(state);
+		applyRecipientStepPanelStyles();
 		if (isFlagEnabled(state, flagNames.multiStepFlow, true)) {
 			if (isProgressChanged) {
 				$progress.html(nextProgressHtml);

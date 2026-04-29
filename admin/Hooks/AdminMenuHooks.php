@@ -1094,6 +1094,9 @@ final class AdminMenuHooks {
 			'step_1.step_panel_screen_styles.border_width' => __( 'Панель шага (.mp-cc-step-panel): толщина рамки', 'mp-custom-checkout' ),
 			'step_1.step_panel_screen_styles.border_color' => __( 'Панель шага: цвет рамки (пусто — как у темы)', 'mp-custom-checkout' ),
 			'step_1.step_panel_screen_styles.box_shadow'   => __( 'Панель шага: box-shadow (пусто — как у темы)', 'mp-custom-checkout' ),
+			'step_4.recipient_step_panel_styles.border_width' => __( 'Панель шага «Получатель» (recipient): толщина рамки', 'mp-custom-checkout' ),
+			'step_4.recipient_step_panel_styles.border_color' => __( 'Панель «Получатель»: цвет рамки (пусто — как у шага 1 / темы)', 'mp-custom-checkout' ),
+			'step_4.recipient_step_panel_styles.box_shadow'   => __( 'Панель «Получатель»: box-shadow (пусто — как у шага 1)', 'mp-custom-checkout' ),
 			'step_4.contact_block.layout.desktop_columns' => __( 'Контакты: колонки (desktop)', 'mp-custom-checkout' ),
 			'step_4.contact_block.layout.tablet_columns'  => __( 'Контакты: колонки (tablet)', 'mp-custom-checkout' ),
 			'step_4.contact_block.layout.mobile_columns'  => __( 'Контакты: колонки (mobile)', 'mp-custom-checkout' ),
@@ -1131,6 +1134,8 @@ final class AdminMenuHooks {
 			'step_4.recipient_styles.address_header_divider' => __( 'Шаг 2: разделитель заголовка адреса', 'mp-custom-checkout' ),
 			'step_4.recipient_styles.address_title_size'  => __( 'Шаг 2: размер заголовка адреса', 'mp-custom-checkout' ),
 			'step_4.recipient_styles.address_intro_size'  => __( 'Шаг 2: размер подзаголовка адреса', 'mp-custom-checkout' ),
+			'step_4.payment_block.two_up_show_card_description' => __( 'Оплата (две карточки): показывать описание под заголовком', 'mp-custom-checkout' ),
+			'step_4.payment_block.two_up_show_perk_tags'        => __( 'Оплата (две карточки): показывать теги под линией', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.grid_gap'      => __( 'Оплата: расстояние между карточками', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.card_padding'  => __( 'Оплата: внутренние отступы карточки', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.card_radius'   => __( 'Оплата: скругление карточки', 'mp-custom-checkout' ),
@@ -1146,6 +1151,8 @@ final class AdminMenuHooks {
 			'step_4.payment_block.card_styles.radio_size'    => __( 'Оплата: размер радиокнопки', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.logo_height'   => __( 'Оплата: высота логотипа/картинки', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.logo_max_width'=> __( 'Оплата: максимальная ширина логотипа/картинки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.two_up_card_min_height'  => __( 'Оплата (two-up): минимальная высота всей карточки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.two_up_shell_min_height' => __( 'Оплата (two-up): минимальная высота блока с логотипом', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.title_size'    => __( 'Оплата: размер заголовка карточки', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.desc_size'     => __( 'Оплата: размер описания карточки', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.perk_font_size'=> __( 'Оплата: размер текста плашек преимуществ', 'mp-custom-checkout' ),
@@ -1205,6 +1212,7 @@ final class AdminMenuHooks {
 			'step_4.address_block.subfields_visible'     => __( 'Видимость полей адреса', 'mp-custom-checkout' ),
 			'step_4.address_block.subfields_order'       => __( 'Порядок полей адреса', 'mp-custom-checkout' ),
 			'step_4.recipient_styles'                    => __( 'Стили шага 2: Получатель', 'mp-custom-checkout' ),
+			'step_4.recipient_step_panel_styles'         => __( 'Рамка и тень панели шага «Получатель» (data-step-panel=recipient)', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles'           => __( 'Стили карточек оплаты', 'mp-custom-checkout' ),
 		);
 		if ( isset( $map[ $path ] ) ) {
@@ -1282,6 +1290,12 @@ final class AdminMenuHooks {
 		if ( false !== strpos( $p, 'step_1.step_panel_screen_styles.box_shadow' ) ) {
 			return __( 'CSS для box-shadow панели шага. Пусто — тень из токена темы (--mp-cc-shadow-card). none — без тени.', 'mp-custom-checkout' );
 		}
+		if ( false !== strpos( $p, 'step_4.recipient_step_panel_styles.border_width' ) || false !== strpos( $p, 'step_4.recipient_step_panel_styles.border_color' ) ) {
+			return __( 'Только для шага с контактами (recipient). Пусто — те же значения, что на шаге 1 в «Рамка экрана шага». 0 — без рамки.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'step_4.recipient_step_panel_styles.box_shadow' ) ) {
+			return __( 'Переопределяет тень только у панели recipient. Пусто — как у шага 1; none — без тени.', 'mp-custom-checkout' );
+		}
 		if ( false !== strpos( $p, 'payment_block.card_styles.selection_glow_color' ) ) {
 			return __( 'HEX цвет (например #c4a574): ореол за логотипом, фокус и подсветка выбранной карточки в сетке two-up. Дублирует смысл «glow» до клика; после клика см. bank_card_visual.glow_color.', 'mp-custom-checkout' );
 		}
@@ -1299,6 +1313,18 @@ final class AdminMenuHooks {
 		}
 		if ( false !== strpos( $p, 'field_order' ) ) {
 			return __( 'Определяет визуальный порядок полей в шаге.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'step_4.payment_block.two_up_show_card_description' ) ) {
+			return __( 'Только для раскладки с двумя крупными карточками (ЮKassa / Robokassa). Снимите галочку, чтобы убрать серый текст описания под названием способа.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'step_4.payment_block.two_up_show_perk_tags' ) ) {
+			return __( 'Только для двухкарточной раскладки. Снимите галочку, чтобы убрать блок с тегами («Без комиссии» и т. п.) и линию над ним.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'payment_block.card_styles.two_up_card_min_height' ) ) {
+			return __( 'CSS min-height для карточки ЮKassa/Robokassa в двухколоночной раскладке (например 18rem). Пусто — встроенное значение по умолчанию (25rem).', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'payment_block.card_styles.two_up_shell_min_height' ) ) {
+			return __( 'CSS min-height верхней области с логотипом в two-up. Пусто — по умолчанию 8.8rem. Уменьшите вместе с «Высота логотипа», если карточка слишком высокая.', 'mp-custom-checkout' );
 		}
 		if ( false !== strpos( $p, 'payment_block' ) && false !== strpos( $p, 'card_surface' ) ) {
 			return __( 'Режим карточек: classic — радио-список WooCommerce; visual — карточки и поля шлюза под сеткой; in_card — поля шлюза внутри выбранной карточки (HTML из payment_fields(), без самодельных PAN).', 'mp-custom-checkout' );

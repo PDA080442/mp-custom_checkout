@@ -187,6 +187,14 @@
 	backdrop-filter: blur(0px);
 }
 
+/* Шаг «Получатель / контакты»: отдельные токены; пустые в админке → как у шага 1 (step_panel_screen_styles). */
+.mp-cc-step-panel[data-step-panel="recipient"] {
+	border-width: var(--mp-cc-step-panel-recipient-border-width, var(--mp-cc-step-panel-border-width, 1px));
+	border-style: solid;
+	border-color: var(--mp-cc-step-panel-recipient-border-color, var(--mp-cc-step-panel-border-color, var(--mp-cc-color-border)));
+	box-shadow: var(--mp-cc-step-panel-recipient-box-shadow, var(--mp-cc-step-panel-box-shadow, var(--mp-cc-shadow-card)));
+}
+
 .mp-cc-step-panel__meta {
 	margin: 0 0 0.25rem;
 	font-size: 0.8125rem;
@@ -3068,7 +3076,7 @@
 
 .mp-cc-payment--layout-two-up .mp-cc-payment-card--brand-yookassa,
 .mp-cc-payment--layout-two-up .mp-cc-payment-card--brand-robokassa {
-	min-height: 25rem;
+	min-height: var(--mp-cc-pay-two-up-card-min-height, 25rem);
 }
 
 .mp-cc-payment--layout-two-up .mp-cc-payment-card--surface:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art) {
@@ -3120,7 +3128,7 @@
 	box-shadow: none;
 	aspect-ratio: auto;
 	max-height: none;
-	min-height: 8.8rem;
+	min-height: var(--mp-cc-pay-two-up-shell-min-height, 8.8rem);
 	display: flex;
 	align-items: center;
 	justify-content: center;
