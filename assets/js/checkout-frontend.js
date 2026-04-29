@@ -644,9 +644,11 @@
 					card_radius: '14px',
 					card_border: '#e6e1da',
 					card_shadow: '0 2px 10px rgba(17,24,39,0.03)',
+					shell_shadow: '0 6px 18px rgba(15,23,42,0.12)',
 					active_border: '#b9a9ff',
 					active_glow_outer: 'rgba(167,139,250,0.12)',
 					active_glow_shadow: '0 8px 18px rgba(111,76,193,0.08)',
+					selection_glow_color: '#a78bfa',
 					radio_size: '18px',
 					logo_height: '12rem',
 					logo_max_width: '22rem',
@@ -730,7 +732,22 @@
 				success_message: '',
 				error_message: '',
 				allow_remove_applied: true,
-				summary_section_title: ''
+				summary_section_title: '',
+				styles: {
+					summary_glow_color: '#a78bfa',
+					summary_bg: 'linear-gradient(180deg, color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 14%, #fff) 0%, #fff 100%)',
+					summary_border: 'color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 48%, #e9ddff)',
+					title_color: '#111111',
+					text_color: '#4b5563',
+					input_bg: 'rgba(255, 255, 255, 0.95)',
+					input_border: 'color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 35%, var(--mp-cc-color-border))',
+					input_text: 'var(--mp-cc-color-text, #111111)',
+					button_bg: 'linear-gradient(180deg, color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 40%, #232323) 0%, #191919 100%)',
+					button_border: 'color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 62%, #111)',
+					button_text: '#ffffff',
+					button_bg_hover: 'linear-gradient(180deg, color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 50%, #2f2f2f) 0%, #232323 100%)',
+					button_border_hover: 'color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 74%, #2f2f2f)'
+				}
 			},
 			gift_card_block: {
 				title: '',
@@ -2828,6 +2845,11 @@
 		}
 		var s = pb.card_styles && typeof pb.card_styles === 'object' ? pb.card_styles : {};
 		var vars = {};
+		var selGlow = trimNonEmpty(s.selection_glow_color);
+		if (selGlow) {
+			vars['--mp-cc-pay-glow'] = selGlow;
+		}
+		vars['--mp-cc-pay-shell-shadow'] = trimNonEmpty(s.shell_shadow);
 		if (twoUpMode) {
 			vars['--mp-cc-pay-two-up-gap'] = trimNonEmpty(s.grid_gap);
 			vars['--mp-cc-pay-two-up-card-padding'] = trimNonEmpty(s.card_padding);
@@ -3672,6 +3694,37 @@
 		return html;
 	}
 
+	function buildCouponStylesAttr(state, inSummary) {
+		if (!inSummary) {
+			return '';
+		}
+		var cfg = getStepFourConfig();
+		var cb = cfg.coupon_block && typeof cfg.coupon_block === 'object' ? cfg.coupon_block : {};
+		var s = cb.styles && typeof cb.styles === 'object' ? cb.styles : {};
+		var rawGlow = Object.prototype.hasOwnProperty.call(s, 'summary_glow_color') ? String(s.summary_glow_color || '').trim() : '';
+		var vars = {
+			'--mp-cc-coupon-summary-glow': rawGlow ? rawGlow : 'transparent',
+			'--mp-cc-coupon-summary-bg': trimNonEmpty(s.summary_bg),
+			'--mp-cc-coupon-summary-border': trimNonEmpty(s.summary_border),
+			'--mp-cc-coupon-summary-title': trimNonEmpty(s.title_color),
+			'--mp-cc-coupon-summary-text': trimNonEmpty(s.text_color),
+			'--mp-cc-coupon-input-bg': trimNonEmpty(s.input_bg),
+			'--mp-cc-coupon-input-border': trimNonEmpty(s.input_border),
+			'--mp-cc-coupon-input-text': trimNonEmpty(s.input_text),
+			'--mp-cc-coupon-button-bg': trimNonEmpty(s.button_bg),
+			'--mp-cc-coupon-button-border': trimNonEmpty(s.button_border),
+			'--mp-cc-coupon-button-text': trimNonEmpty(s.button_text),
+			'--mp-cc-coupon-button-bg-hover': trimNonEmpty(s.button_bg_hover),
+			'--mp-cc-coupon-button-border-hover': trimNonEmpty(s.button_border_hover)
+		};
+		var out = [];
+		Object.keys(vars).forEach(function (k) {
+			if (!vars[k]) { return; }
+			out.push(k + ': ' + vars[k]);
+		});
+		return out.length ? ' style="' + escapeHtml(out.join('; ')) + '"' : '';
+	}
+
 	function buildCouponBlockHtml(state, opts) {
 		opts = opts || {};
 		var cartStep = opts.cartStep === true;
@@ -3698,7 +3751,7 @@
 		var msg = trimNonEmpty(rt.message);
 		var html = '';
 		var stateClass = runtimeState === 'success' ? String(styles.state_success || 'success') : (runtimeState === 'error' ? String(styles.state_error || 'error') : String(styles.state_empty || 'default'));
-		html += '<article class="mp-cc-coupon mp-cc-coupon--' + escapeHtml(stateClass) + (inSummary ? ' mp-cc-coupon--in-summary' : '') + '" data-coupon-block="1">';
+		html += '<article class="mp-cc-coupon mp-cc-coupon--' + escapeHtml(stateClass) + (inSummary ? ' mp-cc-coupon--in-summary' : '') + '" data-coupon-block="1"' + buildCouponStylesAttr(state, inSummary) + '>';
 		html += '<h4 class="mp-cc-coupon__title">' + escapeHtml(copy.title) + '</h4>';
 		if (copy.intro) {
 			html += '<p class="mp-cc-coupon__intro">' + escapeHtml(copy.intro) + '</p>';

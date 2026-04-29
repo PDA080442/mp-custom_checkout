@@ -336,10 +336,14 @@ final class FrontendAssetsHooks {
 
 		$parts   = array();
 		$parts[] = 'body.mp-custom-checkout{background:' . $bg . ';color:' . $fg . ';}';
-		$parts[] = '#mp-cc-checkout{' . implode( '', $decl ) . 'color:var(--mp-cc-color-text);background:var(--mp-cc-color-background);min-height:100vh;font-family:var(--mp-cc-font-family-base);font-size:var(--mp-cc-font-size-base);line-height:1.45;}';
+		$parts[] = '#mp-cc-checkout{' . implode( '', $decl ) . self::checkout_shell_layout_inline_properties() . 'color:var(--mp-cc-color-text);background:var(--mp-cc-color-background);min-height:100vh;font-family:var(--mp-cc-font-family-base);font-size:var(--mp-cc-font-size-base);line-height:1.45;padding-block:var(--mp-cc-shell-padding-block,75px);}';
 		$parts[] = '.mp-cc-v2-shell-head__title{color:var(--mp-cc-color-text);}';
 		$parts[] = '.mp-cc-layout--stacked-timeline .mp-cc-region--progress,.mp-cc-layout--stacked-timeline .mp-cc-region--actions{display:none;}';
 		$parts[] = '.mp-cc-layout--stacked-timeline .mp-cc-region--content{position:relative;padding-left:2.5rem;}';
+		// Кнопки «Далее» в шаге не обёрнуты в .mp-cc-nav — до загрузки основного CSS тема может сжать button.
+		$parts[] = '#mp-cc-checkout .mp-cc-nav__btn{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-width:8rem;min-height:2.75rem;padding:0.625rem 1rem;border:1px solid var(--mp-cc-color-accent,#111111);border-radius:var(--mp-cc-radius-sm,6px);background:var(--mp-cc-color-background,#ffffff);color:var(--mp-cc-color-text,#1a1a1a);font:inherit;}';
+		$parts[] = '#mp-cc-checkout .mp-cc-nav__btn--next{background:var(--mp-cc-color-accent,#111111);color:#fff;border-color:var(--mp-cc-color-accent,#111111);}';
+		$parts[] = '#mp-cc-checkout .mp-cc-step-card__actions{display:flex;flex-wrap:wrap;gap:0.75rem;justify-content:flex-end;width:100%;min-width:0;margin-top:0.85rem;}';
 
 		return implode( '', $parts );
 	}
@@ -359,14 +363,25 @@ final class FrontendAssetsHooks {
 		return ':root{' . implode( '', $lines ) . '}';
 	}
 
-	private static function build_checkout_layout_css(): string {
+	/**
+	 * CSS-свойства для ширины контента и вертикальных отступов всего checkout (переменные на #mp-cc-checkout).
+	 */
+	private static function checkout_shell_layout_inline_properties(): string {
 		$general   = SafeSettingsResolver::get_section( OptionKeys::SECTION_GENERAL );
 		$layout    = ( is_array( $general ) && isset( $general['checkout_layout'] ) && is_array( $general['checkout_layout'] ) ) ? $general['checkout_layout'] : array();
 		$max_width = isset( $layout['max_width'] ) ? self::sanitize_css_size_value( (string) $layout['max_width'] ) : '';
 		if ( '' === $max_width ) {
 			$max_width = '1140px';
 		}
-		return '#mp-cc-checkout{--mp-cc-shell-max-width:' . $max_width . ';}';
+		$vpad = isset( $layout['vertical_padding'] ) ? self::sanitize_css_size_value( (string) $layout['vertical_padding'] ) : '';
+		if ( '' === $vpad ) {
+			$vpad = '75px';
+		}
+		return '--mp-cc-shell-max-width:' . $max_width . ';--mp-cc-shell-padding-block:' . $vpad . ';';
+	}
+
+	private static function build_checkout_layout_css(): string {
+		return '#mp-cc-checkout{' . self::checkout_shell_layout_inline_properties() . '}';
 	}
 
 	private static function sanitize_css_token_value( string $value ): string {

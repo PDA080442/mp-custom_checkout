@@ -1058,6 +1058,7 @@ final class AdminMenuHooks {
 		$leaf = basename( str_replace( '.', '/', $path ) );
 		$map = array(
 			'general.checkout_layout.max_width'          => __( 'Максимальная ширина страницы checkout', 'mp-custom-checkout' ),
+			'general.checkout_layout.vertical_padding'   => __( 'Вертикальные отступы блока checkout (сверху и снизу)', 'mp-custom-checkout' ),
 			'step_1.address_form_style_preset'          => __( 'Пресет стиля формы адреса', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.card_bg'        => __( 'Фон карточки', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.card_border'    => __( 'Рамка карточки', 'mp-custom-checkout' ),
@@ -1119,10 +1120,14 @@ final class AdminMenuHooks {
 			'step_4.payment_block.card_styles.card_padding'  => __( 'Оплата: внутренние отступы карточки', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.card_radius'   => __( 'Оплата: скругление карточки', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.card_border'   => __( 'Оплата: цвет рамки карточки', 'mp-custom-checkout' ),
-			'step_4.payment_block.card_styles.card_shadow'   => __( 'Оплата: тень карточки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.card_shadow'   => __( 'Оплата: тень карточки-контейнера (two-up)', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.shell_shadow'  => __( 'Оплата: тень изображения/области карты (visual)', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.active_border' => __( 'Оплата: цвет рамки активной карточки', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.active_glow_outer' => __( 'Оплата: свечение активной карточки (внешнее)', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.active_glow_shadow' => __( 'Оплата: тень активной карточки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.selection_glow_color' => __( 'Оплата: цвет ореола при выборе (логотип, рамка two-up)', 'mp-custom-checkout' ),
+			'step_4.payment_block.bank_card_visual.glow_color' => __( 'Оплата: цвет свечения после клика по карте (bank card visual)', 'mp-custom-checkout' ),
+			'step_4.payment_block.bank_card_visual.glow_intensity' => __( 'Оплата: интенсивность свечения (soft | medium | strong)', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.radio_size'    => __( 'Оплата: размер радиокнопки', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.logo_height'   => __( 'Оплата: высота логотипа/картинки', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.logo_max_width'=> __( 'Оплата: максимальная ширина логотипа/картинки', 'mp-custom-checkout' ),
@@ -1143,6 +1148,19 @@ final class AdminMenuHooks {
 			'step_4.payment_block.card_styles.gift_bar_input_text' => __( 'Подарочная карта (нижний блок): цвет текста поля ввода', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.gift_bar_button_bg' => __( 'Подарочная карта (нижний блок): фон кнопки', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.gift_bar_button_text' => __( 'Подарочная карта (нижний блок): цвет текста кнопки', 'mp-custom-checkout' ),
+			'step_4.coupon_block.styles.summary_glow_color' => __( 'Промокод: цвет свечения блока', 'mp-custom-checkout' ),
+			'step_4.coupon_block.styles.summary_bg' => __( 'Промокод: фон блока (градиент/цвет)', 'mp-custom-checkout' ),
+			'step_4.coupon_block.styles.summary_border' => __( 'Промокод: цвет рамки блока', 'mp-custom-checkout' ),
+			'step_4.coupon_block.styles.title_color' => __( 'Промокод: цвет заголовка', 'mp-custom-checkout' ),
+			'step_4.coupon_block.styles.text_color' => __( 'Промокод: цвет текста/подписей', 'mp-custom-checkout' ),
+			'step_4.coupon_block.styles.input_bg' => __( 'Промокод: фон поля ввода', 'mp-custom-checkout' ),
+			'step_4.coupon_block.styles.input_border' => __( 'Промокод: рамка поля ввода', 'mp-custom-checkout' ),
+			'step_4.coupon_block.styles.input_text' => __( 'Промокод: цвет текста поля ввода', 'mp-custom-checkout' ),
+			'step_4.coupon_block.styles.button_bg' => __( 'Промокод: фон кнопки «Применить»', 'mp-custom-checkout' ),
+			'step_4.coupon_block.styles.button_border' => __( 'Промокод: рамка кнопки «Применить»', 'mp-custom-checkout' ),
+			'step_4.coupon_block.styles.button_text' => __( 'Промокод: цвет текста кнопки «Применить»', 'mp-custom-checkout' ),
+			'step_4.coupon_block.styles.button_bg_hover' => __( 'Промокод: фон кнопки при наведении', 'mp-custom-checkout' ),
+			'step_4.coupon_block.styles.button_border_hover' => __( 'Промокод: рамка кнопки при наведении', 'mp-custom-checkout' ),
 		);
 		if ( isset( $map[ $path ] ) ) {
 			return (string) $map[ $path ];
@@ -1230,6 +1248,15 @@ final class AdminMenuHooks {
 
 	private static function tooltip_text_for_path( string $path ): string {
 		$p = strtolower( $path );
+		if ( false !== strpos( $p, 'checkout_layout.vertical_padding' ) ) {
+			return __( 'Одинаковый отступ сверху и снизу у всего блока #mp-cc-checkout (например 75px или 4rem). Только безопасные единицы: px, rem, em, vw, %.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'payment_block.card_styles.selection_glow_color' ) ) {
+			return __( 'HEX цвет (например #c4a574): ореол за логотипом, фокус и подсветка выбранной карточки в сетке two-up. Дублирует смысл «glow» до клика; после клика см. bank_card_visual.glow_color.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'bank_card_visual.glow_color' ) ) {
+			return __( 'Цвет drop-shadow вокруг области логотипа после подтверждения выбора (если включён bank card visual).', 'mp-custom-checkout' );
+		}
 		if ( false !== strpos( $p, 'route_slug' ) ) {
 			return __( 'Изменяет URL маршрутов checkout/success. Требует проверки rewrite-правил.', 'mp-custom-checkout' );
 		}
