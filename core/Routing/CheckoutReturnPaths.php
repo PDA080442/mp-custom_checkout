@@ -37,6 +37,26 @@ final class CheckoutReturnPaths {
 	}
 
 	/**
+	 * Куда вести после выхода из оформления (крестик, «вернуться в магазин» в сводке): главная сайта, не /shop.
+	 *
+	 * Фильтр: {@see 'mp_custom_checkout_exit_landing_url'}.
+	 */
+	public static function get_exit_landing_url(): string {
+		$url = home_url( '/' );
+		if ( function_exists( 'get_option' ) && 'page' === get_option( 'show_on_front' ) ) {
+			$page_id = (int) get_option( 'page_on_front' );
+			if ( $page_id > 0 && function_exists( 'get_permalink' ) ) {
+				$permalink = get_permalink( $page_id );
+				if ( is_string( $permalink ) && '' !== $permalink ) {
+					$url = $permalink;
+				}
+			}
+		}
+
+		return (string) apply_filters( 'mp_custom_checkout_exit_landing_url', $url );
+	}
+
+	/**
 	 * URL корзины.
 	 */
 	public static function get_cart_url(): string {

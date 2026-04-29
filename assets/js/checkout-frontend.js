@@ -171,11 +171,20 @@
 			admin_preview: {
 				enabled: true
 			},
+			step_panel_screen_styles: {
+				border_width: '1px',
+				border_color: '',
+				box_shadow: ''
+			},
 			address_form_styles: {
 				card_bg: '#ffffff',
 				card_border: '#e5e7eb',
 				card_radius: '14px',
+				form_border_width: '1px',
 				row_divider: '#e5e7eb',
+				row_divider_width: '1px',
+				divider_after_city_width: '',
+				divider_after_method_width: '',
 				label_color: '#111111',
 				label_size: '1.05rem',
 				value_color: '#1f2937',
@@ -202,7 +211,9 @@
 				card_bg: '#ffffff',
 				card_border: '#dfe3e8',
 				card_radius: '12px',
+				form_border_width: '1px',
 				row_divider: '#eceff3',
+				row_divider_width: '1px',
 				label_color: '#0f172a',
 				label_size: '1.02rem',
 				value_color: '#1f2937',
@@ -225,7 +236,9 @@
 				card_bg: '#ffffff',
 				card_border: '#e5e7eb',
 				card_radius: '10px',
+				form_border_width: '1px',
 				row_divider: '#eef0f3',
+				row_divider_width: '1px',
 				label_color: '#111111',
 				label_size: '0.98rem',
 				value_color: '#1f2937',
@@ -248,7 +261,9 @@
 			card_bg: '#ffffff',
 			card_border: '#e5e7eb',
 			card_radius: '14px',
+			form_border_width: '1px',
 			row_divider: '#e5e7eb',
+			row_divider_width: '1px',
 			label_color: '#111111',
 			label_size: '1.05rem',
 			value_color: '#1f2937',
@@ -289,11 +304,15 @@
 			overrides[key] = val;
 		});
 		var styles = $.extend({}, presetStyles, overrides);
+		var formBw = trimNonEmpty(styles.form_border_width) || '1px';
+		var rowBw = trimNonEmpty(styles.row_divider_width) || '1px';
 		var vars = {
 			'--mp-cc-address-card-bg': styles.card_bg,
 			'--mp-cc-address-card-border': styles.card_border,
 			'--mp-cc-address-card-radius': styles.card_radius,
+			'--mp-cc-address-form-border-width': formBw,
 			'--mp-cc-address-row-divider': styles.row_divider,
+			'--mp-cc-address-row-divider-width': rowBw,
 			'--mp-cc-address-label-color': styles.label_color,
 			'--mp-cc-address-label-size': styles.label_size,
 			'--mp-cc-address-value-color': styles.value_color,
@@ -310,6 +329,20 @@
 			'--mp-cc-address-edit-btn-color': styles.edit_btn_color,
 			'--mp-cc-address-edit-btn-radius': styles.edit_btn_radius
 		};
+		function tokenDividerWidth(val) {
+			if (val === 0) {
+				return '0';
+			}
+			return trimNonEmpty(val);
+		}
+		var dac = tokenDividerWidth(styles.divider_after_city_width);
+		if (dac !== '') {
+			vars['--mp-cc-address-row-divider-after-city'] = dac;
+		}
+		var dam = tokenDividerWidth(styles.divider_after_method_width);
+		if (dam !== '') {
+			vars['--mp-cc-address-row-divider-after-method'] = dam;
+		}
 		var out = [];
 		Object.keys(vars).forEach(function (key) {
 			var value = trimNonEmpty(vars[key]);
@@ -628,6 +661,9 @@
 				radio_style: 'default',
 				description_style: 'muted',
 				show_description: true,
+				two_up_show_card_description: true,
+				two_up_show_perk_tags: true,
+				two_up_minimal_idle_chrome: false,
 				required: true,
 				bank_card_visual: {
 					enabled: true,
@@ -644,12 +680,16 @@
 					card_radius: '14px',
 					card_border: '#e6e1da',
 					card_shadow: '0 2px 10px rgba(17,24,39,0.03)',
+					shell_shadow: '0 6px 18px rgba(15,23,42,0.12)',
 					active_border: '#b9a9ff',
 					active_glow_outer: 'rgba(167,139,250,0.12)',
 					active_glow_shadow: '0 8px 18px rgba(111,76,193,0.08)',
+					selection_glow_color: '#a78bfa',
 					radio_size: '18px',
 					logo_height: '12rem',
 					logo_max_width: '22rem',
+					two_up_card_min_height: '',
+					two_up_shell_min_height: '',
 					title_size: '2rem',
 					desc_size: '1.15rem',
 					perk_font_size: '0.92rem',
@@ -709,6 +749,11 @@
 				}
 			},
 			address_geo: {},
+			recipient_step_panel_styles: {
+				border_width: '',
+				border_color: '',
+				box_shadow: ''
+			},
 			discount_layout: {
 				placement: 'step_4',
 				separate_step_enabled: false,
@@ -730,7 +775,22 @@
 				success_message: '',
 				error_message: '',
 				allow_remove_applied: true,
-				summary_section_title: ''
+				summary_section_title: '',
+				styles: {
+					summary_glow_color: '#a78bfa',
+					summary_bg: 'linear-gradient(180deg, color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 14%, #fff) 0%, #fff 100%)',
+					summary_border: 'color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 48%, #e9ddff)',
+					title_color: '#111111',
+					text_color: '#4b5563',
+					input_bg: 'rgba(255, 255, 255, 0.95)',
+					input_border: 'color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 35%, var(--mp-cc-color-border))',
+					input_text: 'var(--mp-cc-color-text, #111111)',
+					button_bg: 'linear-gradient(180deg, color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 40%, #232323) 0%, #191919 100%)',
+					button_border: 'color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 62%, #111)',
+					button_text: '#ffffff',
+					button_bg_hover: 'linear-gradient(180deg, color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 50%, #2f2f2f) 0%, #232323 100%)',
+					button_border_hover: 'color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 74%, #2f2f2f)'
+				}
 			},
 			gift_card_block: {
 				title: '',
@@ -2822,12 +2882,30 @@
 		return html;
 	}
 
+	function normalizePaymentToggle(val, defaultTrue) {
+		if (val === false || val === 0 || val === '0') {
+			return false;
+		}
+		if (val === true || val === 1 || val === '1') {
+			return true;
+		}
+		if (val === undefined || val === null) {
+			return defaultTrue;
+		}
+		return defaultTrue;
+	}
+
 	function buildPaymentCardStylesAttr(pb, twoUpMode) {
 		if (!pb || typeof pb !== 'object') {
 			return '';
 		}
 		var s = pb.card_styles && typeof pb.card_styles === 'object' ? pb.card_styles : {};
 		var vars = {};
+		var selGlow = trimNonEmpty(s.selection_glow_color);
+		if (selGlow) {
+			vars['--mp-cc-pay-glow'] = selGlow;
+		}
+		vars['--mp-cc-pay-shell-shadow'] = trimNonEmpty(s.shell_shadow);
 		if (twoUpMode) {
 			vars['--mp-cc-pay-two-up-gap'] = trimNonEmpty(s.grid_gap);
 			vars['--mp-cc-pay-two-up-card-padding'] = trimNonEmpty(s.card_padding);
@@ -2840,6 +2918,8 @@
 			vars['--mp-cc-pay-two-up-radio-size'] = trimNonEmpty(s.radio_size);
 			vars['--mp-cc-pay-two-up-logo-height'] = trimNonEmpty(s.logo_height);
 			vars['--mp-cc-pay-two-up-logo-max-width'] = trimNonEmpty(s.logo_max_width);
+			vars['--mp-cc-pay-two-up-card-min-height'] = trimNonEmpty(s.two_up_card_min_height);
+			vars['--mp-cc-pay-two-up-shell-min-height'] = trimNonEmpty(s.two_up_shell_min_height);
 			vars['--mp-cc-pay-two-up-title-size'] = trimNonEmpty(s.title_size);
 			vars['--mp-cc-pay-two-up-desc-size'] = trimNonEmpty(s.desc_size);
 			vars['--mp-cc-pay-two-up-perk-size'] = trimNonEmpty(s.perk_font_size);
@@ -3289,10 +3369,13 @@
 		var errPayment = getContactFieldError(state, 'payment_gateway');
 		var title = trimNonEmpty(pb.title) || getUiText('step_4.payment_title', 'Способ оплаты');
 		var intro = trimNonEmpty(pb.intro) || getUiText('step_4.payment_intro', 'Выберите удобный способ оплаты.');
-		var showDescription = pb.show_description !== false;
+		var showDescription = normalizePaymentToggle(pb.show_description, true);
+		var twoUpShowCardDesc = normalizePaymentToggle(pb.two_up_show_card_description, true);
+		var twoUpShowPerkTags = normalizePaymentToggle(pb.two_up_show_perk_tags, true);
+		var twoUpMinimalIdleChrome = normalizePaymentToggle(pb.two_up_minimal_idle_chrome, false);
 		var layout = pb.layout && typeof pb.layout === 'object' ? pb.layout : {};
 		var desktopCols = Math.max(1, Number(layout.desktop_columns || 2));
-		var tabletCols = Math.max(1, Number(layout.tablet_columns || 2));
+		var tabletCols = Math.max(1, Number(layout.tablet_columns || 1));
 		var mobileCols = Math.max(1, Number(layout.mobile_columns || 1));
 		if (gateways.length === 1) {
 			desktopCols = 1;
@@ -3344,7 +3427,9 @@
 				giftBarStyle = 'seal-inline';
 			}
 		}
-		var layoutClass = twoUpMode ? ' mp-cc-payment--layout-two-up mp-cc-payment--gift-style-' + giftBarStyle : '';
+		var layoutClass = twoUpMode
+			? ' mp-cc-payment--layout-two-up mp-cc-payment--gift-style-' + giftBarStyle + (twoUpMinimalIdleChrome ? ' mp-cc-payment--two-up-minimal-idle' : '')
+			: '';
 		var stateClass = paymentState === 'success' ? ' mp-cc-payment--state-success' : (paymentState === 'error' ? ' mp-cc-payment--state-error' : '');
 		var errClass = errPayment ? ' mp-cc-payment--has-field-error' : '';
 		var html = '';
@@ -3416,9 +3501,10 @@
 						html += '<span class="mp-cc-payment-card__check-pill" aria-hidden="true"></span>';
 					}
 					html += '<span class="mp-cc-payment-card__title mp-cc-payment-card__title--text">' + escapeHtml(g.title) + '</span>';
-					if (showDescription && (g.description || twoUpMode)) {
+					var cardDescAllowed = twoUpMode ? twoUpShowCardDesc : showDescription;
+					if (cardDescAllowed && (g.description || twoUpMode)) {
 						var descText = trimNonEmpty(g.description);
-						if (!descText && twoUpMode) {
+						if (!descText && twoUpMode && twoUpShowCardDesc) {
 							if (brand === 'yookassa') {
 								descText = getUiText('step_4.payment_desc_yookassa', 'Онлайн-платежи через ЮKassa — быстро, безопасно и без комиссии.');
 							} else if (brand === 'robokassa') {
@@ -3429,7 +3515,7 @@
 							html += '<span class="mp-cc-payment-card__desc">' + escapeHtml(descText) + '</span>';
 						}
 					}
-					if (twoUpMode) {
+					if (twoUpMode && twoUpShowPerkTags) {
 						html += buildPaymentTwoUpPerksHtml(brand);
 					}
 					if (surface === 'in_card' && isSelected) {
@@ -3672,6 +3758,37 @@
 		return html;
 	}
 
+	function buildCouponStylesAttr(state, inSummary) {
+		if (!inSummary) {
+			return '';
+		}
+		var cfg = getStepFourConfig();
+		var cb = cfg.coupon_block && typeof cfg.coupon_block === 'object' ? cfg.coupon_block : {};
+		var s = cb.styles && typeof cb.styles === 'object' ? cb.styles : {};
+		var rawGlow = Object.prototype.hasOwnProperty.call(s, 'summary_glow_color') ? String(s.summary_glow_color || '').trim() : '';
+		var vars = {
+			'--mp-cc-coupon-summary-glow': rawGlow ? rawGlow : 'transparent',
+			'--mp-cc-coupon-summary-bg': trimNonEmpty(s.summary_bg),
+			'--mp-cc-coupon-summary-border': trimNonEmpty(s.summary_border),
+			'--mp-cc-coupon-summary-title': trimNonEmpty(s.title_color),
+			'--mp-cc-coupon-summary-text': trimNonEmpty(s.text_color),
+			'--mp-cc-coupon-input-bg': trimNonEmpty(s.input_bg),
+			'--mp-cc-coupon-input-border': trimNonEmpty(s.input_border),
+			'--mp-cc-coupon-input-text': trimNonEmpty(s.input_text),
+			'--mp-cc-coupon-button-bg': trimNonEmpty(s.button_bg),
+			'--mp-cc-coupon-button-border': trimNonEmpty(s.button_border),
+			'--mp-cc-coupon-button-text': trimNonEmpty(s.button_text),
+			'--mp-cc-coupon-button-bg-hover': trimNonEmpty(s.button_bg_hover),
+			'--mp-cc-coupon-button-border-hover': trimNonEmpty(s.button_border_hover)
+		};
+		var out = [];
+		Object.keys(vars).forEach(function (k) {
+			if (!vars[k]) { return; }
+			out.push(k + ': ' + vars[k]);
+		});
+		return out.length ? ' style="' + escapeHtml(out.join('; ')) + '"' : '';
+	}
+
 	function buildCouponBlockHtml(state, opts) {
 		opts = opts || {};
 		var cartStep = opts.cartStep === true;
@@ -3698,7 +3815,7 @@
 		var msg = trimNonEmpty(rt.message);
 		var html = '';
 		var stateClass = runtimeState === 'success' ? String(styles.state_success || 'success') : (runtimeState === 'error' ? String(styles.state_error || 'error') : String(styles.state_empty || 'default'));
-		html += '<article class="mp-cc-coupon mp-cc-coupon--' + escapeHtml(stateClass) + (inSummary ? ' mp-cc-coupon--in-summary' : '') + '" data-coupon-block="1">';
+		html += '<article class="mp-cc-coupon mp-cc-coupon--' + escapeHtml(stateClass) + (inSummary ? ' mp-cc-coupon--in-summary' : '') + '" data-coupon-block="1"' + buildCouponStylesAttr(state, inSummary) + '>';
 		html += '<h4 class="mp-cc-coupon__title">' + escapeHtml(copy.title) + '</h4>';
 		if (copy.intro) {
 			html += '<p class="mp-cc-coupon__intro">' + escapeHtml(copy.intro) + '</p>';
@@ -6606,6 +6723,62 @@
 		root.classList.add('mp-cc-step1-desktop-' + (responsive.desktop_mode === 'compact' ? 'compact' : 'comfortable'));
 		root.classList.add('mp-cc-step1-tablet-' + (responsive.tablet_mode === 'compact' ? 'compact' : 'comfortable'));
 		root.classList.add('mp-cc-step1-mobile-' + (responsive.mobile_mode === 'comfortable' ? 'comfortable' : 'compact'));
+
+		var panelRaw = cfg.step_panel_screen_styles && typeof cfg.step_panel_screen_styles === 'object' ? cfg.step_panel_screen_styles : {};
+		var panelMerged = $.extend({ border_width: '1px', border_color: '', box_shadow: '' }, panelRaw);
+		var bwRaw = panelMerged.border_width;
+		var panelBw = trimNonEmpty(bwRaw);
+		if (!panelBw && (bwRaw === 0 || String(bwRaw || '').trim() === '0')) {
+			panelBw = '0';
+		}
+		if (!panelBw) {
+			panelBw = '1px';
+		}
+		root.style.setProperty('--mp-cc-step-panel-border-width', panelBw);
+		var panelBc = trimNonEmpty(panelMerged.border_color);
+		if (panelBc) {
+			root.style.setProperty('--mp-cc-step-panel-border-color', panelBc);
+		} else {
+			root.style.removeProperty('--mp-cc-step-panel-border-color');
+		}
+		var panelBs = trimNonEmpty(panelMerged.box_shadow);
+		if (panelBs) {
+			root.style.setProperty('--mp-cc-step-panel-box-shadow', panelBs);
+		} else {
+			root.style.removeProperty('--mp-cc-step-panel-box-shadow');
+		}
+	}
+
+	function applyRecipientStepPanelStyles() {
+		var root = document.querySelector(selectors.root);
+		if (!root) {
+			return;
+		}
+		var cfg = getStepFourConfig();
+		var panelRaw = cfg.recipient_step_panel_styles && typeof cfg.recipient_step_panel_styles === 'object' ? cfg.recipient_step_panel_styles : {};
+		var panelMerged = $.extend({ border_width: '', border_color: '', box_shadow: '' }, panelRaw);
+		var bwRaw = panelMerged.border_width;
+		var panelBw = trimNonEmpty(bwRaw);
+		if (!panelBw && (bwRaw === 0 || String(bwRaw || '').trim() === '0')) {
+			panelBw = '0';
+		}
+		if (panelBw) {
+			root.style.setProperty('--mp-cc-step-panel-recipient-border-width', panelBw);
+		} else {
+			root.style.removeProperty('--mp-cc-step-panel-recipient-border-width');
+		}
+		var panelBc = trimNonEmpty(panelMerged.border_color);
+		if (panelBc) {
+			root.style.setProperty('--mp-cc-step-panel-recipient-border-color', panelBc);
+		} else {
+			root.style.removeProperty('--mp-cc-step-panel-recipient-border-color');
+		}
+		var panelBs = trimNonEmpty(panelMerged.box_shadow);
+		if (panelBs) {
+			root.style.setProperty('--mp-cc-step-panel-recipient-box-shadow', panelBs);
+		} else {
+			root.style.removeProperty('--mp-cc-step-panel-recipient-box-shadow');
+		}
 	}
 
 	function logPickupMapIssue(state, code, message) {
@@ -6819,6 +6992,7 @@
 			animateSummaryUpdate(state, $summary);
 		}
 		applyStepOnePresentation(state);
+		applyRecipientStepPanelStyles();
 		if (isFlagEnabled(state, flagNames.multiStepFlow, true)) {
 			if (isProgressChanged) {
 				$progress.html(nextProgressHtml);
@@ -6984,11 +7158,16 @@
 
 	function bindHandlers(state, $app, $progress, $actions) {
 		$(selectors.exit).off('click').on('click', function () {
-			var homeUrl = '/';
-			if (window.mpCcCheckout && window.mpCcCheckout.initialContext && window.mpCcCheckout.initialContext.home_url) {
-				homeUrl = String(window.mpCcCheckout.initialContext.home_url);
+			var landUrl = '/';
+			if (window.mpCcCheckout && window.mpCcCheckout.initialContext) {
+				var ic = window.mpCcCheckout.initialContext;
+				if (ic.exit_landing_url) {
+					landUrl = String(ic.exit_landing_url);
+				} else if (ic.home_url) {
+					landUrl = String(ic.home_url);
+				}
 			}
-			window.location.href = homeUrl;
+			window.location.href = landUrl;
 		});
 		mountPickupMaps(state, $app);
 
