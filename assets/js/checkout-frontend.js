@@ -171,11 +171,20 @@
 			admin_preview: {
 				enabled: true
 			},
+			step_panel_screen_styles: {
+				border_width: '1px',
+				border_color: '',
+				box_shadow: ''
+			},
 			address_form_styles: {
 				card_bg: '#ffffff',
 				card_border: '#e5e7eb',
 				card_radius: '14px',
+				form_border_width: '1px',
 				row_divider: '#e5e7eb',
+				row_divider_width: '1px',
+				divider_after_city_width: '',
+				divider_after_method_width: '',
 				label_color: '#111111',
 				label_size: '1.05rem',
 				value_color: '#1f2937',
@@ -202,7 +211,9 @@
 				card_bg: '#ffffff',
 				card_border: '#dfe3e8',
 				card_radius: '12px',
+				form_border_width: '1px',
 				row_divider: '#eceff3',
+				row_divider_width: '1px',
 				label_color: '#0f172a',
 				label_size: '1.02rem',
 				value_color: '#1f2937',
@@ -225,7 +236,9 @@
 				card_bg: '#ffffff',
 				card_border: '#e5e7eb',
 				card_radius: '10px',
+				form_border_width: '1px',
 				row_divider: '#eef0f3',
+				row_divider_width: '1px',
 				label_color: '#111111',
 				label_size: '0.98rem',
 				value_color: '#1f2937',
@@ -248,7 +261,9 @@
 			card_bg: '#ffffff',
 			card_border: '#e5e7eb',
 			card_radius: '14px',
+			form_border_width: '1px',
 			row_divider: '#e5e7eb',
+			row_divider_width: '1px',
 			label_color: '#111111',
 			label_size: '1.05rem',
 			value_color: '#1f2937',
@@ -289,11 +304,15 @@
 			overrides[key] = val;
 		});
 		var styles = $.extend({}, presetStyles, overrides);
+		var formBw = trimNonEmpty(styles.form_border_width) || '1px';
+		var rowBw = trimNonEmpty(styles.row_divider_width) || '1px';
 		var vars = {
 			'--mp-cc-address-card-bg': styles.card_bg,
 			'--mp-cc-address-card-border': styles.card_border,
 			'--mp-cc-address-card-radius': styles.card_radius,
+			'--mp-cc-address-form-border-width': formBw,
 			'--mp-cc-address-row-divider': styles.row_divider,
+			'--mp-cc-address-row-divider-width': rowBw,
 			'--mp-cc-address-label-color': styles.label_color,
 			'--mp-cc-address-label-size': styles.label_size,
 			'--mp-cc-address-value-color': styles.value_color,
@@ -310,6 +329,20 @@
 			'--mp-cc-address-edit-btn-color': styles.edit_btn_color,
 			'--mp-cc-address-edit-btn-radius': styles.edit_btn_radius
 		};
+		function tokenDividerWidth(val) {
+			if (val === 0) {
+				return '0';
+			}
+			return trimNonEmpty(val);
+		}
+		var dac = tokenDividerWidth(styles.divider_after_city_width);
+		if (dac !== '') {
+			vars['--mp-cc-address-row-divider-after-city'] = dac;
+		}
+		var dam = tokenDividerWidth(styles.divider_after_method_width);
+		if (dam !== '') {
+			vars['--mp-cc-address-row-divider-after-method'] = dam;
+		}
 		var out = [];
 		Object.keys(vars).forEach(function (key) {
 			var value = trimNonEmpty(vars[key]);
@@ -6659,6 +6692,30 @@
 		root.classList.add('mp-cc-step1-desktop-' + (responsive.desktop_mode === 'compact' ? 'compact' : 'comfortable'));
 		root.classList.add('mp-cc-step1-tablet-' + (responsive.tablet_mode === 'compact' ? 'compact' : 'comfortable'));
 		root.classList.add('mp-cc-step1-mobile-' + (responsive.mobile_mode === 'comfortable' ? 'comfortable' : 'compact'));
+
+		var panelRaw = cfg.step_panel_screen_styles && typeof cfg.step_panel_screen_styles === 'object' ? cfg.step_panel_screen_styles : {};
+		var panelMerged = $.extend({ border_width: '1px', border_color: '', box_shadow: '' }, panelRaw);
+		var bwRaw = panelMerged.border_width;
+		var panelBw = trimNonEmpty(bwRaw);
+		if (!panelBw && (bwRaw === 0 || String(bwRaw || '').trim() === '0')) {
+			panelBw = '0';
+		}
+		if (!panelBw) {
+			panelBw = '1px';
+		}
+		root.style.setProperty('--mp-cc-step-panel-border-width', panelBw);
+		var panelBc = trimNonEmpty(panelMerged.border_color);
+		if (panelBc) {
+			root.style.setProperty('--mp-cc-step-panel-border-color', panelBc);
+		} else {
+			root.style.removeProperty('--mp-cc-step-panel-border-color');
+		}
+		var panelBs = trimNonEmpty(panelMerged.box_shadow);
+		if (panelBs) {
+			root.style.setProperty('--mp-cc-step-panel-box-shadow', panelBs);
+		} else {
+			root.style.removeProperty('--mp-cc-step-panel-box-shadow');
+		}
 	}
 
 	function logPickupMapIssue(state, code, message) {

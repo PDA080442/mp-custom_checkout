@@ -132,7 +132,11 @@ final class SafeSettingsResolver {
 						'card_bg'             => '#ffffff',
 						'card_border'         => '#e5e7eb',
 						'card_radius'         => '14px',
+						'form_border_width'   => '1px',
 						'row_divider'         => '#e5e7eb',
+						'row_divider_width'   => '1px',
+						'divider_after_city_width'   => '',
+						'divider_after_method_width' => '',
 						'label_color'         => '#111111',
 						'label_size'          => '1.05rem',
 						'value_color'         => '#1f2937',
@@ -148,6 +152,11 @@ final class SafeSettingsResolver {
 						'edit_btn_border'     => '#d9dce1',
 						'edit_btn_color'      => '#1f2937',
 						'edit_btn_radius'     => '6px',
+					),
+					'step_panel_screen_styles' => array(
+						'border_width' => '1px',
+						'border_color' => '',
+						'box_shadow'   => '',
 					),
 					'responsive' => array(
 						'desktop_mode'       => 'comfortable',

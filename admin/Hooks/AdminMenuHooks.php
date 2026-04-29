@@ -61,7 +61,15 @@ final class AdminMenuHooks {
 	public static function sanitize_settings( $value ): array {
 		$incoming = is_array( $value ) ? $value : array();
 		$defaults = SafeSettingsResolver::get_defaults_tree();
-		$sanitized = self::sanitize_by_shape( $incoming, $defaults, '' );
+		/*
+		 * Экран настроек отдаёт в POST только поля активной вкладки. sanitize_by_shape() иначе
+		 * подставляет дефолты из $defaults для каждого отсутствующего верхнего ключа — и при сохранении,
+		 * например, только шага 1 в БД перезаписывались бы step_4 (купон, контакты), delivery и т.д.
+		 */
+		$stored = get_option( OptionKeys::MAIN, array() );
+		$stored = is_array( $stored ) ? $stored : array();
+		$merged  = array_replace_recursive( $stored, $incoming );
+		$sanitized = self::sanitize_by_shape( $merged, $defaults, '' );
 		$sanitized = self::normalize_delivery_settings( $sanitized );
 		return self::normalize_motion_settings( $sanitized );
 	}
@@ -1063,7 +1071,11 @@ final class AdminMenuHooks {
 			'step_1.address_form_styles.card_bg'        => __( 'Фон карточки', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.card_border'    => __( 'Рамка карточки', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.card_radius'    => __( 'Скругление карточки', 'mp-custom-checkout' ),
-			'step_1.address_form_styles.row_divider'    => __( 'Разделитель строк', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.form_border_width' => __( 'Толщина внешней рамки блока (населённый пункт / доставка)', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.row_divider'    => __( 'Цвет линий между строками', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.row_divider_width' => __( 'Толщина линий между строками', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.divider_after_city_width' => __( 'Линия под первой строкой (населённый пункт): толщина или пусто', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.divider_after_method_width' => __( 'Линия под способом доставки: толщина или пусто', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.label_color'    => __( 'Цвет названий полей', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.label_size'     => __( 'Размер названий полей', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.value_color'    => __( 'Цвет значений', 'mp-custom-checkout' ),
@@ -1079,6 +1091,9 @@ final class AdminMenuHooks {
 			'step_1.address_form_styles.edit_btn_border'  => __( 'Рамка кнопки «другой»', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.edit_btn_color'   => __( 'Цвет текста кнопки «другой»', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.edit_btn_radius'  => __( 'Скругление кнопки «другой»', 'mp-custom-checkout' ),
+			'step_1.step_panel_screen_styles.border_width' => __( 'Панель шага (.mp-cc-step-panel): толщина рамки', 'mp-custom-checkout' ),
+			'step_1.step_panel_screen_styles.border_color' => __( 'Панель шага: цвет рамки (пусто — как у темы)', 'mp-custom-checkout' ),
+			'step_1.step_panel_screen_styles.box_shadow'   => __( 'Панель шага: box-shadow (пусто — как у темы)', 'mp-custom-checkout' ),
 			'step_4.contact_block.layout.desktop_columns' => __( 'Контакты: колонки (desktop)', 'mp-custom-checkout' ),
 			'step_4.contact_block.layout.tablet_columns'  => __( 'Контакты: колонки (tablet)', 'mp-custom-checkout' ),
 			'step_4.contact_block.layout.mobile_columns'  => __( 'Контакты: колонки (mobile)', 'mp-custom-checkout' ),
@@ -1175,6 +1190,7 @@ final class AdminMenuHooks {
 		$map = array(
 			'general.checkout_layout'                    => __( 'Макет страницы checkout', 'mp-custom-checkout' ),
 			'step_1.address_form_styles'                 => __( 'Стили формы адреса и доставки (шаг 1)', 'mp-custom-checkout' ),
+			'step_1.step_panel_screen_styles'            => __( 'Рамка экрана шага (.mp-cc-step-panel.mp-cc-step-screen)', 'mp-custom-checkout' ),
 			'step_4.contact_block'                       => __( 'Контактные данные (шаг 4)', 'mp-custom-checkout' ),
 			'step_4.contact_block.layout'                => __( 'Сетка полей контактов', 'mp-custom-checkout' ),
 			'step_4.contact_block.field_state_styles'    => __( 'Стили состояний полей контактов', 'mp-custom-checkout' ),
@@ -1250,6 +1266,21 @@ final class AdminMenuHooks {
 		$p = strtolower( $path );
 		if ( false !== strpos( $p, 'checkout_layout.vertical_padding' ) ) {
 			return __( 'Одинаковый отступ сверху и снизу у всего блока #mp-cc-checkout (например 75px или 4rem). Только безопасные единицы: px, rem, em, vw, %.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'step_1.address_form_styles.form_border_width' ) || false !== strpos( $p, 'step_1.address_form_styles.row_divider_width' ) ) {
+			return __( 'CSS-размер: например 1px или 0 чтобы убрать линию. Допустимы px, rem.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'divider_after_city_width' ) || false !== strpos( $p, 'divider_after_method_width' ) ) {
+			return __( 'Переопределяет толщину линии только для указанной границы. Пусто — как у «Толщина линий между строками». 0 — без линии.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'step_1.step_panel_screen_styles.border_width' ) ) {
+			return __( 'Рамка вокруг панели текущего шага (v2). 0 или 0px — без рамки.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'step_1.step_panel_screen_styles.border_color' ) ) {
+			return __( 'Необязательно: цвет в формате #rrggbb. Пустое поле — цвет границы из темы checkout.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'step_1.step_panel_screen_styles.box_shadow' ) ) {
+			return __( 'CSS для box-shadow панели шага. Пусто — тень из токена темы (--mp-cc-shadow-card). none — без тени.', 'mp-custom-checkout' );
 		}
 		if ( false !== strpos( $p, 'payment_block.card_styles.selection_glow_color' ) ) {
 			return __( 'HEX цвет (например #c4a574): ореол за логотипом, фокус и подсветка выбранной карточки в сетке two-up. Дублирует смысл «glow» до клика; после клика см. bank_card_visual.glow_color.', 'mp-custom-checkout' );
