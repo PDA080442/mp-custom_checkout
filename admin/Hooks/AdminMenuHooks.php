@@ -1136,6 +1136,7 @@ final class AdminMenuHooks {
 			'step_4.recipient_styles.address_intro_size'  => __( 'Шаг 2: размер подзаголовка адреса', 'mp-custom-checkout' ),
 			'step_4.payment_block.two_up_show_card_description' => __( 'Оплата (две карточки): показывать описание под заголовком', 'mp-custom-checkout' ),
 			'step_4.payment_block.two_up_show_perk_tags'        => __( 'Оплата (две карточки): показывать теги под линией', 'mp-custom-checkout' ),
+			'step_4.payment_block.two_up_minimal_idle_chrome'   => __( 'Оплата (две карточки): без рамки и кружка до выбора', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.grid_gap'      => __( 'Оплата: расстояние между карточками', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.card_padding'  => __( 'Оплата: внутренние отступы карточки', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.card_radius'   => __( 'Оплата: скругление карточки', 'mp-custom-checkout' ),
@@ -1319,6 +1320,9 @@ final class AdminMenuHooks {
 		}
 		if ( false !== strpos( $p, 'step_4.payment_block.two_up_show_perk_tags' ) ) {
 			return __( 'Только для двухкарточной раскладки. Снимите галочку, чтобы убрать блок с тегами («Без комиссии» и т. п.) и линию над ним.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'step_4.payment_block.two_up_minimal_idle_chrome' ) ) {
+			return __( 'Только для двух крупных карточек (ЮKassa + Robokassa). Включите: у не выбранной карточки скрыты серая рамка и декоративный кружок; после выбора активная карточка выглядит как сейчас (фиолетовая рамка и индикатор). Снимите галочку, чтобы снова показывать рамку и кружок всегда.', 'mp-custom-checkout' );
 		}
 		if ( false !== strpos( $p, 'payment_block.card_styles.two_up_card_min_height' ) ) {
 			return __( 'CSS min-height для карточки ЮKassa/Robokassa в двухколоночной раскладке (например 18rem). Пусто — встроенное значение по умолчанию (25rem).', 'mp-custom-checkout' );

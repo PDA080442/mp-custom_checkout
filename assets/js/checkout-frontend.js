@@ -663,6 +663,7 @@
 				show_description: true,
 				two_up_show_card_description: true,
 				two_up_show_perk_tags: true,
+				two_up_minimal_idle_chrome: false,
 				required: true,
 				bank_card_visual: {
 					enabled: true,
@@ -3371,6 +3372,7 @@
 		var showDescription = normalizePaymentToggle(pb.show_description, true);
 		var twoUpShowCardDesc = normalizePaymentToggle(pb.two_up_show_card_description, true);
 		var twoUpShowPerkTags = normalizePaymentToggle(pb.two_up_show_perk_tags, true);
+		var twoUpMinimalIdleChrome = normalizePaymentToggle(pb.two_up_minimal_idle_chrome, false);
 		var layout = pb.layout && typeof pb.layout === 'object' ? pb.layout : {};
 		var desktopCols = Math.max(1, Number(layout.desktop_columns || 2));
 		var tabletCols = Math.max(1, Number(layout.tablet_columns || 1));
@@ -3425,7 +3427,9 @@
 				giftBarStyle = 'seal-inline';
 			}
 		}
-		var layoutClass = twoUpMode ? ' mp-cc-payment--layout-two-up mp-cc-payment--gift-style-' + giftBarStyle : '';
+		var layoutClass = twoUpMode
+			? ' mp-cc-payment--layout-two-up mp-cc-payment--gift-style-' + giftBarStyle + (twoUpMinimalIdleChrome ? ' mp-cc-payment--two-up-minimal-idle' : '')
+			: '';
 		var stateClass = paymentState === 'success' ? ' mp-cc-payment--state-success' : (paymentState === 'error' ? ' mp-cc-payment--state-error' : '');
 		var errClass = errPayment ? ' mp-cc-payment--has-field-error' : '';
 		var html = '';

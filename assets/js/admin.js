@@ -192,6 +192,7 @@
 				show_description: true,
 				two_up_show_card_description: true,
 				two_up_show_perk_tags: true,
+				two_up_minimal_idle_chrome: false,
 				required: true,
 				error_message: 'Выберите способ оплаты.',
 				messages: { loading: '', success: '', error: '' },
@@ -1215,7 +1216,7 @@
 		html += '<div class="mp-cc-admin-preview__date-rules">';
 		html += '<p><strong>Coupon placement:</strong> ' + escapeHtml(String(cfg.discountLayout.placement || 'step_4')) + ', separate-step ready=' + escapeHtml(cfg.discountLayout.separate_step_enabled ? 'yes' : 'no') + '</p>';
 		html += '<p><strong>Discount styles:</strong> empty=' + escapeHtml(String(cfg.discountStyles.state_empty || 'default')) + ', success=' + escapeHtml(String(cfg.discountStyles.state_success || 'success')) + ', error=' + escapeHtml(String(cfg.discountStyles.state_error || 'error')) + '</p>';
-		html += '<p><strong>Payment block:</strong> title="' + escapeHtml(String(cfg.payment.title || 'Способ оплаты')) + '", surface=' + escapeHtml(String(cfg.payment.card_surface || 'visual')) + ', auto_classic_if_empty=' + escapeHtml(cfg.payment.auto_classic_on_empty_gateway_fields === false ? 'off' : 'on') + ', decorative=' + escapeHtml(cfg.payment.decorative_card_fields === false ? 'off' : 'on') + ', style=' + escapeHtml(String(cfg.payment.card_style || 'default')) + ', description=' + escapeHtml(cfg.payment.show_description === false ? 'off' : 'on') + ', two_up_desc=' + escapeHtml(cfg.payment.two_up_show_card_description === false ? 'off' : 'on') + ', two_up_perks=' + escapeHtml(cfg.payment.two_up_show_perk_tags === false ? 'off' : 'on') + '</p>';
+		html += '<p><strong>Payment block:</strong> title="' + escapeHtml(String(cfg.payment.title || 'Способ оплаты')) + '", surface=' + escapeHtml(String(cfg.payment.card_surface || 'visual')) + ', auto_classic_if_empty=' + escapeHtml(cfg.payment.auto_classic_on_empty_gateway_fields === false ? 'off' : 'on') + ', decorative=' + escapeHtml(cfg.payment.decorative_card_fields === false ? 'off' : 'on') + ', style=' + escapeHtml(String(cfg.payment.card_style || 'default')) + ', description=' + escapeHtml(cfg.payment.show_description === false ? 'off' : 'on') + ', two_up_desc=' + escapeHtml(cfg.payment.two_up_show_card_description === false ? 'off' : 'on') + ', two_up_perks=' + escapeHtml(cfg.payment.two_up_show_perk_tags === false ? 'off' : 'on') + ', two_up_minimal_idle=' + escapeHtml(cfg.payment.two_up_minimal_idle_chrome === true ? 'on' : 'off') + '</p>';
 		var payCs = cfg.payment.card_styles && typeof cfg.payment.card_styles === 'object' ? cfg.payment.card_styles : {};
 		html += '<p><strong>Payment two-up heights:</strong> card_min=' + escapeHtml(trimNonEmptyAdmin(payCs.two_up_card_min_height) || 'default') + ', shell_min=' + escapeHtml(trimNonEmptyAdmin(payCs.two_up_shell_min_height) || 'default') + ', logo_h=' + escapeHtml(trimNonEmptyAdmin(payCs.logo_height) || '—') + '</p>';
 		html += '<p><strong>Payment states:</strong> loading="' + escapeHtml(String((cfg.payment.messages && cfg.payment.messages.loading) || '—')) + '", success="' + escapeHtml(String((cfg.payment.messages && cfg.payment.messages.success) || '—')) + '", error="' + escapeHtml(String((cfg.payment.messages && cfg.payment.messages.error) || '—')) + '"</p>';
@@ -1450,6 +1451,7 @@
 		cfg.payment.show_description = Boolean(readFormValue(py + '[show_description]', cfg.payment.show_description !== false));
 		cfg.payment.two_up_show_card_description = Boolean(readFormValue(py + '[two_up_show_card_description]', cfg.payment.two_up_show_card_description !== false));
 		cfg.payment.two_up_show_perk_tags = Boolean(readFormValue(py + '[two_up_show_perk_tags]', cfg.payment.two_up_show_perk_tags !== false));
+		cfg.payment.two_up_minimal_idle_chrome = Boolean(readFormValue(py + '[two_up_minimal_idle_chrome]', cfg.payment.two_up_minimal_idle_chrome === true));
 		cfg.payment.required = Boolean(readFormValue(py + '[required]', cfg.payment.required !== false));
 		cfg.payment.error_message = readFormValue(py + '[error_message]', cfg.payment.error_message || 'Выберите способ оплаты.');
 		cfg.payment.layout = cfg.payment.layout && typeof cfg.payment.layout === 'object' ? cfg.payment.layout : {};

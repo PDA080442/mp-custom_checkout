@@ -547,6 +547,7 @@ final class SafeSettingsResolver {
 						'show_description' => true,
 						'two_up_show_card_description' => true,
 						'two_up_show_perk_tags'          => true,
+						'two_up_minimal_idle_chrome'     => false,
 						'required' => true,
 						'bank_card_visual' => array(
 							'enabled'                 => true,

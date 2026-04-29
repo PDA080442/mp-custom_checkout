@@ -3104,6 +3104,18 @@
 	background: #fff;
 }
 
+/* Two-up: hide idle border + decorative radio until a card is selected (admin: two_up_minimal_idle_chrome). */
+.mp-cc-payment--layout-two-up.mp-cc-payment--two-up-minimal-idle .mp-cc-payment-card--surface:not(.is-active):is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art) {
+	border: 1px solid transparent;
+	box-shadow: none;
+}
+
+.mp-cc-payment--layout-two-up.mp-cc-payment--two-up-minimal-idle .mp-cc-payment-card--surface:not(.is-active):is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art)::before {
+	opacity: 0;
+	visibility: hidden;
+	pointer-events: none;
+}
+
 .mp-cc-payment--layout-two-up .mp-cc-payment-card--surface.is-active:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art) {
 	border-color: var(--mp-cc-pay-two-up-active-border, #b9a9ff);
 	box-shadow:
