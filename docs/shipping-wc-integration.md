@@ -1,7 +1,9 @@
 # Интеграция доставки: режимы и приёмка (§28.1)
 
 **Статус:** спецификация по задаче `dp.md` §28.1 (Define Shipping Modes And Acceptance Criteria).  
-**Связь с эпиком:** `dp.md` §28 — WC как источник правды для СДЭК / динамических тарифов.  
+**Связь с эпиком:** `dp.md` §28 — WC как источник правды для СДЭК / динамических тарифов.
+
+**Аудит потока данных (§28.2):** см. отдельный файл [shipping-wc-data-flow-audit.md](./shipping-wc-data-flow-audit.md) — таблица событий AJAX, `shipping_price`, `suppress_shipping_in_summary`, валидация каталога vs WC.  
 **Исходный промпт:** зафиксировать режимы `delivery.pricing_mode`, матрицу сценариев × режим и критерии приёмки на основе кода `CheckoutRouteContext`, `CheckoutAjaxHooks`, `checkout-frontend.js` (fulfillment / `date_conditions`).
 
 Документ **не дублирует** полный эпик в `dp.md`; при расхождении приоритет у реализации в репозитории после merge соответствующих PR.
