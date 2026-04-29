@@ -31,7 +31,8 @@ final class FrontendAssetsHooks {
 		// переменные из inline handle не успевают — #mp-cc-checkout наследует body (часто тёмная тема)
 		// и даёт «белый на белом», заголовок на чёрном фоне, сломанный stacked-timeline до загрузки файла.
 		add_action( 'wp_head', array( __CLASS__, 'print_critical_checkout_shell_css' ), 1 );
-		add_action( 'wp_enqueue_scripts', array( __CLASS__, 'enqueue' ), 20 );
+		// Позже типичных плагинов (DaData и т.д.), чтобы jquery.suggestions успел зарегистрироваться как зависимость.
+		add_action( 'wp_enqueue_scripts', array( __CLASS__, 'enqueue' ), 50 );
 	}
 
 	/**
@@ -107,6 +108,7 @@ final class FrontendAssetsHooks {
 				'motion'       => self::motion_config_for_runtime(),
 				'paymentCardArt' => self::payment_card_art_urls(),
 				'giftCardIntegrationAvailable' => ( new GiftCardIntegration() )->is_pw_gift_cards_available(),
+				'dadata'                       => self::dadata_runtime_settings(),
 			)
 		);
 		do_action( 'mp_custom_checkout_enqueue_frontend_assets' );
@@ -168,7 +170,83 @@ final class FrontendAssetsHooks {
 		if ( wp_script_is( 'wc-cart-fragments', 'registered' ) ) {
 			$deps[] = 'wc-cart-fragments';
 		}
-		return $deps;
+		// Плагин «Подсказки» от DaData.ru и аналоги: если handle зарегистрирован — грузим после него (jquery.suggestions).
+		foreach ( self::dadata_script_handle_candidates() as $handle ) {
+			if ( wp_script_is( $handle, 'registered' ) || wp_script_is( $handle, 'queued' ) ) {
+				$deps[] = $handle;
+			}
+		}
+		return array_values( array_unique( $deps ) );
+	}
+
+	/**
+	 * Распространённые handle'ы фронта DaData (зависят от версии плагина).
+	 *
+	 * @return array<int, string>
+	 */
+	private static function dadata_script_handle_candidates(): array {
+		return array(
+			'dadata-ru',
+			'dadata_ru',
+			'dadata-main',
+			'dadata-frontend',
+			'jquery-suggestions',
+			'suggestions',
+		);
+	}
+
+	/**
+	 * Токен/секрет для подсказок DaData на кастомном checkout.
+	 *
+	 * Сначала срабатывает фильтр {@see 'mp_custom_checkout_dadata_settings'} (массив с ключами token, secret?, enabled?).
+	 * Иначе пробуем типичные option из настроек «Общие → DaData» и смежных плагинов.
+	 *
+	 * @return array{enabled:bool,token:string,secret:string}
+	 */
+	private static function dadata_runtime_settings(): array {
+		$empty = array(
+			'enabled' => false,
+			'token'   => '',
+			'secret'  => '',
+		);
+		$filtered = apply_filters( 'mp_custom_checkout_dadata_settings', null );
+		if ( is_array( $filtered ) && isset( $filtered['token'] ) && is_string( $filtered['token'] ) && '' !== trim( $filtered['token'] ) ) {
+			return array(
+				'enabled' => ! isset( $filtered['enabled'] ) ? true : (bool) $filtered['enabled'],
+				'token'   => trim( (string) $filtered['token'] ),
+				'secret'  => isset( $filtered['secret'] ) && is_string( $filtered['secret'] ) ? trim( (string) $filtered['secret'] ) : '',
+			);
+		}
+		$token  = '';
+		$secret = '';
+		foreach ( array( 'dadata_api_token', 'dadata_api_key', 'dadata_token', 'dadata_secret_token' ) as $opt_key ) {
+			$v = get_option( $opt_key, '' );
+			if ( is_string( $v ) && '' !== trim( $v ) ) {
+				$token = trim( $v );
+				break;
+			}
+		}
+		if ( '' === $token ) {
+			$nested = get_option( 'dadata_general_options', array() );
+			if ( is_array( $nested ) && isset( $nested['token'] ) && is_string( $nested['token'] ) && '' !== trim( $nested['token'] ) ) {
+				$token = trim( $nested['token'] );
+			}
+		}
+		foreach ( array( 'dadata_secret_key', 'dadata_api_secret' ) as $sk ) {
+			$v = get_option( $sk, '' );
+			if ( is_string( $v ) && '' !== trim( $v ) ) {
+				$secret = trim( $v );
+				break;
+			}
+		}
+		if ( '' === $token ) {
+			return $empty;
+		}
+		return array(
+			'enabled' => true,
+			'token'   => $token,
+			'secret'  => $secret,
+		);
 	}
 
 	private static function ui_text_dictionaries(): array {

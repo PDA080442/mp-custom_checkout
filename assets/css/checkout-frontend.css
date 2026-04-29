@@ -210,6 +210,16 @@
 	min-height: 8rem;
 }
 
+.mp-cc-step-panel__footer--v2-next {
+	margin-top: 1.25rem;
+	padding-top: 1rem;
+	border-top: 1px solid var(--mp-cc-color-border, rgba(15, 23, 42, 0.12));
+	display: flex;
+	justify-content: flex-start;
+	flex-wrap: wrap;
+	gap: 0.75rem;
+}
+
 .mp-cc-fulfillment {
 	display: grid;
 	gap: 0.8rem;

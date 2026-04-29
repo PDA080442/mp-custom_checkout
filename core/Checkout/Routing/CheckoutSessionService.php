@@ -166,7 +166,12 @@ final class CheckoutSessionService {
 				do_action( 'mp_custom_checkout_log', 'warning', '[date_sync] session_save_without_selected_date', array( 'step_id' => $step_id ) );
 			}
 		}
-		$current[ $storage_key ] = $sanitized_answers;
+		if ( 'contact_billing' === $storage_key ) {
+			$prev_contact = isset( $current['contact_billing'] ) && is_array( $current['contact_billing'] ) ? $current['contact_billing'] : array();
+			$current[ $storage_key ] = array_replace( $prev_contact, $sanitized_answers );
+		} else {
+			$current[ $storage_key ] = $sanitized_answers;
+		}
 		$flow['answers']         = $current;
 		$flow['updated_at']      = time();
 		self::persist_flow( $flow );

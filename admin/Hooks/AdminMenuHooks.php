@@ -109,6 +109,9 @@ final class AdminMenuHooks {
 			}
 			$method['price'] = isset( $method['price'] ) ? max( 0, (int) $method['price'] ) : 0;
 			$method['eta']   = isset( $method['eta'] ) ? sanitize_text_field( (string) $method['eta'] ) : '';
+			if ( isset( $method['wc_rate_id'] ) ) {
+				$method['wc_rate_id'] = sanitize_text_field( (string) $method['wc_rate_id'] );
+			}
 			if ( isset( $method['tariffs'] ) && is_array( $method['tariffs'] ) ) {
 				foreach ( $method['tariffs'] as $tariff_id => $tariff ) {
 					if ( ! is_array( $tariff ) ) {
@@ -117,6 +120,9 @@ final class AdminMenuHooks {
 					}
 					$tariff['price'] = isset( $tariff['price'] ) ? max( 0, (int) $tariff['price'] ) : 0;
 					$tariff['eta']   = isset( $tariff['eta'] ) ? sanitize_text_field( (string) $tariff['eta'] ) : '';
+					if ( isset( $tariff['wc_rate_id'] ) ) {
+						$tariff['wc_rate_id'] = sanitize_text_field( (string) $tariff['wc_rate_id'] );
+					}
 					$method['tariffs'][ $tariff_id ] = $tariff;
 				}
 			}
@@ -139,6 +145,15 @@ final class AdminMenuHooks {
 		$catalog['methods'] = $methods;
 		$catalog['sort_order'] = $valid_sort;
 		$delivery['shipping_catalog'] = $catalog;
+
+		$allowed_modes = array( 'catalog', 'woocommerce', 'hybrid' );
+		$pricing_raw   = isset( $delivery['pricing_mode'] ) ? sanitize_key( (string) $delivery['pricing_mode'] ) : 'catalog';
+		$delivery['pricing_mode'] = in_array( $pricing_raw, $allowed_modes, true ) ? $pricing_raw : 'catalog';
+
+		$wc_int = isset( $delivery['wc_integration'] ) && is_array( $delivery['wc_integration'] ) ? $delivery['wc_integration'] : array();
+		$wc_int['respect_chosen_shipping_methods'] = ! empty( $wc_int['respect_chosen_shipping_methods'] );
+		$delivery['wc_integration']                 = $wc_int;
+
 		$settings[ OptionKeys::SECTION_DELIVERY ] = $delivery;
 		return $settings;
 	}
@@ -1064,6 +1079,9 @@ final class AdminMenuHooks {
 	 */
 	private static function localized_label_for_path( string $path ): string {
 		$leaf = basename( str_replace( '.', '/', $path ) );
+		if ( 'wc_rate_id' === $leaf && false !== strpos( $path, 'shipping_catalog.methods' ) && false === strpos( $path, '.tariffs.' ) ) {
+			return __( 'WC rate ID (метод без тарифов)', 'mp-custom-checkout' );
+		}
 		$map = array(
 			'general.checkout_layout.max_width'          => __( 'Максимальная ширина страницы checkout', 'mp-custom-checkout' ),
 			'general.checkout_layout.vertical_padding'   => __( 'Вертикальные отступы блока checkout (сверху и снизу)', 'mp-custom-checkout' ),
@@ -1184,6 +1202,8 @@ final class AdminMenuHooks {
 			'step_4.coupon_block.styles.button_text' => __( 'Промокод: цвет текста кнопки «Применить»', 'mp-custom-checkout' ),
 			'step_4.coupon_block.styles.button_bg_hover' => __( 'Промокод: фон кнопки при наведении', 'mp-custom-checkout' ),
 			'step_4.coupon_block.styles.button_border_hover' => __( 'Промокод: рамка кнопки при наведении', 'mp-custom-checkout' ),
+			'delivery.pricing_mode' => __( 'Режим цен доставки', 'mp-custom-checkout' ),
+			'delivery.wc_integration.respect_chosen_shipping_methods' => __( 'WC: сохранять выбранные методы доставки в сессии', 'mp-custom-checkout' ),
 		);
 		if ( isset( $map[ $path ] ) ) {
 			return (string) $map[ $path ];
@@ -1355,13 +1375,16 @@ final class AdminMenuHooks {
 			return __( 'Ограничение частоты второстепенных анимаций на слабых устройствах / при лавине событий.', 'mp-custom-checkout' );
 		}
 		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, 'tariffs' ) && false !== strpos( $p, '.price' ) ) {
-			return __( 'Цена тарифа в рублях (целое). Показывается покупателю в выборе способа доставки.', 'mp-custom-checkout' );
+			return __( 'Цена тарифа в каталоге (руб., целое). При режиме цен «woocommerce» и заполненном WC rate ID у тарифа сумма на витрине подменяется на расчёт WooCommerce (СДЭК/зоны и т.д.); это поле тогда резерв/подсказка и для подстраховки, если ставка WC не найдена.', 'mp-custom-checkout' );
 		}
 		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, '.price' ) ) {
-			return __( 'Базовая цена метода доставки в рублях (целое). Используется, если у метода нет тарифов.', 'mp-custom-checkout' );
+			return __( 'Цена метода без тарифов (руб., целое). Нужна в режиме «catalog» и как запасная, если в режиме «woocommerce» не удалось сопоставить WC rate. Если везде только тарифы СДЭК через WC — держите «woocommerce», задайте wc_rate_id у тарифов и не опирайтесь на это число.', 'mp-custom-checkout' );
 		}
 		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, '.eta' ) ) {
 			return __( 'Срок доставки (произвольный текст). Например: «2 дней», «в течение дня», пусто — не показывать.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, 'tariffs' ) && false !== strpos( $p, 'wc_rate_id' ) ) {
+			return __( 'Идентификатор ставки WooCommerce (как в нативном checkout: shipping_method:instance). При режиме цен «woocommerce» цена тарифа в каталоге подменяется на расчёт WC по адресу. Пусто — остаётся цена из каталога.', 'mp-custom-checkout' );
 		}
 		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, '.title' ) ) {
 			return __( 'Название метода/тарифа, которое увидит покупатель на шаге «Адрес и доставка».', 'mp-custom-checkout' );
@@ -1371,6 +1394,12 @@ final class AdminMenuHooks {
 		}
 		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, 'visibility_scenarios' ) ) {
 			return __( 'Сценарии, в которых метод доступен: pickup, krasnoyarsk_delivery, other_city_delivery.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'delivery.pricing_mode' ) ) {
+			return __( 'catalog — цены из каталога модуля и shipping_price в сессии. woocommerce — адрес синхронизируется с WC customer, пересчёт доставки как в нативном checkout (СДЭК и зоны); суммы в списке методов подставляются из WC, если у тарифа задан WC rate ID в каталоге. hybrid — зарезервировано.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'delivery.wc_integration.respect_chosen_shipping_methods' ) ) {
+			return __( 'Если в сессии WooCommerce уже выбран rate (method_id:instance_id), WC старается не сбрасывать его при пересчёте, пока он доступен. Для диагностики см. логи плагина при расхождении выбранного метода и списка rate’ов.', 'mp-custom-checkout' );
 		}
 		if ( false !== strpos( $p, 'pickup.points' ) && false !== strpos( $p, 'address' ) ) {
 			return __( 'Адрес пункта самовывоза одной строкой. Отображается в карточке метода «Самовывоз».', 'mp-custom-checkout' );

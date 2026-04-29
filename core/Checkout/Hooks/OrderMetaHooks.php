@@ -93,37 +93,7 @@ final class OrderMetaHooks {
 		unset( $data ); if ( ! $order instanceof \WC_Order ) { return; }
 		$flow = CheckoutSessionService::get_flow(); $answers = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : array(); $contact = isset( $answers['contact_billing'] ) && is_array( $answers['contact_billing'] ) ? $answers['contact_billing'] : array(); if ( empty( $contact ) ) { return; }
 		$scenario = isset( $flow['scenario'] ) ? CheckoutScenarioRules::sanitize_scenario( (string) $flow['scenario'] ) : ScenarioStepRegistry::SCENARIO_PICKUP; $rules = CheckoutScenarioRules::build( $scenario ); $field_rules = isset( $rules['field_rules'] ) && is_array( $rules['field_rules'] ) ? $rules['field_rules'] : array(); $hide_address = ! empty( $field_rules['hide_address_fields'] );
-		$billing_map = array( 'billing_first_name' => 'set_billing_first_name', 'billing_last_name' => 'set_billing_last_name', 'billing_email' => 'set_billing_email', 'billing_phone' => 'set_billing_phone', 'country' => 'set_billing_country', 'state' => 'set_billing_state', 'city' => 'set_billing_city', 'address_1' => 'set_billing_address_1', 'address_2' => 'set_billing_address_2', 'postcode' => 'set_billing_postcode' );
-		foreach ( $billing_map as $contact_key => $setter ) {
-			if ( ! array_key_exists( $contact_key, $contact ) ) {
-				continue;
-			}
-			if ( $hide_address && in_array( $contact_key, array( 'country', 'state', 'city', 'address_1', 'address_2', 'postcode' ), true ) ) {
-				continue;
-			}
-			$value = sanitize_text_field( (string) $contact[ $contact_key ] );
-			if ( 'country' === $contact_key ) {
-				$value = self::normalize_billing_country_value( $value );
-			}
-			if ( method_exists( $order, $setter ) ) {
-				$order->{$setter}( $value );
-			}
-		}
-		if ( ! $hide_address ) {
-			$shipping_map = array( 'country' => 'set_shipping_country', 'state' => 'set_shipping_state', 'city' => 'set_shipping_city', 'address_1' => 'set_shipping_address_1', 'address_2' => 'set_shipping_address_2', 'postcode' => 'set_shipping_postcode' );
-			foreach ( $shipping_map as $contact_key => $setter ) {
-				if ( ! array_key_exists( $contact_key, $contact ) ) {
-					continue;
-				}
-				$value = sanitize_text_field( (string) $contact[ $contact_key ] );
-				if ( 'country' === $contact_key ) {
-					$value = self::normalize_billing_country_value( $value );
-				}
-				if ( method_exists( $order, $setter ) ) {
-					$order->{$setter}( $value );
-				}
-			}
-		}
+		self::apply_billing_shipping_contact_to_target( $order, $contact, $hide_address );
 		$custom_meta_map = array(
 			OrderMetaKeys::BILLING_PATRONYMIC   => 'billing_patronymic',
 			OrderMetaKeys::GENDER              => 'billing_gender',
@@ -157,6 +127,75 @@ final class OrderMetaHooks {
 			}
 		}
 		if ( array_key_exists( 'order_notes', $contact ) ) { $note_value = sanitize_textarea_field( (string) $contact['order_notes'] ); $order->set_customer_note( $note_value ); if ( '' === $note_value ) { $order->delete_meta_data( OrderMetaKeys::ORDER_NOTES ); } else { $order->update_meta_data( OrderMetaKeys::ORDER_NOTES, $note_value ); } }
+	}
+
+	/**
+	 * Те же billing/shipping поля, что на заказе в {@see self::apply_contact_fields_to_order()}, для сессии WC customer.
+	 */
+	public static function apply_contact_location_to_customer( \WC_Customer $customer, string $scenario, array $contact ): void {
+		if ( empty( $contact ) ) {
+			return;
+		}
+		$scenario     = CheckoutScenarioRules::sanitize_scenario( $scenario );
+		$rules        = CheckoutScenarioRules::build( $scenario );
+		$field_rules  = isset( $rules['field_rules'] ) && is_array( $rules['field_rules'] ) ? $rules['field_rules'] : array();
+		$hide_address = ! empty( $field_rules['hide_address_fields'] );
+		self::apply_billing_shipping_contact_to_target( $customer, $contact, $hide_address );
+	}
+
+	/**
+	 * @param \WC_Order|\WC_Customer $target
+	 */
+	private static function apply_billing_shipping_contact_to_target( $target, array $contact, bool $hide_address ): void {
+		$billing_map = array(
+			'billing_first_name' => 'set_billing_first_name',
+			'billing_last_name'  => 'set_billing_last_name',
+			'billing_email'      => 'set_billing_email',
+			'billing_phone'      => 'set_billing_phone',
+			'country'            => 'set_billing_country',
+			'state'              => 'set_billing_state',
+			'city'               => 'set_billing_city',
+			'address_1'          => 'set_billing_address_1',
+			'address_2'          => 'set_billing_address_2',
+			'postcode'           => 'set_billing_postcode',
+		);
+		foreach ( $billing_map as $contact_key => $setter ) {
+			if ( ! array_key_exists( $contact_key, $contact ) ) {
+				continue;
+			}
+			if ( $hide_address && in_array( $contact_key, array( 'country', 'state', 'city', 'address_1', 'address_2', 'postcode' ), true ) ) {
+				continue;
+			}
+			$value = sanitize_text_field( (string) $contact[ $contact_key ] );
+			if ( 'country' === $contact_key ) {
+				$value = self::normalize_billing_country_value( $value );
+			}
+			if ( method_exists( $target, $setter ) ) {
+				$target->{$setter}( $value );
+			}
+		}
+		if ( ! $hide_address ) {
+			$shipping_map = array(
+				'country'   => 'set_shipping_country',
+				'state'     => 'set_shipping_state',
+				'city'      => 'set_shipping_city',
+				'address_1' => 'set_shipping_address_1',
+				'address_2' => 'set_shipping_address_2',
+				'postcode'  => 'set_shipping_postcode',
+			);
+			foreach ( $shipping_map as $contact_key => $setter ) {
+				if ( ! array_key_exists( $contact_key, $contact ) ) {
+					continue;
+				}
+				$value = sanitize_text_field( (string) $contact[ $contact_key ] );
+				if ( 'country' === $contact_key ) {
+					$value = self::normalize_billing_country_value( $value );
+				}
+				if ( method_exists( $target, $setter ) ) {
+					$target->{$setter}( $value );
+				}
+			}
+		}
 	}
 
 	public static function save_scenario_meta( $order, $data = array() ): void {

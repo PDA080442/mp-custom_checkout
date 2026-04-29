@@ -1028,7 +1028,7 @@
 			}
 			html += '<section class="mp-cc-delivery-studio__block">';
 			html += '<h4>Тарифы: ' + escapeHtml(String(method.title || methodId)) + ' <code>' + escapeHtml(methodId) + '</code></h4>';
-			html += '<table class="mp-cc-delivery-studio__tariff-table"><thead><tr><th>ID</th><th>Название</th><th>Цена</th><th>ETA</th><th>Активен</th><th></th></tr></thead><tbody>';
+			html += '<table class="mp-cc-delivery-studio__tariff-table"><thead><tr><th>ID</th><th>Название</th><th>Цена</th><th>ETA</th><th>WC rate ID</th><th>Активен</th><th></th></tr></thead><tbody>';
 			var tariffIds = Object.keys(method.tariffs);
 			var ti2;
 			for (ti2 = 0; ti2 < tariffIds.length; ti2 += 1) {
@@ -1041,6 +1041,7 @@
 				html += '<td><input type="text" class="regular-text mp-cc-delivery-studio__input" data-mp-cc-tariff-field="title" data-method="' + escapeHtml(methodId) + '" data-tariff="' + escapeHtml(tariffId) + '" value="' + escapeHtml(String(tr.title || '')) + '" /></td>';
 				html += '<td><input type="number" min="0" step="1" class="small-text mp-cc-delivery-studio__input" data-mp-cc-tariff-field="price" data-method="' + escapeHtml(methodId) + '" data-tariff="' + escapeHtml(tariffId) + '" value="' + escapeHtml(String(Math.max(0, Math.round(Number(tr.price || 0))))) + '" /></td>';
 				html += '<td><input type="text" class="regular-text mp-cc-delivery-studio__input" data-mp-cc-tariff-field="eta" data-method="' + escapeHtml(methodId) + '" data-tariff="' + escapeHtml(tariffId) + '" value="' + escapeHtml(String(tr.eta || '')) + '" /></td>';
+				html += '<td><input type="text" class="regular-text mp-cc-delivery-studio__input" placeholder="flat_rate:5" data-mp-cc-tariff-field="wc_rate_id" data-method="' + escapeHtml(methodId) + '" data-tariff="' + escapeHtml(tariffId) + '" value="' + escapeHtml(String(tr.wc_rate_id || '')) + '" /></td>';
 				html += '<td><label class="mp-cc-delivery-studio__check"><input type="checkbox" data-mp-cc-tariff-field="active" data-method="' + escapeHtml(methodId) + '" data-tariff="' + escapeHtml(tariffId) + '"' + (active ? ' checked' : '') + ' /> да</label></td>';
 				html += '<td>';
 				if (isSlot) {
@@ -1544,6 +1545,7 @@
 						title: readFormValue(tPath + '[title]', tBase.title),
 						price: Number(readFormValue(tPath + '[price]', tBase.price)),
 						eta: readFormValue(tPath + '[eta]', tBase.eta),
+						wc_rate_id: readFormValue(tPath + '[wc_rate_id]', tBase.wc_rate_id || ''),
 						active: Boolean(readFormValue(tPath + '[active]', tBase.active))
 					};
 				}

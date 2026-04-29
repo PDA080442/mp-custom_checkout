@@ -29,6 +29,8 @@
 	};
 	var animationDurationMs = 180;
 	var draftSaveTimer = null;
+	/** Debounce session_get_state после правок адреса (иначе на каждый символ — отдельный AJAX). */
+	var addressRatesSyncTimer = null;
 	var isClientErrorLoggingBound = false;
 	var stepTransitionTimer = 0;
 	var qtyInputDebounceTimers = {};
@@ -45,6 +47,8 @@
 	var shippingMutationInFlight = false;
 	/** Отложенный клик по тарифу, если пользователь нажал во время shippingMutationInFlight. */
 	var pendingShippingTariffChoice = null;
+	/** Отложенный выбор другого способа доставки (иначе радио/кнопка «залипают» визуально при гонке AJAX). */
+	var pendingShippingMethodChoice = null;
 
 	function getUiText(path, fallback) {
 		var source = (window.mpCcCheckout && window.mpCcCheckout.uiText) ? window.mpCcCheckout.uiText : {};
@@ -1880,6 +1884,415 @@
 		return ok;
 	}
 
+	function buildWcShippingRateCostMap(rates) {
+		var map = {};
+		if (!Array.isArray(rates)) {
+			return map;
+		}
+		var i;
+		for (i = 0; i < rates.length; i += 1) {
+			var r = rates[i] || {};
+			var rid = String(r.id || '');
+			if (rid) {
+				map[rid] = Number(r.cost || 0);
+			}
+		}
+		return map;
+	}
+
+	function wcMethodAnchorPattern(methodId) {
+		switch (String(methodId || '').toLowerCase()) {
+			case 'pvz':
+				return /пвз|пункт\s*выдачи|постамат|pickup\s*point|выдач[аи]/i;
+			case 'courier':
+				return /курьер|до\s*двер|дверь|courier|адрес[ау]|до\s*адреса|доставка\s*курьер/i;
+			case 'post_russia':
+				return /почт|russian\s*post|post\s*russia|ems|посылк|отделени/i;
+			case 'pickup':
+				return /самовывоз|pickup|из\s*магазин|магазин|офис/i;
+			case 'krasnoyarsk_delivery':
+				return /красноярск|локал|local|по\s*городу|городск/i;
+			default:
+				return null;
+		}
+	}
+
+	function wcTariffSpeedPattern(tariffId, tariffTitle) {
+		var tid = String(tariffId || '').toLowerCase();
+		var tt = String(tariffTitle || '').toLowerCase();
+		if (tid === 'express' || /экспресс|express|ускор/.test(tt)) {
+			return /экспресс|express|ускор|xpress|быстр/i;
+		}
+		if (tid === 'standard' || /стандарт|standard|эконом|обычн/.test(tt)) {
+			return /стандарт|standard|обычн|эконом|обычная|базов/i;
+		}
+		return null;
+	}
+
+	function wcTariffAssignPriority(tariffId) {
+		var id = String(tariffId || '').toLowerCase();
+		if (id === 'express') {
+			return 0;
+		}
+		if (id === 'standard') {
+			return 1;
+		}
+		return 10;
+	}
+
+	function wcRateMetaBlob(rate) {
+		var chunks = [];
+		var wm = String(rate.method_id || '').toLowerCase();
+		if (wm) {
+			chunks.push('wc_method:' + wm);
+		}
+		var label = String(rate.label || '').toLowerCase();
+		if (label) {
+			chunks.push(label);
+		}
+		var meta = rate.meta && typeof rate.meta === 'object' ? rate.meta : {};
+		var k;
+		for (k in meta) {
+			if (Object.prototype.hasOwnProperty.call(meta, k)) {
+				chunks.push(String(k).toLowerCase() + '=' + String(meta[k]).toLowerCase());
+			}
+		}
+		return chunks.join('\n');
+	}
+
+	function wcScoreRateMetaForTariff(methodId, tariffId, tariffTitle, rate) {
+		var blob = wcRateMetaBlob(rate);
+		if (!blob) {
+			return 0;
+		}
+		var score = 0;
+		var mid = String(methodId || '').toLowerCase();
+		var tid = String(tariffId || '').toLowerCase();
+		var tt = String(tariffTitle || '').toLowerCase();
+		if ((mid === 'pvz' || mid === 'courier') && (/cdek|сдэк/.test(blob) || /cdek|сдэк/.test(String(rate.method_id || '').toLowerCase()))) {
+			score += 14;
+		}
+		if (mid === 'pvz' && /пвз|pvz|office|warehouse|пунк|постамат|stock/i.test(blob)) {
+			score += 44;
+		}
+		if (mid === 'courier' && /курьер|courier|двер|door|адрес|to_door|todoor/i.test(blob)) {
+			score += 44;
+		}
+		var speed = wcTariffSpeedPattern(tid, tt);
+		if (speed && speed.test(blob)) {
+			score += 70;
+		}
+		return score;
+	}
+
+	function wcRatesMatchingMethod(methodId, methodTitle, rates) {
+		var anchor = wcMethodAnchorPattern(methodId);
+		var title = String(methodTitle || '').toLowerCase();
+		var out = [];
+		var i;
+		if (!Array.isArray(rates)) {
+			return out;
+		}
+		for (i = 0; i < rates.length; i += 1) {
+			var r = rates[i] || {};
+			var label = String(r.label || '');
+			var rid = String(r.id || '');
+			if (!rid) {
+				continue;
+			}
+			if (String(methodId).toLowerCase() === 'pickup' && /local_pickup|pickup_location|wc_pickup/.test(rid.toLowerCase())) {
+				out.push(r);
+				continue;
+			}
+			if (anchor && (anchor.test(label) || anchor.test(rid))) {
+				out.push(r);
+			}
+		}
+		if (!out.length && title.length >= 4 && anchor) {
+			var frag = title.slice(0, 8);
+			for (i = 0; i < rates.length; i += 1) {
+				var r2 = rates[i] || {};
+				if (String(r2.label || '').toLowerCase().indexOf(frag) !== -1) {
+					out.push(r2);
+				}
+			}
+		}
+		return out.length ? out : rates.slice();
+	}
+
+	function wcAssignRateIdsToTariffs(methodId, methodTitle, tariffs, rates) {
+		var pool = wcRatesMatchingMethod(methodId, methodTitle, rates);
+		var used = {};
+		var tid;
+		var assigned = {};
+		var ordered = tariffs.slice().sort(function (a, b) {
+			return wcTariffAssignPriority(a.id) - wcTariffAssignPriority(b.id);
+		});
+		var pass;
+		for (pass = 0; pass < 2; pass += 1) {
+			var activePool = pass === 0 ? pool : rates.slice();
+			var pi;
+			for (pi = 0; pi < ordered.length; pi += 1) {
+				var t = ordered[pi] || {};
+				tid = String(t.id || '');
+				var explicit = String(t.wc_rate_id || '');
+				if (explicit && Object.prototype.hasOwnProperty.call(costById, explicit)) {
+					assigned[tid] = explicit;
+					used[explicit] = true;
+					continue;
+				}
+				if (assigned[tid]) {
+					continue;
+				}
+				var speed = wcTariffSpeedPattern(t.id, t.title);
+				var anchor = wcMethodAnchorPattern(methodId);
+				var bestId = '';
+				var bestScore = -1;
+				var ri;
+				for (ri = 0; ri < activePool.length; ri += 1) {
+					var rate = activePool[ri] || {};
+					var rid = String(rate.id || '');
+					if (!rid || used[rid]) {
+						continue;
+					}
+					var label = String(rate.label || '');
+					var score = 0;
+					score += wcScoreRateMetaForTariff(methodId, t.id, t.title, rate);
+					if (speed && speed.test(label)) {
+						score += 72;
+					}
+					if (anchor && anchor.test(label)) {
+						score += 38;
+					}
+					if (anchor && anchor.test(rid)) {
+						score += 22;
+					}
+					if (score > bestScore) {
+						bestScore = score;
+						bestId = rid;
+					}
+				}
+				if (bestId && bestScore >= 55) {
+					assigned[tid] = bestId;
+					used[bestId] = true;
+				}
+			}
+		}
+		var allT = tariffs;
+		var missing = 0;
+		var mx;
+		for (mx = 0; mx < allT.length; mx += 1) {
+			var tx = allT[mx] || {};
+			if (!assigned[String(tx.id || '')] && !String(tx.wc_rate_id || '')) {
+				missing += 1;
+			}
+		}
+		if (missing && pool.length === allT.length) {
+			var tSorted = allT.slice().sort(function (a, b) {
+				return Number(a.price || 0) - Number(b.price || 0);
+			});
+			var rSorted = pool.slice().sort(function (a, b) {
+				return Number(a.cost || 0) - Number(b.cost || 0);
+			});
+			var j;
+			for (j = 0; j < tSorted.length; j += 1) {
+				var tj = tSorted[j] || {};
+				var rj = rSorted[j] || {};
+				var idtj = String(tj.id || '');
+				var idrj = String(rj.id || '');
+				if (idtj && idrj && !String(tj.wc_rate_id || '')) {
+					assigned[idtj] = idrj;
+				}
+			}
+		}
+		return assigned;
+	}
+
+	function wcBestRateForMethodOnly(methodId, methodTitle, rates, costById) {
+		var pool = wcRatesMatchingMethod(methodId, methodTitle, rates);
+		var anchor = wcMethodAnchorPattern(methodId);
+		var bestId = '';
+		var bestScore = -1;
+		var i;
+		for (i = 0; i < pool.length; i += 1) {
+			var r = pool[i] || {};
+			var rid = String(r.id || '');
+			var label = String(r.label || '');
+			if (!rid || !Object.prototype.hasOwnProperty.call(costById, rid)) {
+				continue;
+			}
+			var score = 0;
+			score += wcScoreRateMetaForTariff(methodId, '', '', r);
+			if (String(methodId).toLowerCase() === 'pickup' && /local_pickup|pickup_location|wc_pickup/.test(rid.toLowerCase())) {
+				score = Math.max(score, 120);
+			} else if (anchor && anchor.test(label)) {
+				score = Math.max(score, 70);
+			} else if (anchor && anchor.test(rid)) {
+				score = Math.max(score, 45);
+			}
+			if (score > bestScore) {
+				bestScore = score;
+				bestId = rid;
+			}
+		}
+		if (bestId && bestScore >= 40) {
+			return bestId;
+		}
+		return '';
+	}
+
+	function wcOverlayPriceOrCatalog(wcCost, catalogPrice) {
+		var c = Number(wcCost);
+		var base = Number(catalogPrice || 0);
+		if (!Number.isFinite(c)) {
+			return base;
+		}
+		if (c > 0) {
+			return c;
+		}
+		if (base > 0) {
+			return base;
+		}
+		return c;
+	}
+
+	function overlayWcShippingCatalogPrices(methods, state) {
+		if (!state || !state.frontendStore || !state.frontendStore.cart) {
+			return methods;
+		}
+		var rates = state.frontendStore.cart.wc_shipping_rates;
+		if (!Array.isArray(rates) || !rates.length) {
+			return methods;
+		}
+		var costById = buildWcShippingRateCostMap(rates);
+		if (!Object.keys(costById).length) {
+			return methods;
+		}
+		var dateBox = state.frontendStore.fulfillment && state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+			? state.frontendStore.fulfillment.date
+			: {};
+		var selMethod = String(dateBox.shipping_method_id || '');
+		var selTariff = String(dateBox.shipping_tariff_id || '');
+		var selPrice = Number(dateBox.shipping_price || 0);
+		var out = [];
+		var mi;
+		for (mi = 0; mi < methods.length; mi += 1) {
+			var m = methods[mi] || {};
+			var m2 = $.extend({}, m);
+			var wr = String(m.wc_rate_id || '');
+			if (wr && Object.prototype.hasOwnProperty.call(costById, wr)) {
+				m2.price = wcOverlayPriceOrCatalog(costById[wr], m2.price);
+			} else if (!Array.isArray(m.tariffs) || !m.tariffs.length) {
+				var singleId = wcBestRateForMethodOnly(m.id, m.title, rates, costById);
+				if (singleId) {
+					m2.price = wcOverlayPriceOrCatalog(costById[singleId], m2.price);
+				}
+			}
+			if (Array.isArray(m.tariffs) && m.tariffs.length) {
+				var assign = wcAssignRateIdsToTariffs(m.id, m.title, m.tariffs, rates);
+				var t2 = [];
+				var ti;
+				for (ti = 0; ti < m.tariffs.length; ti += 1) {
+					var t = m.tariffs[ti] || {};
+					var row = $.extend({}, t);
+					var tr = String(t.wc_rate_id || '');
+					var autoRid = String(assign[String(t.id || '')] || '');
+					var catP = Number(t.price || 0);
+					if (tr && Object.prototype.hasOwnProperty.call(costById, tr)) {
+						row.price = wcOverlayPriceOrCatalog(costById[tr], catP);
+					} else if (autoRid && Object.prototype.hasOwnProperty.call(costById, autoRid)) {
+						row.price = wcOverlayPriceOrCatalog(costById[autoRid], catP);
+					}
+					if (
+						selPrice > 0 &&
+						String(m.id || '') === selMethod &&
+						String(t.id || '') === selTariff &&
+						Number(row.price || 0) <= 0
+					) {
+						row.price = selPrice;
+					}
+					t2.push(row);
+				}
+				m2.tariffs = t2;
+			}
+			out.push(m2);
+		}
+		return out;
+	}
+
+	function getStepOneContactCity(state) {
+		var c = state && state.frontendStore && state.frontendStore.form && state.frontendStore.form.contact
+			? state.frontendStore.form.contact
+			: {};
+		return trimNonEmpty(c.city);
+	}
+
+	function normalizeCityNameForMatch(raw) {
+		var s = trimNonEmpty(raw).toLowerCase();
+		if (!s) {
+			return '';
+		}
+		try {
+			s = s.toLocaleLowerCase('ru-RU');
+		} catch (err) {
+			// ignore
+		}
+		s = s.replace(/ё/g, 'е').replace(/^г\.?\s+/i, '').replace(/^город\s+/i, '').trim();
+		return s;
+	}
+
+	function isKrasnoyarskCityLabel(raw) {
+		var n = normalizeCityNameForMatch(raw);
+		if (!n) {
+			return false;
+		}
+		return n === 'красноярск' || n.indexOf('красноярск,') === 0 || n.indexOf('красноярск ') === 0;
+	}
+
+	/** Пункт самовывоза и «доставка по Красноярску» имеют смысл только для города Красноярск. */
+	function shouldHideKrasnoyarskLocalMethods(state) {
+		var cy = getStepOneContactCity(state);
+		if (!cy) {
+			return false;
+		}
+		return !isKrasnoyarskCityLabel(cy);
+	}
+
+	function invalidateShippingIfNotInCatalog(state) {
+		if (!state || !state.frontendStore || !state.frontendStore.fulfillment) {
+			return;
+		}
+		var catalog = getV2ShippingCatalog(state);
+		var allowed = {};
+		var ai;
+		for (ai = 0; ai < catalog.length; ai += 1) {
+			allowed[String(catalog[ai].id || '')] = true;
+		}
+		var db = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+			? state.frontendStore.fulfillment.date
+			: {};
+		var mid = String(db.shipping_method_id || '');
+		if (!mid || allowed[mid]) {
+			return;
+		}
+		var next = $.extend({}, db);
+		delete next.shipping_method_id;
+		delete next.shipping_method_title;
+		delete next.shipping_tariff_id;
+		delete next.shipping_tariff_title;
+		delete next.shipping_price;
+		delete next.shipping_eta;
+		delete next.shipping_requires_address;
+		state.frontendStore.fulfillment.date = next;
+		var summary = state.frontendStore.cart && state.frontendStore.cart.summary && typeof state.frontendStore.cart.summary === 'object'
+			? state.frontendStore.cart.summary
+			: {};
+		summary = $.extend({}, summary);
+		summary.shipping_total = 0;
+		summary.shipping = '';
+		state.frontendStore.cart.summary = summary;
+	}
+
 	function getV2ShippingCatalog(state) {
 		var deliveryCfg = getDeliveryConfig();
 		var source = deliveryCfg.shipping_catalog && typeof deliveryCfg.shipping_catalog === 'object' ? deliveryCfg.shipping_catalog : {};
@@ -1906,13 +2319,17 @@
 			if (!skipScenarioFilter && scenarios.length && currentScenario && scenarios.indexOf(currentScenario) === -1) {
 				continue;
 			}
+			if (shouldHideKrasnoyarskLocalMethods(state) && (methodId === 'pickup' || methodId === 'krasnoyarsk_delivery')) {
+				continue;
+			}
 			var normalized = {
 				id: methodId,
 				title: String(raw.title || methodId),
 				price: Number(raw.price || 0),
 				eta: String(raw.eta || ''),
 				description: String(raw.description || ''),
-				requires_address: raw.requires_address !== false
+				requires_address: raw.requires_address !== false,
+				wc_rate_id: String(raw.wc_rate_id || '')
 			};
 			if (raw.tariffs && typeof raw.tariffs === 'object') {
 				var tariffs = [];
@@ -1928,7 +2345,8 @@
 						id: tariffId,
 						title: String(tr.title || tariffId),
 						price: Number(tr.price || 0),
-						eta: String(tr.eta || '')
+						eta: String(tr.eta || ''),
+						wc_rate_id: String(tr.wc_rate_id || '')
 					});
 				}
 				if (tariffs.length) {
@@ -1953,10 +2371,21 @@
 					]
 				},
 				{ id: 'krasnoyarsk_delivery', title: 'Доставка по Красноярску', price: 400, eta: 'в течение дня', requires_address: true },
-				{ id: 'pickup', title: 'Самовывоз', price: 0, eta: '', requires_address: false }
+				{ id: 'pickup', title: 'Самовывоз', price: 0, eta: '', requires_address: false, wc_rate_id: '' }
 			];
 		}
-		return methods;
+		if (shouldHideKrasnoyarskLocalMethods(state)) {
+			var filteredMethods = [];
+			for (var fj = 0; fj < methods.length; fj += 1) {
+				var midF = String(methods[fj].id || '');
+				if (midF === 'pickup' || midF === 'krasnoyarsk_delivery') {
+					continue;
+				}
+				filteredMethods.push(methods[fj]);
+			}
+			methods = filteredMethods;
+		}
+		return overlayWcShippingCatalogPrices(methods, state);
 	}
 
 	function resolveShippingSelection(methods, selectedMethodId, selectedTariffId) {
@@ -2025,7 +2454,12 @@
 
 		var contact = state.frontendStore.form.contact || {};
 		contact.__address_visibility = contact.__address_visibility && typeof contact.__address_visibility === 'object' ? contact.__address_visibility : {};
-		if (dateBox.shipping_method_id === 'pickup' || dateBox.shipping_requires_address === false) {
+		var onAddressDeliveryStep = state && state.currentStepId === 'address_delivery';
+		var hideAddressByCatalog = dateBox.shipping_method_id === 'pickup' || dateBox.shipping_requires_address === false;
+		if (onAddressDeliveryStep && dateBox.shipping_method_id !== 'pickup') {
+			hideAddressByCatalog = false;
+		}
+		if (hideAddressByCatalog) {
 			contact.__address_visibility.hide_address_fields = true;
 			contact.__address_visibility.required_address_fields = false;
 			// На шаге 1 («Адрес и доставка») пользователь только что вводил город — его сохраняем,
@@ -4713,6 +5147,13 @@
 		return steps;
 	}
 
+	function mergeDateConditionsFromFlowAnswers(answers) {
+		answers = answers && typeof answers === 'object' ? answers : {};
+		var fromDate = answers.date_conditions && typeof answers.date_conditions === 'object' ? answers.date_conditions : {};
+		var fromStepOne = answers.step_one && typeof answers.step_one === 'object' ? answers.step_one : {};
+		return $.extend(true, {}, fromStepOne, fromDate);
+	}
+
 	function createFrontendStore(flow, visibleSteps, allSteps, currentStepId) {
 		var answers = flow.answers || {};
 		var contactBilling = answers.contact_billing || {};
@@ -4730,7 +5171,8 @@
 			cart: {
 				snapshot: flow.snapshot || {},
 				summary: {},
-				items: []
+				items: [],
+				wc_shipping_rates: []
 			},
 			form: {
 				contact: contactBilling,
@@ -4738,7 +5180,7 @@
 			},
 			fulfillment: {
 				scenario: flow.scenario || '',
-				date: answers.date_conditions || {},
+				date: mergeDateConditionsFromFlowAnswers(answers),
 				scenarioData: $.extend({}, answers.scenario || {}, { rules: flow.scenario_rules || {} })
 			},
 			discounts: answers.discounts || { coupons: [], gift_card: [] },
@@ -4821,7 +5263,7 @@
 		if (safePayload && safePayload.home_url) {
 			fallbackCatalogUrl = String(safePayload.home_url);
 		}
-		return {
+		var out = {
 			items: Array.isArray(safePayload.items) ? safePayload.items : [],
 			summary: $.extend(
 				{
@@ -4838,6 +5280,12 @@
 				safeSummary
 			)
 		};
+		if (Array.isArray(safePayload.wc_shipping_rates)) {
+			out.wc_shipping_rates = safePayload.wc_shipping_rates;
+		} else {
+			out.wc_shipping_rates = [];
+		}
+		return out;
 	}
 
 	function getStepIndex(steps, stepId) {
@@ -5089,6 +5537,7 @@
 		var contextCart = normalizeCartPayload(state.context && state.context.cart ? state.context.cart : {});
 		state.frontendStore.cart.items = contextCart.items;
 		state.frontendStore.cart.summary = contextCart.summary;
+		state.frontendStore.cart.wc_shipping_rates = Array.isArray(contextCart.wc_shipping_rates) ? contextCart.wc_shipping_rates : [];
 		ensureDiscountDefaults(state);
 		if (prevRuntime && typeof prevRuntime === 'object') {
 			state.frontendStore.discounts.coupon_runtime = $.extend({}, prevRuntime);
@@ -5161,6 +5610,19 @@
 			hide_address_lines: Object.prototype.hasOwnProperty.call(fieldRules, 'hide_address_lines') ? Boolean(fieldRules.hide_address_lines) : hideAll,
 			hide_postcode: Object.prototype.hasOwnProperty.call(fieldRules, 'hide_postcode') ? Boolean(fieldRules.hide_postcode) : hideAll
 		};
+		if (state && state.currentStepId === 'address_delivery') {
+			var dateBoxVis = state.frontendStore.fulfillment && state.frontendStore.fulfillment.date ? state.frontendStore.fulfillment.date : {};
+			var shipMethod = String(dateBoxVis.shipping_method_id || '');
+			if (shipMethod !== 'pickup') {
+				contact.__address_visibility.hide_address_fields = false;
+				contact.__address_visibility.required_address_fields = true;
+				contact.__address_visibility.hide_country = false;
+				contact.__address_visibility.hide_region = false;
+				contact.__address_visibility.hide_city = false;
+				contact.__address_visibility.hide_address_lines = false;
+				contact.__address_visibility.hide_postcode = false;
+			}
+		}
 		state.frontendStore.form.contact = contact;
 		stripAddressFieldErrors(state);
 		document.dispatchEvent(
@@ -5225,6 +5687,7 @@
 		var cartSnap = normalizeCartPayload(context && context.cart ? context.cart : {});
 		frontendStore.cart.items = cartSnap.items;
 		frontendStore.cart.summary = cartSnap.summary;
+		frontendStore.cart.wc_shipping_rates = Array.isArray(cartSnap.wc_shipping_rates) ? cartSnap.wc_shipping_rates : [];
 		frontendStore.runtime = frontendStore.runtime || {};
 		frontendStore.runtime.summaryHydrated = cartSnap.items.length > 0;
 	}
@@ -5636,15 +6099,55 @@
 		});
 	}
 
+	function buildContactAddressPayloadForSession(contact) {
+		contact = contact && typeof contact === 'object' ? contact : {};
+		return {
+			country: contact.country != null ? String(contact.country) : '',
+			state: contact.state != null ? String(contact.state) : '',
+			city: contact.city != null ? String(contact.city) : '',
+			address_1: contact.address_1 != null ? String(contact.address_1) : '',
+			address_2: contact.address_2 != null ? String(contact.address_2) : '',
+			postcode: contact.postcode != null ? String(contact.postcode) : ''
+		};
+	}
+
+	function isAddressBlockShownForContact(state) {
+		ensureContactDefaults(state);
+		var contact = state.frontendStore.form.contact || {};
+		var vis = contact.__address_visibility;
+		if (vis && vis.hide_address_fields) {
+			return false;
+		}
+		var cfg = getStepFourConfig();
+		var ab = cfg.address_block || {};
+		var order = Array.isArray(ab.subfields_order)
+			? ab.subfields_order
+			: ['country', 'state', 'city', 'address_1', 'address_2', 'postcode'];
+		var pi;
+		for (pi = 0; pi < order.length; pi += 1) {
+			if (shouldRenderAddressSubfield(order[pi], contact)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	function saveCurrentStepDraft(state) {
 		var stepId = state.currentStepId;
 		if (!stepId) {
 			return $.Deferred().resolve().promise();
 		}
 
+		var $app = $(selectors.app);
+		if (stepId === 'address_delivery' && $app.length) {
+			flushContactFormFromDom(state, $app);
+		}
+
 		var storageKey = stepKeyById(stepId);
 		var payload = getDraftPayloadByStorageKey(state, storageKey);
 		setRuntimeFlag(state, 'dirty', true);
+
+		var chainContactAddress = stepId === 'address_delivery' && isAddressBlockShownForContact(state);
 
 		return postCheckout('session_set_answers', {
 			step_id: stepId,
@@ -5652,6 +6155,15 @@
 			answers: payload
 		}).then(function () {
 			setRuntimeFlag(state, 'dirty', false);
+			if (!chainContactAddress) {
+				return;
+			}
+			var addrPayload = buildContactAddressPayloadForSession(state.frontendStore && state.frontendStore.form ? state.frontendStore.form.contact : {});
+			return postCheckout('session_set_answers', {
+				step_id: 'recipient',
+				context_id: state.flowContextId,
+				answers: addrPayload
+			});
 		});
 	}
 
@@ -5669,6 +6181,23 @@
 		}, 260);
 	}
 
+	function cancelAddressRatesBackendSync() {
+		if (addressRatesSyncTimer) {
+			window.clearTimeout(addressRatesSyncTimer);
+			addressRatesSyncTimer = null;
+		}
+	}
+
+	function scheduleAddressRatesBackendSync(state, $app) {
+		if (addressRatesSyncTimer) {
+			window.clearTimeout(addressRatesSyncTimer);
+		}
+		addressRatesSyncTimer = window.setTimeout(function () {
+			addressRatesSyncTimer = null;
+			syncStoreWithBackend(state, $app);
+		}, 550);
+	}
+
 	function saveDiscountDraft(state) {
 		ensureDiscountDefaults(state);
 		return postCheckout('session_set_answers', {
@@ -5683,6 +6212,9 @@
 			return {};
 		}
 		if (storageKey === 'step_one') {
+			if (state && state.currentStepId === 'address_delivery' && state.frontendStore && state.frontendStore.fulfillment) {
+				return $.extend(true, {}, state.frontendStore.fulfillment.date || {});
+			}
 			return state.frontendStore.cart.snapshot || {};
 		}
 		if (storageKey === 'date_conditions') {
@@ -5778,6 +6310,7 @@
 			v2html += '<div class="mp-cc-step-panel__content" data-mp-cc-step-slot="' + escapeHtml(screen ? screen.id : '') + '">';
 			if (screen && screen.id === 'delivery_screen') {
 				v2html += buildFulfillmentChoiceHtml(state);
+				v2html += buildAddressBlockHtml(state);
 			}
 			if (screen && screen.id === 'recipient_screen') {
 				v2html += buildContactPaymentHtml(state, { includePayment: false });
@@ -5790,6 +6323,13 @@
 				v2html += buildConfirmationScreenHtml(state);
 			}
 			v2html += '</div>';
+			if (screen && screen.id === 'delivery_screen') {
+				v2html += '<div class="mp-cc-step-panel__footer mp-cc-step-panel__footer--v2-next">';
+				v2html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--next" data-mp-cc-v2-next="1">';
+				v2html += escapeHtml(getUiText('common.next', 'Далее'));
+				v2html += '</button>';
+				v2html += '</div>';
+			}
 			v2html += '</section>';
 			return v2html;
 		}
@@ -5812,6 +6352,7 @@
 				html += '<div class="mp-cc-step-panel__content" data-mp-cc-step-slot="' + escapeHtml(step.id) + '">';
 				if (step.id === 'address_delivery') {
 					html += buildAddressDeliveryFormHtml(state);
+					html += buildAddressBlockHtml(state);
 				}
 				if (step.id === 'recipient') {
 					html += buildContactPaymentHtml(state, { includePayment: false });
@@ -5824,7 +6365,7 @@
 					html += buildConfirmationScreenHtml(state);
 				}
 				html += '</div>';
-				if (step.id === 'recipient' || step.id === 'payment' || step.id === 'confirm') {
+				if (step.id === 'address_delivery' || step.id === 'recipient' || step.id === 'payment' || step.id === 'confirm') {
 					html += '<div class="mp-cc-step-card__actions">';
 					if (step.id === 'confirm') {
 						html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--next mp-cc-step-card__cta" data-nav="next">' + escapeHtml(getUiText('common.confirm', 'Оформить заказ')) + '</button>';
@@ -5979,38 +6520,6 @@
 			}
 		}
 		return true;
-	}
-
-	function tryAutoAdvanceAddressStep(state, $app) {
-		if (!state || state.currentStepId !== 'address_delivery' || !isAddressDeliveryStepReady(state)) {
-			return;
-		}
-		var currentIdx = getStepIndex(state.visibleSteps, 'address_delivery');
-		if (currentIdx < 0) {
-			return;
-		}
-		var nextStep = state.visibleSteps[currentIdx + 1];
-		var nextStepId = nextStep && nextStep.id ? String(nextStep.id) : '';
-		if (!nextStepId) {
-			return;
-		}
-		setStepInvalidState(state, 'address_delivery', false);
-		if (isV2CheckoutUiEnabled(state)) {
-			ensureV2ScreenState(state);
-			var v2Target = -1;
-			var vsi;
-			for (vsi = 0; vsi < state.v2Screens.length; vsi += 1) {
-				if (getV2LegacyStepId(state.v2Screens[vsi]) === nextStepId) {
-					v2Target = vsi;
-					break;
-				}
-			}
-			if (v2Target >= 0) {
-				setCurrentV2Screen(state, $app, v2Target);
-				return;
-			}
-		}
-		setCurrentStep(state, $app, nextStepId);
 	}
 
 	function buildAddressDeliveryFormHtml(state) {
@@ -6928,6 +7437,9 @@
 		ensureDateSelection(state);
 		ensureContactDefaults(state);
 		ensureDiscountDefaults(state);
+		if (state.currentStepId === 'address_delivery') {
+			invalidateShippingIfNotInCatalog(state);
+		}
 		applyMotionFromState(state);
 
 		var nextParcelHtml = '';
@@ -7010,6 +7522,7 @@
 		}
 		if (isParcelChanged || isStepChanged || isSummaryChanged || isProgressChanged || isActionsChanged) {
 			bindHandlers(state, $app, $progress, $actions);
+			maybeInitDadataAddressSuggestions(state, $app);
 		}
 		if (isStepChanged) {
 			scheduleFocusAndA11yAnnouncement($app, true);
@@ -7030,6 +7543,27 @@
 		);
 	}
 
+	function flushPendingShippingMutation(state, $app, tariffMustMatchMethodId) {
+		tariffMustMatchMethodId = String(tariffMustMatchMethodId || '');
+		if (pendingShippingMethodChoice) {
+			var queuedMethod = String(pendingShippingMethodChoice || '');
+			pendingShippingMethodChoice = null;
+			if (queuedMethod) {
+				applyShippingMethodUserChoice(state, $app, queuedMethod);
+			}
+			return;
+		}
+		if (pendingShippingTariffChoice) {
+			var q = pendingShippingTariffChoice;
+			if (tariffMustMatchMethodId && String(q.methodId || '') !== tariffMustMatchMethodId) {
+				pendingShippingTariffChoice = null;
+				return;
+			}
+			pendingShippingTariffChoice = null;
+			applyShippingTariffUserChoice(state, $app, q.methodId, q.tariffId);
+		}
+	}
+
 	function applyShippingMethodUserChoice(state, $app, methodId) {
 		methodId = String(methodId || '');
 		if (!methodId) {
@@ -7037,8 +7571,11 @@
 		}
 		// Защита от двойных кликов / параллельных AJAX-цепочек по способу доставки.
 		if (shippingMutationInFlight) {
+			pendingShippingMethodChoice = methodId;
+			pendingShippingTariffChoice = null;
 			return;
 		}
+		pendingShippingMethodChoice = null;
 		var methods = getV2ShippingCatalog(state);
 		var dateBox = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.date || {}) : {};
 		var selectedMethod = null;
@@ -7092,14 +7629,15 @@
 					answers: state.frontendStore.fulfillment.date || {}
 				});
 			}).then(function () {
-				// Авто-переход выполняет setCurrentStep, который сам синхронизирует state из ответа.
-				// Параллельный syncStoreWithBackend здесь создаёт гонку (старый снапшот перезаписывает выбор).
-				tryAutoAdvanceAddressStep(state, $app);
+				// Переход на следующий шаг только по кнопке «Далее» / сводке, без автоперехода после выбора метода.
 			}).fail(function () {
 				notify('Не удалось сохранить шаг доставки.', 'error');
 				// При ошибке восстанавливаем состояние из бэкенда, чтобы UI не остался рассинхронизированным.
 				syncStoreWithBackend(state, $app);
-			}).always(release);
+			}).always(function () {
+				release();
+				flushPendingShippingMutation(state, $app, methodId);
+			});
 		} else {
 			// Метод требует выбора тарифа — ждём клика по тарифу, ничего больше не отправляем.
 			scenarioRequest.fail(function () {
@@ -7107,11 +7645,7 @@
 				syncStoreWithBackend(state, $app);
 			}).always(function () {
 				release();
-				if (pendingShippingTariffChoice && String(pendingShippingTariffChoice.methodId || '') === methodId) {
-					var queued = pendingShippingTariffChoice;
-					pendingShippingTariffChoice = null;
-					applyShippingTariffUserChoice(state, $app, queued.methodId, queued.tariffId);
-				}
+				flushPendingShippingMutation(state, $app, methodId);
 			});
 		}
 	}
@@ -7142,18 +7676,193 @@
 			context_id: state.flowContextId,
 			answers: state.frontendStore.fulfillment.date || {}
 		}).then(function () {
-			tryAutoAdvanceAddressStep(state, $app);
+			// Без автоперехода — пользователь жмёт «Далее».
 		}).fail(function () {
 			notify('Не удалось сохранить тариф доставки.', 'error');
 			syncStoreWithBackend(state, $app);
 		}).always(function () {
 			shippingMutationInFlight = false;
-			if (pendingShippingTariffChoice) {
-				var queued = pendingShippingTariffChoice;
-				pendingShippingTariffChoice = null;
-				applyShippingTariffUserChoice(state, $app, queued.methodId, queued.tariffId);
-			}
+			flushPendingShippingMutation(state, $app, '');
 		});
+	}
+
+	function dadataTokenBundle(rootCfg) {
+		var out = { token: String(rootCfg.token || '') };
+		if (trimNonEmpty(rootCfg.secret)) {
+			out.secret = String(rootCfg.secret);
+		}
+		return out;
+	}
+
+	function disposeDadataSuggestionsOn($scope) {
+		if (!$scope || !$scope.length || typeof jQuery === 'undefined' || !jQuery.fn || typeof jQuery.fn.suggestions !== 'function') {
+			return;
+		}
+		var ids = ['#mp-cc-address-country', '#mp-cc-address-region', '#mp-cc-address-city', '#mp-cc-address-line1', '#mp-cc-address-line2', '#mp-cc-address-postcode'];
+		var ii;
+		for (ii = 0; ii < ids.length; ii += 1) {
+			var $el = $scope.find(ids[ii]);
+			if (!$el.length) {
+				continue;
+			}
+			try {
+				$el.suggestions('dispose');
+			} catch (err1) {
+				try {
+					$el.suggestions('destroy');
+				} catch (err2) {
+					// ignore
+				}
+			}
+		}
+	}
+
+	function afterDadataContactGeocode(state, $app, touchedKeys) {
+		flushContactFormFromDom(state, $app);
+		invalidateV2DownstreamFrom(state, 1);
+		scheduleCurrentStepDraftSave(state, function () {
+			notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
+		});
+		var needSync = false;
+		var ai;
+		for (ai = 0; ai < touchedKeys.length; ai += 1) {
+			var tk = touchedKeys[ai];
+			if (tk === 'country' || tk === 'state' || tk === 'city' || tk === 'address_1' || tk === 'address_2' || tk === 'postcode') {
+				needSync = true;
+				break;
+			}
+		}
+		if (needSync) {
+			scheduleAddressRatesBackendSync(state, $app);
+		}
+		if (state.currentStepId === 'address_delivery') {
+			invalidateShippingIfNotInCatalog(state);
+		}
+	}
+
+	function applyDadataAddressPatch(state, $app, patch) {
+		patch = patch || {};
+		var keys = [];
+		var dk;
+		for (dk in patch) {
+			if (!Object.prototype.hasOwnProperty.call(patch, dk)) {
+				continue;
+			}
+			keys.push(dk);
+			var $inp = $app.find('[data-contact-field="' + dk + '"]');
+			if ($inp.length) {
+				$inp.val(patch[dk] == null ? '' : String(patch[dk]));
+			}
+		}
+		afterDadataContactGeocode(state, $app, keys);
+	}
+
+	/**
+	 * Подсказки DaData (jquery.suggestions), как у плагина «dadata-ru» на классическом checkout.
+	 * Токен: window.mpCcCheckout.dadata или фильтр mp_custom_checkout_dadata_settings на PHP.
+	 */
+	function maybeInitDadataAddressSuggestions(state, $app) {
+		var rootCfg = window.mpCcCheckout && window.mpCcCheckout.dadata && typeof window.mpCcCheckout.dadata === 'object'
+			? window.mpCcCheckout.dadata
+			: {};
+		if (!rootCfg.enabled || !trimNonEmpty(rootCfg.token)) {
+			return;
+		}
+		if (typeof jQuery === 'undefined' || !jQuery.fn || typeof jQuery.fn.suggestions !== 'function') {
+			return;
+		}
+		if (!$app || !$app.length || !$app.find('.mp-cc-address').length) {
+			return;
+		}
+		disposeDadataSuggestionsOn($app);
+		var common = dadataTokenBundle(rootCfg);
+		var contact = state.frontendStore && state.frontendStore.form && state.frontendStore.form.contact
+			? state.frontendStore.form.contact
+			: {};
+		var $country = $app.find('#mp-cc-address-country');
+		if ($country.length) {
+			$country.suggestions(jQuery.extend({}, common, {
+				type: 'country',
+				onSelect: function (suggestion) {
+					var v = suggestion && suggestion.value ? String(suggestion.value) : '';
+					applyDadataAddressPatch(state, $app, { country: v });
+				}
+			}));
+		}
+		var $state = $app.find('#mp-cc-address-region');
+		if ($state.length) {
+			var countryGuess = trimNonEmpty(contact.country) || 'Россия';
+			$state.suggestions(jQuery.extend({}, common, {
+				type: 'ADDRESS',
+				bounds: 'region',
+				constraints: { locations: [ { country: countryGuess } ] },
+				onSelect: function (suggestion) {
+					var d = suggestion && suggestion.data ? suggestion.data : {};
+					var region = trimNonEmpty(d.region_with_type) ? d.region_with_type : String(d.region || '');
+					applyDadataAddressPatch(state, $app, { state: region });
+				}
+			}));
+		}
+		var $city = $app.find('#mp-cc-address-city');
+		if ($city.length) {
+			var ctry = trimNonEmpty(contact.country) || 'Россия';
+			$city.suggestions(jQuery.extend({}, common, {
+				type: 'ADDRESS',
+				bounds: 'city-settlement',
+				constraints: { locations: [ { country: ctry } ] },
+				onSelect: function (suggestion) {
+					var d = suggestion && suggestion.data ? suggestion.data : {};
+					var cityVal = trimNonEmpty(d.city) ? d.city : String(d.settlement_with_type || d.settlement || '');
+					var patch = { city: cityVal };
+					if (d.postal_code) {
+						patch.postcode = String(d.postal_code);
+					}
+					if (d.region || d.region_with_type) {
+						patch.state = trimNonEmpty(d.region_with_type) ? d.region_with_type : String(d.region || '');
+					}
+					if (d.country) {
+						patch.country = String(d.country);
+					}
+					applyDadataAddressPatch(state, $app, patch);
+				}
+			}));
+		}
+		var $street = $app.find('#mp-cc-address-line1');
+		if ($street.length) {
+			var c2 = trimNonEmpty(contact.country) || 'Россия';
+			var r2 = String(contact.state || '').trim();
+			var ct2 = String(contact.city || '').trim();
+			var loc = { country: c2 };
+			if (r2) {
+				loc.region = r2;
+			}
+			if (ct2) {
+				loc.city = ct2;
+			}
+			$street.suggestions(jQuery.extend({}, common, {
+				type: 'ADDRESS',
+				bounds: 'street',
+				constraints: { locations: [ loc ] },
+				onSelect: function (suggestion) {
+					var d = suggestion && suggestion.data ? suggestion.data : {};
+					var line = suggestion && trimNonEmpty(suggestion.value) ? String(suggestion.value) : '';
+					if (!line && d.street_with_type) {
+						line = String(d.street_with_type || '');
+						if (d.house) {
+							line += ', ' + String(d.house);
+						}
+					}
+					var patchS = {};
+					if (line) {
+						patchS.address_1 = line;
+					}
+					if (d.postal_code) {
+						patchS.postcode = String(d.postal_code);
+					}
+					applyDadataAddressPatch(state, $app, patchS);
+				}
+			}));
+		}
 	}
 
 	function bindHandlers(state, $app, $progress, $actions) {
@@ -7231,6 +7940,15 @@
 				}
 				render(state, $app);
 				notify(trimNonEmpty(payload.message) || getUiText('step_4.gift_card_remove_error', 'Не удалось снять подарочную карту.'), 'error');
+			});
+		});
+
+		$app.find('[data-mp-cc-v2-next="1"]').off('click.mpCcV2Next').on('click.mpCcV2Next', function () {
+			if (!isV2CheckoutUiEnabled(state)) {
+				return;
+			}
+			saveCurrentStepDraft(state).always(function () {
+				moveForward(state, $app);
 			});
 		});
 
@@ -7457,6 +8175,7 @@
 			} else {
 				delete state.frontendStore.form.contact.city;
 			}
+			invalidateShippingIfNotInCatalog(state);
 			state.frontendStore.fulfillment = state.frontendStore.fulfillment || {};
 			state.frontendStore.fulfillment.scenarioData = state.frontendStore.fulfillment.scenarioData || {};
 			var scenarioData = state.frontendStore.fulfillment.scenarioData;
@@ -7517,7 +8236,6 @@
 			}).fail(function () {
 				notify('Не удалось сохранить адрес ПВЗ.', 'error');
 			});
-			tryAutoAdvanceAddressStep(state, $app);
 		});
 
 		$app.find('[data-pickup-point]').off('click').on('click', function () {
@@ -7688,12 +8406,21 @@
 				notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
 			});
 			if (key === 'country' || key === 'state' || key === 'city' || key === 'address_1' || key === 'address_2' || key === 'postcode') {
-				syncStoreWithBackend(state, $app);
+				scheduleAddressRatesBackendSync(state, $app);
 			}
 		}).on('blur', function () {
+			var blurKey = String($(this).data('contact-field') || '');
+			var addrBlur = blurKey === 'country' || blurKey === 'state' || blurKey === 'city' || blurKey === 'address_1' || blurKey === 'address_2' || blurKey === 'postcode';
+			if (addrBlur) {
+				cancelAddressRatesBackendSync();
+			}
 			ensureContactDefaults(state);
 			saveCurrentStepDraft(state).fail(function () {
 				notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
+			}).always(function () {
+				if (addrBlur) {
+					syncStoreWithBackend(state, $app);
+				}
 			});
 		});
 
@@ -8277,6 +9004,7 @@
 		var initialCart = normalizeCartPayload(context.cart || {});
 		state.frontendStore.cart.items = initialCart.items;
 		state.frontendStore.cart.summary = initialCart.summary;
+		state.frontendStore.cart.wc_shipping_rates = Array.isArray(initialCart.wc_shipping_rates) ? initialCart.wc_shipping_rates : [];
 		state.frontendStore.runtime.summaryHydrated = initialCart.items.length > 0;
 		if (!state.frontendStore.fulfillment.scenario) {
 			state.frontendStore.fulfillment.scenario = 'pickup';
@@ -8323,7 +9051,7 @@
 				return;
 			}
 			if (bucket === 'step_one') {
-				state.frontendStore.cart.snapshot = payload;
+				state.frontendStore.fulfillment.date = $.extend(true, {}, payload && typeof payload === 'object' ? payload : {});
 			} else if (bucket === 'date_conditions') {
 				state.frontendStore.fulfillment.date = payload;
 			} else if (bucket === 'contact_billing') {

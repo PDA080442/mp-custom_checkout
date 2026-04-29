@@ -633,6 +633,7 @@ final class SafeSettingsResolver {
 								'active'              => true,
 								'requires_address'    => true,
 								'visibility_scenarios'=> array( 'other_city_delivery' ),
+								'wc_rate_id'          => '',
 							),
 							'courier' => array(
 								'title'               => 'Курьером до двери',
@@ -642,11 +643,12 @@ final class SafeSettingsResolver {
 								'active'              => true,
 								'requires_address'    => true,
 								'visibility_scenarios'=> array( 'krasnoyarsk_delivery', 'other_city_delivery' ),
+								'wc_rate_id'          => '',
 								'tariffs'             => array(
-									'express'  => array( 'title' => 'Курьером до двери (экспресс)', 'price' => 550, 'eta' => '2 дней', 'active' => true ),
-									'standard' => array( 'title' => 'Курьером до двери (стандарт)', 'price' => 375, 'eta' => '2 дней', 'active' => true ),
-									'slot_1'   => array( 'title' => '', 'price' => 0, 'eta' => '', 'active' => false ),
-									'slot_2'   => array( 'title' => '', 'price' => 0, 'eta' => '', 'active' => false ),
+									'express'  => array( 'title' => 'Курьером до двери (экспресс)', 'price' => 550, 'eta' => '2 дней', 'active' => true, 'wc_rate_id' => '' ),
+									'standard' => array( 'title' => 'Курьером до двери (стандарт)', 'price' => 375, 'eta' => '2 дней', 'active' => true, 'wc_rate_id' => '' ),
+									'slot_1'   => array( 'title' => '', 'price' => 0, 'eta' => '', 'active' => false, 'wc_rate_id' => '' ),
+									'slot_2'   => array( 'title' => '', 'price' => 0, 'eta' => '', 'active' => false, 'wc_rate_id' => '' ),
 								),
 							),
 							'pvz' => array(
@@ -657,11 +659,12 @@ final class SafeSettingsResolver {
 								'active'              => true,
 								'requires_address'    => false,
 								'visibility_scenarios'=> array( 'krasnoyarsk_delivery', 'other_city_delivery' ),
+								'wc_rate_id'          => '',
 								'tariffs'             => array(
-									'express'  => array( 'title' => 'Доставка до ПВЗ (экспресс)', 'price' => 360, 'eta' => '2 дней', 'active' => true ),
-									'standard' => array( 'title' => 'Доставка до ПВЗ (стандарт)', 'price' => 185, 'eta' => '2 дней', 'active' => true ),
-									'slot_1'   => array( 'title' => '', 'price' => 0, 'eta' => '', 'active' => false ),
-									'slot_2'   => array( 'title' => '', 'price' => 0, 'eta' => '', 'active' => false ),
+									'express'  => array( 'title' => 'Доставка до ПВЗ (экспресс)', 'price' => 360, 'eta' => '2 дней', 'active' => true, 'wc_rate_id' => '' ),
+									'standard' => array( 'title' => 'Доставка до ПВЗ (стандарт)', 'price' => 185, 'eta' => '2 дней', 'active' => true, 'wc_rate_id' => '' ),
+									'slot_1'   => array( 'title' => '', 'price' => 0, 'eta' => '', 'active' => false, 'wc_rate_id' => '' ),
+									'slot_2'   => array( 'title' => '', 'price' => 0, 'eta' => '', 'active' => false, 'wc_rate_id' => '' ),
 								),
 							),
 							'krasnoyarsk_delivery' => array(
@@ -672,6 +675,7 @@ final class SafeSettingsResolver {
 								'active'              => true,
 								'requires_address'    => true,
 								'visibility_scenarios'=> array( 'krasnoyarsk_delivery' ),
+								'wc_rate_id'          => '',
 							),
 							'pickup' => array(
 								'title'               => 'Самовывоз',
@@ -681,6 +685,7 @@ final class SafeSettingsResolver {
 								'active'              => true,
 								'requires_address'    => false,
 								'visibility_scenarios'=> array( 'pickup', 'krasnoyarsk_delivery', 'other_city_delivery' ),
+								'wc_rate_id'          => '',
 							),
 							'custom_1' => array(
 								'title'               => 'Пользовательский метод 1',
@@ -690,6 +695,7 @@ final class SafeSettingsResolver {
 								'active'              => false,
 								'requires_address'    => false,
 								'visibility_scenarios'=> array( 'pickup', 'krasnoyarsk_delivery', 'other_city_delivery' ),
+								'wc_rate_id'          => '',
 							),
 							'custom_2' => array(
 								'title'               => 'Пользовательский метод 2',
@@ -699,6 +705,7 @@ final class SafeSettingsResolver {
 								'active'              => false,
 								'requires_address'    => false,
 								'visibility_scenarios'=> array( 'pickup', 'krasnoyarsk_delivery', 'other_city_delivery' ),
+								'wc_rate_id'          => '',
 							),
 						),
 						'error_copy' => array(
@@ -718,6 +725,11 @@ final class SafeSettingsResolver {
 							'mock_tax'          => 160,
 						),
 					),
+					'pricing_mode'   => 'catalog',
+					'wc_integration' => array(
+						'respect_chosen_shipping_methods' => true,
+					),
+					'note'           => __( 'Сценарии доставки (город / другой регион) задаются в реестре шагов. Тарифы WooCommerce — в зонах доставки.', 'mp-custom-checkout' ),
 				);
 				continue;
 			}
@@ -814,15 +826,6 @@ final class SafeSettingsResolver {
 						'enabled' => false,
 					),
 					'note' => __( 'Основная конфигурация полей находится на шаге 4. Здесь можно зафиксировать точечные переопределения для сущностных блоков.', 'mp-custom-checkout' ),
-				);
-				continue;
-			}
-			if ( OptionKeys::SECTION_DELIVERY === $section_key ) {
-				$tree[ $section_key ] = array(
-					'wc_integration' => array(
-						'respect_chosen_shipping_methods' => true,
-					),
-					'note' => __( 'Сценарии доставки (город / другой регион) задаются в реестре шагов. Тарифы WooCommerce — в зонах доставки.', 'mp-custom-checkout' ),
 				);
 				continue;
 			}

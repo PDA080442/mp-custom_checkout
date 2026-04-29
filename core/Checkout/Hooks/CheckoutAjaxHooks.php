@@ -10,6 +10,7 @@ namespace MP\CustomCheckout\Checkout\Hooks;
 use MP\CustomCheckout\DependencyFailureGuard;
 use MP\CustomCheckout\Hooks\CheckoutRouteHooks;
 use MP\CustomCheckout\Integrations\WooCommerce\GiftCardIntegration;
+use MP\CustomCheckout\Integrations\WooCommerce\WcCustomerShippingSync;
 use MP\CustomCheckout\Routing\CheckoutDateAvailabilityEngine;
 use MP\CustomCheckout\Routing\CheckoutRouteContext;
 use MP\CustomCheckout\Routing\CheckoutScenarioRules;
@@ -130,6 +131,7 @@ final class CheckoutAjaxHooks {
 				}
 			}
 			CheckoutSessionService::set_step_answers( $step_id, $answers );
+			WcCustomerShippingSync::after_session_set_answers( $step_id );
 			wp_send_json_success( array( 'sub_action' => $sub_action, 'step_id' => $step_id, 'flow' => self::build_flow_payload(), 'cart' => CheckoutRouteContext::get_cart_data() ) );
 		}
 		if ( 'session_set_scenario' === $sub_action ) {
@@ -142,6 +144,7 @@ final class CheckoutAjaxHooks {
 				do_action( 'mp_custom_checkout_log', 'warning', '[scenario_switch] invalid_scenario_requested', array( 'requested' => $scenario_raw, 'resolved' => $scenario ) );
 			}
 			CheckoutSessionService::set_scenario( $scenario );
+			WcCustomerShippingSync::after_session_set_scenario();
 			wp_send_json_success( array( 'sub_action' => $sub_action, 'scenario' => $scenario, 'flow' => self::build_flow_payload(), 'cart' => CheckoutRouteContext::get_cart_data() ) );
 		}
 		if ( 'session_get_state' === $sub_action ) {
@@ -687,7 +690,8 @@ final class CheckoutAjaxHooks {
 		}
 		$method_id = isset( $answers['shipping_method_id'] ) ? sanitize_key( (string) $answers['shipping_method_id'] ) : '';
 		if ( '' === $method_id ) {
-			return false;
+			// Пустой черновик шага 1 (сброс метода, автосейв только адреса) — не считаем ошибкой каталога.
+			return true;
 		}
 		$catalog = self::shipping_catalog();
 		if ( ! isset( $catalog[ $method_id ] ) || ! is_array( $catalog[ $method_id ] ) ) {

@@ -24,7 +24,7 @@
 - Для сценария `pickup` и шагов `address_delivery` / `recipient` при `needs_shipping()` доставка в summary может **скрываться** (`shipping_deferred`, принудительно 0) — см. `suppress_shipping_in_summary` в `CheckoutRouteContext`.
 - При включённом `checkout_ui_v2` валидация `shipping_method_id` идёт по **внутреннему каталогу** (`CheckoutAjaxHooks::validate_shipping_answers_payload` + `shipping_catalog()`), а не по rate’ам из `WC()->cart`.
 
-Флаг `delivery.wc_integration.respect_chosen_shipping_methods` в дереве настроек **зарезервирован**, в коде на момент фиксации §28.1 **не используется**.
+Поле `delivery.wc_integration.respect_chosen_shipping_methods` хранится в настройках и нормализуется при сохранении; в админке есть подсказка по смыслу. На момент §28.3 рантайм-логика плагина **не** ветвится по этому флагу (пересчёт и выбор rate — стандартное поведение WooCommerce после `calculate_totals()`; диагностический лог расхождений см. `WcCustomerShippingSync`).
 
 ---
 

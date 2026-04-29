@@ -152,4 +152,22 @@ flowchart LR
 
 ---
 
-*Конец отчёта §28.2.*
+---
+
+## 11. Дополнение: §28.3 — синк с `WC()->customer` при `delivery.pricing_mode=woocommerce`
+
+**Когда:** после успешного `CheckoutSessionService::set_step_answers` (шаги `address_delivery`, `recipient`, `payment`, `confirm`, `date`, `conditions`, `scenario`) и после `set_scenario` в `session_set_scenario`.
+
+**Код:** `integrations/WooCommerce/WcCustomerShippingSync.php` вызывается из `CheckoutAjaxHooks` сразу после сохранения flow. Контакт для полей billing/shipping: `array_merge( answers.step_one, answers.contact_billing )` (как на заказе по смыслу сценария `hide_address_fields` — через `OrderMetaHooks::apply_contact_location_to_customer()` и общий приватный маппинг с `apply_contact_fields_to_order`).
+
+**Пересчёт:** один вызов `WC()->cart->calculate_totals()` на AJAX-запрос (после `$customer->save()`).
+
+**Логи (без PII):** если в сессии WC для пакета выбран `chosen_shipping_methods[i]`, которого нет среди ключей `rates` пакета после пересчёта — `mp_custom_checkout_log` с префиксом `[wc_customer_shipping_sync] chosen_method_not_in_rates` и полями `package_index`, `chosen_method_id`, `rate_id_count`, `rate_id_sample`.
+
+**Флаг режима:** при `pricing_mode !== 'woocommerce'` синк и пересчёт по этому пути **не** выполняются.
+
+**UI (checkout v2):** на экране `delivery_screen` после блока выбора доставки рендерится тот же `buildAddressBlockHtml`, что и на шаге получателя (поля дублируются для раннего ввода). При `session_set_answers` с `step_id=address_delivery` дополнительно уходит частичный `session_set_answers` с `step_id=recipient` только с полями `country|state|city|address_1|address_2|postcode`; в `CheckoutSessionService::set_step_answers` для `contact_billing` применяется `array_replace` с уже сохранённым контактом, чтобы не затирать ФИО/email.
+
+---
+
+*Конец отчёта §28.2; п. 11 — актуализация после §28.3.*
