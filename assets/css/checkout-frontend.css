@@ -37,11 +37,12 @@
 }
 
 #mp-cc-checkout {
-	color: var(--mp-cc-color-text);
-	background: var(--mp-cc-color-background);
-	font-family: var(--mp-cc-font-family-base);
-	font-size: var(--mp-cc-font-size-base);
+	color: var(--mp-cc-color-text, #1a1a1a);
+	background: var(--mp-cc-color-background, #ffffff);
+	font-family: var(--mp-cc-font-family-base, system-ui, -apple-system, Segoe UI, Roboto, sans-serif);
+	font-size: var(--mp-cc-font-size-base, 16px);
 	line-height: 1.45;
+	padding-block: var(--mp-cc-shell-padding-block, 75px);
 	--mp-cc-keyboard-inset: 0px;
 	scroll-padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px) + var(--mp-cc-keyboard-inset, 0px));
 }
@@ -173,15 +174,25 @@
 }
 
 .mp-cc-step-panel {
-	border: 1px solid var(--mp-cc-color-border);
+	border-width: var(--mp-cc-step-panel-border-width, 1px);
+	border-style: solid;
+	border-color: var(--mp-cc-step-panel-border-color, var(--mp-cc-color-border));
 	padding: 1rem;
 	border-radius: var(--mp-cc-radius-md);
-	box-shadow: var(--mp-cc-shadow-card);
+	box-shadow: var(--mp-cc-step-panel-box-shadow, var(--mp-cc-shadow-card));
 	background: var(--mp-cc-color-background);
 	opacity: 1;
 	transform: translateY(0);
 	transition: opacity 0.18s ease, transform 0.18s ease;
 	backdrop-filter: blur(0px);
+}
+
+/* Шаг «Получатель / контакты»: отдельные токены; пустые в админке → как у шага 1 (step_panel_screen_styles). */
+.mp-cc-step-panel[data-step-panel="recipient"] {
+	border-width: var(--mp-cc-step-panel-recipient-border-width, var(--mp-cc-step-panel-border-width, 1px));
+	border-style: solid;
+	border-color: var(--mp-cc-step-panel-recipient-border-color, var(--mp-cc-step-panel-border-color, var(--mp-cc-color-border)));
+	box-shadow: var(--mp-cc-step-panel-recipient-box-shadow, var(--mp-cc-step-panel-box-shadow, var(--mp-cc-shadow-card)));
 }
 
 .mp-cc-step-panel__meta {
@@ -848,6 +859,7 @@
 	margin: 0;
 	font-size: 0.88rem;
 	font-weight: 700;
+	color: var(--mp-cc-color-text);
 }
 
 .mp-cc-pickup-map__fallback-message {
@@ -1083,6 +1095,9 @@
 }
 
 .mp-cc-nav__btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
 	min-width: 8rem;
 	min-height: 2.75rem;
 	padding: 0.625rem 1rem;
@@ -1104,12 +1119,14 @@
 }
 
 .mp-cc-nav__btn--next {
-	background: var(--mp-cc-color-accent);
+	background: var(--mp-cc-color-accent, #111111);
 	color: #fff;
+	border-color: var(--mp-cc-color-accent, #111111);
 }
 
 .mp-cc-nav__btn--next:hover:not([disabled]) {
 	background: #2a2a2a;
+	color: #fff;
 }
 
 .mp-cc-nav__btn--review {
@@ -1730,6 +1747,10 @@
 		width: 100%;
 	}
 
+	.mp-cc-step-card__actions .mp-cc-nav__btn {
+		width: 100%;
+	}
+
 	.mp-cc-qty-btn,
 	.mp-cc-nav__btn,
 	.mp-cc-date-step__month-btn,
@@ -1896,17 +1917,8 @@
 		background: #1a1d22;
 	}
 
-	.mp-cc-nav__btn:hover:not([disabled]) {
-		background: #1b1e24;
-	}
-
-	.mp-cc-nav__btn--next {
-		color: #0f1115;
-	}
-
-	.mp-cc-nav__btn--next:hover:not([disabled]) {
-		background: #d8d8d8;
-	}
+	/* Не трогаем .mp-cc-nav_*: светлый checkout задаёт токены на #mp-cc-checkout, а тёмная ОС
+	 * иначе перекрашивает только текст кнопки «Далее» → тёмный на тёмном фоне до hover. */
 
 	.mp-cc-nojs {
 		background: #181a1f;
@@ -1998,7 +2010,14 @@
 }
 
 .mp-cc-step-card__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.75rem;
+	justify-content: flex-end;
+	align-items: center;
 	margin-top: 0.85rem;
+	width: 100%;
+	min-width: 0;
 }
 
 .mp-cc-layout--stacked-timeline .mp-cc-summary-card {
@@ -2247,6 +2266,18 @@
 
 .mp-cc-coupon--in-summary {
 	--mp-cc-coupon-summary-glow: #a78bfa;
+	--mp-cc-coupon-summary-bg: linear-gradient(180deg, color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 14%, #fff) 0%, #fff 100%);
+	--mp-cc-coupon-summary-border: color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 48%, #e9ddff);
+	--mp-cc-coupon-summary-title: #111111;
+	--mp-cc-coupon-summary-text: #4b5563;
+	--mp-cc-coupon-input-bg: rgba(255, 255, 255, 0.95);
+	--mp-cc-coupon-input-border: color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 35%, var(--mp-cc-color-border));
+	--mp-cc-coupon-input-text: var(--mp-cc-color-text, #111111);
+	--mp-cc-coupon-button-bg: linear-gradient(180deg, color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 40%, #232323) 0%, #191919 100%);
+	--mp-cc-coupon-button-border: color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 62%, #111);
+	--mp-cc-coupon-button-text: #ffffff;
+	--mp-cc-coupon-button-bg-hover: linear-gradient(180deg, color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 50%, #2f2f2f) 0%, #232323 100%);
+	--mp-cc-coupon-button-border-hover: color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 74%, #2f2f2f);
 	/* Presets: soft | intense(default) */
 	--mp-cc-coupon-glow-ring-alpha: 40%;
 	--mp-cc-coupon-glow-outer-alpha: 58%;
@@ -2256,8 +2287,8 @@
 	margin-bottom: 0.65rem;
 	padding: 0.75rem;
 	border-radius: 12px;
-	border: 1px solid color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 48%, #e9ddff);
-	background: linear-gradient(180deg, color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 14%, #fff) 0%, #fff 100%);
+	border: 1px solid var(--mp-cc-coupon-summary-border);
+	background: var(--mp-cc-coupon-summary-bg);
 	box-shadow:
 		0 0 0 1px color-mix(in srgb, var(--mp-cc-coupon-summary-glow) var(--mp-cc-coupon-glow-ring-alpha, 30%), transparent),
 		0 0 0 3px color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 14%, transparent),
@@ -2269,10 +2300,12 @@
 	margin-bottom: 0.2rem;
 	font-size: 0.86rem;
 	font-weight: 700;
+	color: var(--mp-cc-coupon-summary-title);
 }
 
 .mp-cc-coupon--in-summary .mp-cc-coupon__intro {
 	display: none;
+	color: var(--mp-cc-coupon-summary-text);
 }
 
 .mp-cc-coupon--in-summary .mp-cc-coupon__row {
@@ -2288,11 +2321,12 @@
 .mp-cc-coupon--in-summary .mp-cc-input {
 	min-height: 2.4rem;
 	border-radius: 9px;
-	border-color: color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 35%, var(--mp-cc-color-border));
-	background: rgba(255, 255, 255, 0.95);
+	border-color: var(--mp-cc-coupon-input-border);
+	background: var(--mp-cc-coupon-input-bg);
 	box-shadow:
 		inset 0 0 0 1px color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 16%, transparent),
 		inset 0 8px 18px color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 9%, #fff);
+	color: var(--mp-cc-coupon-input-text);
 	transition:
 		border-color var(--mp-cc-transition-duration) ease,
 		box-shadow var(--mp-cc-transition-duration) ease,
@@ -2314,19 +2348,17 @@
 	min-width: 7.2rem;
 	min-height: 2.4rem;
 	border-radius: 9px;
-	border: 1px solid color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 62%, #111);
-	background:
-		linear-gradient(180deg, color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 40%, #232323) 0%, #191919 100%);
-	color: #fff;
+	border: 1px solid var(--mp-cc-coupon-button-border);
+	background: var(--mp-cc-coupon-button-bg);
+	color: var(--mp-cc-coupon-button-text);
 	box-shadow:
 		inset 0 1px 0 rgba(255, 255, 255, 0.3),
 		0 10px 20px color-mix(in srgb, var(--mp-cc-coupon-summary-glow) var(--mp-cc-coupon-btn-glow-alpha, 30%), transparent);
 }
 
 .mp-cc-coupon--in-summary .mp-cc-coupon__apply:hover:not([disabled]) {
-	background:
-		linear-gradient(180deg, color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 50%, #2f2f2f) 0%, #232323 100%);
-	border-color: color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 74%, #2f2f2f);
+	background: var(--mp-cc-coupon-button-bg-hover);
+	border-color: var(--mp-cc-coupon-button-border-hover);
 	box-shadow:
 		inset 0 1px 0 rgba(255, 255, 255, 0.34),
 		0 12px 26px color-mix(in srgb, var(--mp-cc-coupon-summary-glow) calc(var(--mp-cc-coupon-btn-glow-alpha, 30%) + 8%), transparent);
@@ -2408,6 +2440,13 @@
 	display: grid;
 	gap: 0.6rem;
 	padding-top: 0.35rem;
+	/* Ореол за логотипом / акцент выбора; задаётся из админки (selection_glow_color) через inline style секции */
+	--mp-cc-pay-glow: #a78bfa;
+	--mp-cc-pay-card-max: 100%;
+	--mp-cc-pay-glow-blur-strong: 28px;
+	--mp-cc-pay-glow-blur-soft: 10px;
+	--mp-cc-pay-glow-strong-alpha: 70%;
+	--mp-cc-pay-glow-soft-alpha: 55%;
 }
 
 .mp-cc-payment.is-loading {
@@ -2446,6 +2485,12 @@
 	display: grid;
 	grid-template-columns: repeat(2, minmax(0, 1fr));
 	gap: 0.6rem;
+}
+
+@media (max-width: 52rem) {
+	.mp-cc-payment-segment {
+		grid-template-columns: minmax(0, 1fr);
+	}
 }
 
 .mp-cc-payment-segment__tab {
@@ -2948,7 +2993,7 @@
 	min-height: 6.75rem;
 	aspect-ratio: 1.586 / 1;
 	max-height: 8.5rem;
-	box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
+	box-shadow: var(--mp-cc-pay-shell-shadow, 0 6px 18px rgba(15, 23, 42, 0.12));
 	transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
 
@@ -2988,12 +3033,6 @@
 
 /* Card label container (variant A glow). Stay on parent grid layout, just visual. */
 .mp-cc-payment-card--surface:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art) {
-	--mp-cc-pay-glow: #a78bfa;
-	--mp-cc-pay-card-max: 100%;
-	--mp-cc-pay-glow-blur-strong: 28px;
-	--mp-cc-pay-glow-blur-soft: 10px;
-	--mp-cc-pay-glow-strong-alpha: 70%;
-	--mp-cc-pay-glow-soft-alpha: 55%;
 	border: none;
 	background: transparent;
 	box-shadow: none;
@@ -3029,9 +3068,15 @@
 	gap: var(--mp-cc-pay-two-up-gap, 0.85rem);
 }
 
+@media (max-width: 52rem) {
+	.mp-cc-payment--layout-two-up .mp-cc-payment__grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
 .mp-cc-payment--layout-two-up .mp-cc-payment-card--brand-yookassa,
 .mp-cc-payment--layout-two-up .mp-cc-payment-card--brand-robokassa {
-	min-height: 25rem;
+	min-height: var(--mp-cc-pay-two-up-card-min-height, 25rem);
 }
 
 .mp-cc-payment--layout-two-up .mp-cc-payment-card--surface:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art) {
@@ -3059,17 +3104,29 @@
 	background: #fff;
 }
 
+/* Two-up: hide idle border + decorative radio until a card is selected (admin: two_up_minimal_idle_chrome). */
+.mp-cc-payment--layout-two-up.mp-cc-payment--two-up-minimal-idle .mp-cc-payment-card--surface:not(.is-active):is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art) {
+	border: 1px solid transparent;
+	box-shadow: none;
+}
+
+.mp-cc-payment--layout-two-up.mp-cc-payment--two-up-minimal-idle .mp-cc-payment-card--surface:not(.is-active):is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art)::before {
+	opacity: 0;
+	visibility: hidden;
+	pointer-events: none;
+}
+
 .mp-cc-payment--layout-two-up .mp-cc-payment-card--surface.is-active:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art) {
 	border-color: var(--mp-cc-pay-two-up-active-border, #b9a9ff);
 	box-shadow:
-		0 0 0 1px rgba(167, 139, 250, 0.36),
-		0 0 0 3px var(--mp-cc-pay-two-up-active-glow-outer, rgba(167, 139, 250, 0.12)),
-		var(--mp-cc-pay-two-up-active-glow-shadow, 0 8px 18px rgba(111, 76, 193, 0.08));
+		0 0 0 1px color-mix(in srgb, var(--mp-cc-pay-glow, #a78bfa) 36%, transparent),
+		0 0 0 3px var(--mp-cc-pay-two-up-active-glow-outer, color-mix(in srgb, var(--mp-cc-pay-glow, #a78bfa) 12%, transparent)),
+		var(--mp-cc-pay-two-up-active-glow-shadow, 0 8px 18px color-mix(in srgb, var(--mp-cc-pay-glow, #a78bfa) 14%, transparent));
 }
 
 .mp-cc-payment--layout-two-up .mp-cc-payment-card--surface.is-active:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art)::before {
-	border-color: #9e83f3;
-	box-shadow: inset 0 0 0 5px #a78bfa;
+	border-color: color-mix(in srgb, var(--mp-cc-pay-glow, #a78bfa) 72%, #6d28d9);
+	box-shadow: inset 0 0 0 5px var(--mp-cc-pay-glow, #a78bfa);
 }
 
 .mp-cc-payment--layout-two-up .mp-cc-payment-card__check-pill {
@@ -3083,7 +3140,7 @@
 	box-shadow: none;
 	aspect-ratio: auto;
 	max-height: none;
-	min-height: 8.8rem;
+	min-height: var(--mp-cc-pay-two-up-shell-min-height, 8.8rem);
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -3556,7 +3613,7 @@
 	}
 
 	.mp-cc-payment__grid {
-		grid-template-columns: repeat(var(--mp-cc-payment-cols-tablet, 2), minmax(0, 1fr));
+		grid-template-columns: minmax(0, 1fr);
 	}
 }
 
@@ -4245,7 +4302,9 @@ body.mp-custom-checkout form.checkout.woocommerce-checkout {
 .mp-cc-address-form {
 	display: grid;
 	row-gap: 0;
-	border: 1px solid var(--mp-cc-address-card-border, #e5e7eb);
+	border-width: var(--mp-cc-address-form-border-width, 1px);
+	border-style: solid;
+	border-color: var(--mp-cc-address-card-border, #e5e7eb);
 	border-radius: var(--mp-cc-address-card-radius, 14px);
 	background: var(--mp-cc-address-card-bg, #ffffff);
 	overflow: hidden;
@@ -4260,7 +4319,21 @@ body.mp-custom-checkout form.checkout.woocommerce-checkout {
 }
 
 .mp-cc-address-form__row + .mp-cc-address-form__row {
-	border-top: 1px solid var(--mp-cc-address-row-divider, #e5e7eb);
+	border-top-width: var(--mp-cc-address-row-divider-width, 1px);
+	border-top-style: solid;
+	border-top-color: var(--mp-cc-address-row-divider, #e5e7eb);
+}
+
+.mp-cc-address-form__row[data-row="method"] {
+	border-top-width: var(--mp-cc-address-row-divider-after-city, var(--mp-cc-address-row-divider-width, 1px));
+	border-top-style: solid;
+	border-top-color: var(--mp-cc-address-row-divider, #e5e7eb);
+}
+
+.mp-cc-address-form__row[data-row="pvz"] {
+	border-top-width: var(--mp-cc-address-row-divider-after-method, var(--mp-cc-address-row-divider-width, 1px));
+	border-top-style: solid;
+	border-top-color: var(--mp-cc-address-row-divider, #e5e7eb);
 }
 
 .mp-cc-address-form__label {
