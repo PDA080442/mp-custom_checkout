@@ -3292,7 +3292,7 @@
 		var showDescription = pb.show_description !== false;
 		var layout = pb.layout && typeof pb.layout === 'object' ? pb.layout : {};
 		var desktopCols = Math.max(1, Number(layout.desktop_columns || 2));
-		var tabletCols = Math.max(1, Number(layout.tablet_columns || 2));
+		var tabletCols = Math.max(1, Number(layout.tablet_columns || 1));
 		var mobileCols = Math.max(1, Number(layout.mobile_columns || 1));
 		if (gateways.length === 1) {
 			desktopCols = 1;
@@ -6984,11 +6984,16 @@
 
 	function bindHandlers(state, $app, $progress, $actions) {
 		$(selectors.exit).off('click').on('click', function () {
-			var homeUrl = '/';
-			if (window.mpCcCheckout && window.mpCcCheckout.initialContext && window.mpCcCheckout.initialContext.home_url) {
-				homeUrl = String(window.mpCcCheckout.initialContext.home_url);
+			var landUrl = '/';
+			if (window.mpCcCheckout && window.mpCcCheckout.initialContext) {
+				var ic = window.mpCcCheckout.initialContext;
+				if (ic.exit_landing_url) {
+					landUrl = String(ic.exit_landing_url);
+				} else if (ic.home_url) {
+					landUrl = String(ic.home_url);
+				}
 			}
-			window.location.href = homeUrl;
+			window.location.href = landUrl;
 		});
 		mountPickupMaps(state, $app);
 

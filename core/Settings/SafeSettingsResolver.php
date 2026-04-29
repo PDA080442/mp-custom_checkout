@@ -506,7 +506,7 @@ final class SafeSettingsResolver {
 						'decorative_card_fields' => true,
 						'layout' => array(
 							'desktop_columns' => 2,
-							'tablet_columns'  => 2,
+							'tablet_columns'  => 1,
 							'mobile_columns'  => 1,
 							'grid_gap'        => '0.6rem 0.75rem',
 						),

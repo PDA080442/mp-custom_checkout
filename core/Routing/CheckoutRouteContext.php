@@ -28,7 +28,8 @@ final class CheckoutRouteContext {
 	 */
 	public static function collect(): array {
 		$context = array(
-			'home_url'        => home_url( '/' ),
+			'home_url'          => home_url( '/' ),
+			'exit_landing_url'  => CheckoutReturnPaths::get_exit_landing_url(),
 			'site_locale'     => get_locale(),
 			'is_admin'        => is_admin(),
 			'is_plain_permalinks' => CheckoutPermalinkCompatibility::is_plain_permalinks(),
@@ -277,8 +278,7 @@ final class CheckoutRouteContext {
 		if ( empty( $result['summary']['applied_gift_cards'] ) && isset( $session_discounts['gift_card'] ) && is_array( $session_discounts['gift_card'] ) ) {
 			$result['summary']['applied_gift_cards'] = array_values( array_map( 'strval', $session_discounts['gift_card'] ) );
 		}
-		$catalog_url                      = function_exists( 'wc_get_page_permalink' ) ? wc_get_page_permalink( 'shop' ) : '';
-		$result['summary']['catalog_url'] = is_string( $catalog_url ) && '' !== $catalog_url ? $catalog_url : home_url( '/' );
+		$result['summary']['catalog_url'] = CheckoutReturnPaths::get_exit_landing_url();
 
 		return $result;
 	}
