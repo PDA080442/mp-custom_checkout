@@ -1582,6 +1582,46 @@
 	background: #f7f7f7;
 }
 
+.mp-cc-summary-card__btn[disabled],
+.mp-cc-summary-card__btn[aria-busy='true'] {
+	opacity: 0.65;
+	cursor: wait;
+	pointer-events: none;
+}
+
+.mp-cc-summary-card__btn.is-loading {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.55rem;
+}
+
+.mp-cc-summary-card__btn.is-loading::before {
+	content: '';
+	width: 0.9rem;
+	height: 0.9rem;
+	border-radius: 50%;
+	border: 2px solid currentColor;
+	border-right-color: transparent;
+	animation: mp-cc-spin-rotate 0.8s linear infinite;
+	flex: 0 0 auto;
+}
+
+@keyframes mp-cc-spin-rotate {
+	from { transform: rotate(0deg); }
+	to { transform: rotate(360deg); }
+}
+
+
+.mp-cc-checkout__app.is-shipping-recalc-loading .mp-cc-step-card[data-step-id='address_delivery'],
+.mp-cc-checkout__app.is-shipping-recalc-loading .mp-cc-step-panel[data-step-panel='delivery_screen'] {
+	opacity: 0.55;
+	filter: saturate(0.85);
+	pointer-events: none;
+	transition: opacity var(--mp-cc-transition-duration) ease, filter var(--mp-cc-transition-duration) ease;
+}
+
 .mp-cc-notice {
 	padding: 0.75rem 1rem;
 	border: 1px solid var(--mp-cc-color-border);

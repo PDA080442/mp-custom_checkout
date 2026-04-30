@@ -21,6 +21,7 @@ use MP\CustomCheckout\Settings\DefaultFeatureFlagsRegistry;
 use MP\CustomCheckout\Settings\FeatureFlagResolver;
 use MP\CustomCheckout\Settings\OptionKeys;
 use MP\CustomCheckout\Settings\SafeSettingsResolver;
+use MP\CustomCheckout\Settings\ScenarioStepRegistry;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -238,6 +239,9 @@ final class CheckoutAjaxHooks {
 		if ( 'remove_gift_card' === $sub_action ) {
 			self::handle_remove_gift_card();
 		}
+		if ( 'cdek_set_office' === $sub_action ) {
+			self::handle_cdek_set_office();
+		}
 		if ( 'session_abandon' === $sub_action ) {
 			CheckoutSessionService::clear_on_abandoned_flow();
 			wp_send_json_success( array( 'sub_action' => $sub_action, 'cleared' => true ) );
@@ -246,7 +250,7 @@ final class CheckoutAjaxHooks {
 	}
 
 	private static function is_session_sub_action( string $sub_action ): bool {
-		return in_array( $sub_action, array( 'session_set_step', 'session_set_answers', 'session_set_scenario', 'session_get_state', 'session_abandon', 'update_quantity', 'remove_item', 'validation_log', 'apply_coupon', 'remove_coupon', 'apply_gift_card', 'remove_gift_card', 'set_payment_gateway', 'gateway_render_diagnostics', 'submit_payment', 'client_error_log', 'ajax_error_log' ), true );
+		return in_array( $sub_action, array( 'session_set_step', 'session_set_answers', 'session_set_scenario', 'session_get_state', 'session_abandon', 'update_quantity', 'remove_item', 'validation_log', 'apply_coupon', 'remove_coupon', 'apply_gift_card', 'remove_gift_card', 'cdek_set_office', 'set_payment_gateway', 'gateway_render_diagnostics', 'submit_payment', 'client_error_log', 'ajax_error_log' ), true );
 	}
 
 	/**
@@ -331,6 +335,29 @@ final class CheckoutAjaxHooks {
 					'cart'              => CheckoutRouteContext::get_cart_data(),
 				),
 				$fields_payload
+			)
+		);
+	}
+
+	/**
+	 * Сохраняет код ПВЗ СДЭК в flow (`answers.step_one.cdek_office_code`) и в WC-сессии плагина (`official_cdek_office_code`).
+	 */
+	private static function handle_cdek_set_office(): void {
+		$flow     = CheckoutSessionService::get_flow();
+		$step_one = isset( $flow['answers']['step_one'] ) && is_array( $flow['answers']['step_one'] ) ? $flow['answers']['step_one'] : array();
+		$code     = isset( $_POST['office_code'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['office_code'] ) ) : '';
+		if ( '' === $code ) {
+			unset( $step_one['cdek_office_code'] );
+		} else {
+			$step_one['cdek_office_code'] = $code;
+		}
+		CheckoutSessionService::set_step_answers( ScenarioStepRegistry::STEP_ADDRESS_DELIVERY, $step_one );
+		WcCustomerShippingSync::after_session_set_answers( ScenarioStepRegistry::STEP_ADDRESS_DELIVERY );
+		wp_send_json_success(
+			array(
+				'sub_action' => 'cdek_set_office',
+				'flow'       => self::build_flow_payload(),
+				'cart'       => CheckoutRouteContext::get_cart_data(),
 			)
 		);
 	}
@@ -568,10 +595,63 @@ final class CheckoutAjaxHooks {
 		return strlen( $nat ) === $need;
 	}
 
+	/**
+	 * Переносит выбранные в сессии WC линии доставки с корзины на заказ (в т.ч. meta ставки для СДЭК).
+	 */
+	private static function copy_cart_shipping_to_order( \WC_Order $order ): void {
+		if ( ! function_exists( 'WC' ) || ! WC()->shipping() ) {
+			return;
+		}
+		$session = WC()->session;
+		if ( ! $session instanceof \WC_Session ) {
+			return;
+		}
+		$packages = WC()->shipping()->get_packages();
+		$chosen   = (array) $session->get( 'chosen_shipping_methods', array() );
+		foreach ( $packages as $pkg_key => $package ) {
+			if ( ! is_array( $package ) ) {
+				continue;
+			}
+			$rates   = isset( $package['rates'] ) && is_array( $package['rates'] ) ? $package['rates'] : array();
+			$pkg_idx = (int) $pkg_key;
+			$rate_id = isset( $chosen[ $pkg_idx ] ) ? (string) $chosen[ $pkg_idx ] : '';
+			if ( '' === $rate_id ) {
+				continue;
+			}
+			if ( empty( $rates[ $rate_id ] ) || ! $rates[ $rate_id ] instanceof \WC_Shipping_Rate ) {
+				continue;
+			}
+			$rate = $rates[ $rate_id ];
+			$item = new \WC_Order_Item_Shipping();
+			$item->set_props(
+				array(
+					'method_title' => $rate->get_label(),
+					'method_id'    => $rate->get_method_id(),
+					'instance_id'  => $rate->get_instance_id(),
+					'total'        => wc_format_decimal( $rate->get_cost(), wc_get_price_decimals() ),
+				)
+			);
+			$taxes = $rate->get_taxes();
+			if ( is_array( $taxes ) && ! empty( $taxes ) ) {
+				$item->set_taxes( array( 'total' => $taxes ) );
+			}
+			foreach ( $rate->get_meta_data() as $meta_obj ) {
+				if ( $meta_obj instanceof \WC_Meta_Data ) {
+					$data = $meta_obj->get_data();
+					if ( isset( $data['key'] ) && '' !== (string) $data['key'] ) {
+						$item->add_meta_data( (string) $data['key'], $data['value'] ?? '', true );
+					}
+				}
+			}
+			$order->add_item( $item );
+		}
+	}
+
 	private static function create_order_from_cart_and_answers( array $contact, string $gateway ): ?\WC_Order {
 		if ( ! function_exists( 'wc_create_order' ) || ! function_exists( 'WC' ) || ! WC()->cart instanceof \WC_Cart ) {
 			return null;
 		}
+		WcCustomerShippingSync::before_create_order_from_cart();
 		$order = wc_create_order();
 		if ( ! $order instanceof \WC_Order ) {
 			return null;
@@ -584,6 +664,7 @@ final class CheckoutAjaxHooks {
 			}
 			$order->add_product( $product, $qty );
 		}
+		self::copy_cart_shipping_to_order( $order );
 		$order->set_payment_method( $gateway );
 		$order->set_billing_first_name( isset( $contact['billing_first_name'] ) ? (string) $contact['billing_first_name'] : '' );
 		$order->set_billing_last_name( isset( $contact['billing_last_name'] ) ? (string) $contact['billing_last_name'] : '' );

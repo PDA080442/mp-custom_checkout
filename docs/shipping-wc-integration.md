@@ -65,6 +65,8 @@
 
 До sign-off заказчика зафиксировать в тикете: **MVP без ПВЗ** или **с ПВЗ** — от этого зависит объём §28.4–§28.6.
 
+**Реализация MP (ПВЗ + сессия + заказ):** пошаговый чеклист и контракт фронта (`window.mpCcSetCdekOfficeCode`, AJAX `cdek_set_office`) — в [cdek-mp-checkout-checklist.md](./cdek-mp-checkout-checklist.md).
+
 ---
 
 ## 4. Нефункциональные требования (черновик)

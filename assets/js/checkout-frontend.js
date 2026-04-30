@@ -1289,6 +1289,7 @@
 	 * Нужен перед валидацией «Далее» (автозаполнение / последний символ без input)
 	 * и после session_get_state: иначе гонка с отложенным session_set_answers
 	 * затирает ввод при syncStoreWithBackend на каждом input по полям адреса.
+	 * На шаге address_delivery после get_state обязательно вызывать flush (см. syncStoreWithBackend).
 	 */
 	function flushContactFormFromDom(state, $app) {
 		if (!state || !$app || !$app.length || !state.frontendStore || !state.frontendStore.form) {
@@ -1564,7 +1565,7 @@
 
 	function recoverFromStepAjaxFailure(state, $app, fallbackMessage) {
 		setRuntimeFlag(state, 'blocked', false);
-		syncStoreWithBackend(state, $app).always(function () {
+		syncStoreWithBackend(state, $app, { force: true }).always(function () {
 			if (fallbackMessage) {
 				notify(fallbackMessage, 'error');
 			}
@@ -1579,7 +1580,7 @@
 		state.frontendStore.runtime.recoveringSession = true;
 		notify(getUiText('common.session_stale', 'Сессия checkout устарела. Состояние будет восстановлено.'), 'warning');
 		postCheckout('session_abandon', { context_id: state.flowContextId }).always(function () {
-			syncStoreWithBackend(state, $app).always(function () {
+			syncStoreWithBackend(state, $app, { force: true }).always(function () {
 				state.frontendStore.runtime.recoveringSession = false;
 				render(state, $app);
 			});
@@ -1587,7 +1588,7 @@
 	}
 
 	function recoverFromCartDesync(state, $app) {
-		syncStoreWithBackend(state, $app).always(function () {
+		syncStoreWithBackend(state, $app, { force: true }).always(function () {
 			notify(getUiText('step_1.cart_sync_recovered', 'Корзина была рассинхронизирована и восстановлена.'), 'info');
 		});
 	}
@@ -2443,6 +2444,7 @@
 		var dateBox = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
 			? state.frontendStore.fulfillment.date
 			: {};
+		delete dateBox.cdek_office_code;
 		dateBox.shipping_method_id = String(selection.method_id || '');
 		dateBox.shipping_method_title = String(selection.method_title || '');
 		dateBox.shipping_tariff_id = String(selection.tariff_id || '');
@@ -5692,51 +5694,72 @@
 		frontendStore.runtime.summaryHydrated = cartSnap.items.length > 0;
 	}
 
-	function syncStoreWithBackend(state, $app) {
+	function applySessionGetStateResponse(state, $app, response, myGen) {
+		if (myGen !== syncStoreGeneration) {
+			return;
+		}
+		if (!response || !response.success || !response.data) {
+			return;
+		}
+		var flowPayload = response.data.flow;
+		if (flowPayload === undefined || flowPayload === null) {
+			return;
+		}
+		syncFromFlow(state, flowPayload, response.data.cart || {}, paymentFieldPayloadFromAjaxData(response.data));
+		var mergedPaymentFields = state.frontendStore && state.frontendStore.payment ? {
+			fieldsHtml: state.frontendStore.payment.fieldsHtml,
+			fieldsGatewayId: state.frontendStore.payment.fieldsGatewayId,
+			fieldsHydration: state.frontendStore.payment.fieldsHydration,
+			gatewayCompatIssue: state.frontendStore.payment.gatewayCompatIssue
+		} : null;
+		var rehydrated = buildState(state.context);
+		state.visibleSteps = rehydrated.visibleSteps;
+		state.currentStepId = rehydrated.currentStepId;
+		state.maxReachedIndex = Math.max(state.maxReachedIndex, rehydrated.maxReachedIndex);
+		applyContextCartToFrontendStore(rehydrated.frontendStore, state.context);
+		state.frontendStore = rehydrated.frontendStore;
+		if (mergedPaymentFields && state.frontendStore.payment) {
+			state.frontendStore.payment.fieldsHtml = mergedPaymentFields.fieldsHtml;
+			state.frontendStore.payment.fieldsGatewayId = mergedPaymentFields.fieldsGatewayId;
+			state.frontendStore.payment.fieldsHydration = mergedPaymentFields.fieldsHydration;
+			state.frontendStore.payment.gatewayCompatIssue = mergedPaymentFields.gatewayCompatIssue;
+		}
+		state.flowContextId = rehydrated.flowContextId;
+		// На шаге «Адрес и доставка» session_get_state часто приходит раньше, чем отложенный
+		// session_set_answers (черновик ~260 мс + сеть): без подтягивания DOM контакт затирается
+		// устаревшим contact_billing с сервера при render (Краснодар «откатывается» во время ввода Самары).
+		var skipContactDomHydration = false;
+		if (state.currentStepId !== 'address_delivery' && isV2CheckoutUiEnabled(state)) {
+			ensureV2ScreenState(state);
+			if (state.v2CurrentIndex === 0) {
+				skipContactDomHydration = true;
+			}
+		}
+		if (!skipContactDomHydration) {
+			flushContactFormFromDom(state, $app);
+			ensureContactDefaults(state);
+		}
+		render(state, $app);
+	}
+
+	function syncStoreWithBackend(state, $app, opts) {
+		opts = opts && typeof opts === 'object' ? opts : {};
+		var forceRatesSync = Boolean(opts.force);
 		var myGen = ++syncStoreGeneration;
-		return postCheckout('session_get_state', { context_id: state.flowContextId }).then(function (response) {
-			if (myGen !== syncStoreGeneration) {
-				return;
-			}
-			if (!response || !response.success || !response.data) {
-				return;
-			}
-			var flowPayload = response.data.flow;
-			if (flowPayload === undefined || flowPayload === null) {
-				return;
-			}
-			syncFromFlow(state, flowPayload, response.data.cart || {}, paymentFieldPayloadFromAjaxData(response.data));
-			var mergedPaymentFields = state.frontendStore && state.frontendStore.payment ? {
-				fieldsHtml: state.frontendStore.payment.fieldsHtml,
-				fieldsGatewayId: state.frontendStore.payment.fieldsGatewayId,
-				fieldsHydration: state.frontendStore.payment.fieldsHydration,
-				gatewayCompatIssue: state.frontendStore.payment.gatewayCompatIssue
-			} : null;
-			var rehydrated = buildState(state.context);
-			state.visibleSteps = rehydrated.visibleSteps;
-			state.currentStepId = rehydrated.currentStepId;
-			state.maxReachedIndex = Math.max(state.maxReachedIndex, rehydrated.maxReachedIndex);
-			applyContextCartToFrontendStore(rehydrated.frontendStore, state.context);
-			state.frontendStore = rehydrated.frontendStore;
-			if (mergedPaymentFields && state.frontendStore.payment) {
-				state.frontendStore.payment.fieldsHtml = mergedPaymentFields.fieldsHtml;
-				state.frontendStore.payment.fieldsGatewayId = mergedPaymentFields.fieldsGatewayId;
-				state.frontendStore.payment.fieldsHydration = mergedPaymentFields.fieldsHydration;
-				state.frontendStore.payment.gatewayCompatIssue = mergedPaymentFields.gatewayCompatIssue;
-			}
-			state.flowContextId = rehydrated.flowContextId;
-			var skipContactDomHydration = state.currentStepId === 'address_delivery';
-			if (!skipContactDomHydration && isV2CheckoutUiEnabled(state)) {
-				ensureV2ScreenState(state);
-				if (state.v2CurrentIndex === 0) {
-					skipContactDomHydration = true;
-				}
-			}
-			if (!skipContactDomHydration) {
-				flushContactFormFromDom(state, $app);
-				ensureContactDefaults(state);
-			}
-			render(state, $app);
+		if (!forceRatesSync && state && state.currentStepId === 'address_delivery') {
+			return $.Deferred().resolve().promise();
+		}
+		var draftPreflight = $.Deferred().resolve().promise();
+		if (state && state.currentStepId === 'address_delivery' && $app && $app.length) {
+			flushContactFormFromDom(state, $app);
+			// Иначе get_state считает корзину по старому contact_billing в сессии — доставка в summary не меняется до F5.
+			draftPreflight = saveCurrentStepDraft(state);
+		}
+		var runGetState = function () {
+			return postCheckout('session_get_state', { context_id: state.flowContextId });
+		};
+		return draftPreflight.then(runGetState, runGetState).then(function (response) {
+			applySessionGetStateResponse(state, $app, response, myGen);
 		}).fail(function (xhr) {
 			var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
 			if (String(payload.code || '') === 'stale_context') {
@@ -6111,6 +6134,18 @@
 		};
 	}
 
+	function contactAddressPayloadHasAnyField(addrPayload) {
+		addrPayload = addrPayload && typeof addrPayload === 'object' ? addrPayload : {};
+		var keys = ['country', 'state', 'city', 'address_1', 'address_2', 'postcode'];
+		var i;
+		for (i = 0; i < keys.length; i += 1) {
+			if (trimNonEmpty(addrPayload[keys[i]])) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	function isAddressBlockShownForContact(state) {
 		ensureContactDefaults(state);
 		var contact = state.frontendStore.form.contact || {};
@@ -6146,24 +6181,34 @@
 		var storageKey = stepKeyById(stepId);
 		var payload = getDraftPayloadByStorageKey(state, storageKey);
 		setRuntimeFlag(state, 'dirty', true);
+		var ctx = state.flowContextId;
+		var addrPayload = buildContactAddressPayloadForSession(state.frontendStore && state.frontendStore.form ? state.frontendStore.form.contact : {});
+		// Сначала contact_billing, потом step_one: иначе WC пересчитывает корзину по старому адресу, а после F5 из сессии поднимается старый город.
+		var persistAddrFirst = stepId === 'address_delivery'
+			&& (isAddressBlockShownForContact(state) || contactAddressPayloadHasAnyField(addrPayload));
 
-		var chainContactAddress = stepId === 'address_delivery' && isAddressBlockShownForContact(state);
+		if (persistAddrFirst) {
+			return postCheckout('session_set_answers', {
+				step_id: 'recipient',
+				context_id: ctx,
+				answers: addrPayload
+			}).then(function () {
+				return postCheckout('session_set_answers', {
+					step_id: stepId,
+					context_id: ctx,
+					answers: payload
+				});
+			}).then(function () {
+				setRuntimeFlag(state, 'dirty', false);
+			});
+		}
 
 		return postCheckout('session_set_answers', {
 			step_id: stepId,
-			context_id: state.flowContextId,
+			context_id: ctx,
 			answers: payload
 		}).then(function () {
 			setRuntimeFlag(state, 'dirty', false);
-			if (!chainContactAddress) {
-				return;
-			}
-			var addrPayload = buildContactAddressPayloadForSession(state.frontendStore && state.frontendStore.form ? state.frontendStore.form.contact : {});
-			return postCheckout('session_set_answers', {
-				step_id: 'recipient',
-				context_id: state.flowContextId,
-				answers: addrPayload
-			});
 		});
 	}
 
@@ -6189,6 +6234,10 @@
 	}
 
 	function scheduleAddressRatesBackendSync(state, $app) {
+		if (state && state.currentStepId === 'address_delivery') {
+			cancelAddressRatesBackendSync();
+			return;
+		}
 		if (addressRatesSyncTimer) {
 			window.clearTimeout(addressRatesSyncTimer);
 		}
@@ -6883,6 +6932,22 @@
 		return '';
 	}
 
+	function shouldShowShippingRecalcButton(state) {
+		if (!state || state.currentStepId !== 'address_delivery' || !state.frontendStore) {
+			return false;
+		}
+		var sc = normalizeScenarioId(state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenario || '') : '');
+		if (sc === 'pickup') {
+			return false;
+		}
+		var sum = state.frontendStore.cart && state.frontendStore.cart.summary ? state.frontendStore.cart.summary : {};
+		var n = Number(sum.items_count || 0);
+		if (!n && state.frontendStore.cart && Array.isArray(state.frontendStore.cart.items)) {
+			n = state.frontendStore.cart.items.length;
+		}
+		return n > 0;
+	}
+
 	function buildSummaryHtml(state) {
 		var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
 		var total = state.visibleSteps.length;
@@ -6951,6 +7016,9 @@
 			html += '<div class="mp-cc-summary-card__actions">';
 			html += '<button type="button" class="mp-cc-summary-card__btn mp-cc-summary-card__btn--primary" data-summary-action="continue">' + escapeHtml(getStepOneLabel(state, 'continue_label', 'step_1.continue', 'Continue')) + '</button>';
 			html += '<a href="' + escapeHtml(returnUrl) + '" class="mp-cc-summary-card__btn mp-cc-summary-card__btn--ghost">' + escapeHtml(getStepOneLabel(state, 'return_label', 'step_1.return_to_shop', 'Return to shop')) + '</a>';
+			if (shouldShowShippingRecalcButton(state)) {
+				html += '<button type="button" class="mp-cc-summary-card__btn mp-cc-summary-card__btn--ghost" data-mp-cc-recalc-shipping="1">' + escapeHtml(getUiText('order_review.recalc_shipping', 'Рассчитать доставку')) + '</button>';
+			}
 			html += '</div>';
 		}
 		if (state.currentStepId !== 'confirm') {
@@ -7419,6 +7487,25 @@
 
 	function render(state, $app) {
 		window.__mpCcCheckoutContextId = state && state.flowContextId ? String(state.flowContextId) : '';
+		window.mpCcSetCdekOfficeCode = function (code) {
+			var c = code === undefined || code === null ? '' : String(code);
+			if (!state || !state.flowContextId) {
+				return $.Deferred().reject({ message: 'MP checkout: no context' }).promise();
+			}
+			return postCheckout('cdek_set_office', {
+				context_id: state.flowContextId,
+				office_code: c
+			}).then(function (response) {
+				if (!response || !response.success || !response.data) {
+					return;
+				}
+				var d = response.data;
+				if (d.flow) {
+					syncFromFlow(state, d.flow, d.cart || {}, paymentFieldPayloadFromAjaxData(d));
+				}
+				render(state, $app);
+			});
+		};
 		ensureV2ScreenState(state);
 		var $parcel = $(selectors.parcel);
 		var $progress = $(selectors.progress);
@@ -7633,7 +7720,7 @@
 			}).fail(function () {
 				notify('Не удалось сохранить шаг доставки.', 'error');
 				// При ошибке восстанавливаем состояние из бэкенда, чтобы UI не остался рассинхронизированным.
-				syncStoreWithBackend(state, $app);
+				syncStoreWithBackend(state, $app, { force: true });
 			}).always(function () {
 				release();
 				flushPendingShippingMutation(state, $app, methodId);
@@ -7642,7 +7729,7 @@
 			// Метод требует выбора тарифа — ждём клика по тарифу, ничего больше не отправляем.
 			scenarioRequest.fail(function () {
 				notify('Не удалось сохранить способ доставки.', 'error');
-				syncStoreWithBackend(state, $app);
+				syncStoreWithBackend(state, $app, { force: true });
 			}).always(function () {
 				release();
 				flushPendingShippingMutation(state, $app, methodId);
@@ -7679,7 +7766,7 @@
 			// Без автоперехода — пользователь жмёт «Далее».
 		}).fail(function () {
 			notify('Не удалось сохранить тариф доставки.', 'error');
-			syncStoreWithBackend(state, $app);
+			syncStoreWithBackend(state, $app, { force: true });
 		}).always(function () {
 			shippingMutationInFlight = false;
 			flushPendingShippingMutation(state, $app, '');
@@ -7986,6 +8073,32 @@
 		$(selectors.summary).find('[data-summary-action="continue"]').off('click').on('click', function () {
 			saveCurrentStepDraft(state).always(function () {
 				moveForward(state, $app);
+			});
+		});
+
+		$(selectors.summary).find('[data-mp-cc-recalc-shipping="1"]').off('click').on('click', function () {
+			var $btn = $(this);
+			if ($btn.prop('disabled')) {
+				return;
+			}
+			var idleLabel = String($btn.text() || '');
+			$btn.attr('data-loading-label', idleLabel);
+			$btn.text(getUiText('order_review.recalc_shipping_loading', 'Рассчитываем...'));
+			$btn.prop('disabled', true).attr('aria-busy', 'true').addClass('is-loading');
+			if ($app && $app.length) {
+				$app.addClass('is-shipping-recalc-loading');
+			}
+			flushContactFormFromDom(state, $app);
+			saveCurrentStepDraft(state).then(function () {
+				window.location.reload();
+			}).fail(function () {
+				var restoreLabel = String($btn.attr('data-loading-label') || idleLabel || getUiText('order_review.recalc_shipping', 'Рассчитать доставку'));
+				$btn.text(restoreLabel);
+				$btn.prop('disabled', false).removeAttr('aria-busy').removeClass('is-loading');
+				if ($app && $app.length) {
+					$app.removeClass('is-shipping-recalc-loading');
+				}
+				notify(getUiText('order_review.recalc_shipping_failed', 'Не удалось сохранить адрес. Проверьте поля и попробуйте снова.'), 'error');
 			});
 		});
 
@@ -8300,7 +8413,7 @@
 				var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
 				var message = payload.message || getStepThreeErrorCopy('invalid_date', 'Не удалось сохранить выбранную дату.');
 				notify(message, 'error');
-				syncStoreWithBackend(state, $app);
+				syncStoreWithBackend(state, $app, { force: true });
 			});
 		});
 
@@ -8418,7 +8531,7 @@
 			saveCurrentStepDraft(state).fail(function () {
 				notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
 			}).always(function () {
-				if (addrBlur) {
+				if (addrBlur && state.currentStepId !== 'address_delivery') {
 					syncStoreWithBackend(state, $app);
 				}
 			});
@@ -8545,7 +8658,7 @@
 				var paymentCfg = getStepFourConfig().payment_block || {};
 				var paymentMessages = paymentCfg.messages && typeof paymentCfg.messages === 'object' ? paymentCfg.messages : {};
 				notify(trimNonEmpty(payload.message) || trimNonEmpty(paymentMessages.error) || getUiText('step_4.payment_error_switch', 'Не удалось переключить способ оплаты.'), 'error');
-				syncStoreWithBackend(state, $app);
+				syncStoreWithBackend(state, $app, { force: true });
 			});
 		});
 
@@ -8842,7 +8955,7 @@
 			var message = errorPayload.message || 'Не удалось обновить количество. Попробуйте снова.';
 			updateLocalCartItem(state, itemKey, prevQty, '');
 			notify(message, 'error');
-			syncStoreWithBackend(state, $app);
+			syncStoreWithBackend(state, $app, { force: true });
 		}).always(function () {
 			$item.removeClass('is-updating');
 		});
@@ -8899,7 +9012,7 @@
 			}
 			render(state, $app);
 			notify(message, 'error');
-			syncStoreWithBackend(state, $app);
+			syncStoreWithBackend(state, $app, { force: true });
 		});
 	}
 
@@ -9015,7 +9128,7 @@
 		ensureCartSnapshotConsistency(state, $app);
 		render(state, $app);
 
-		syncStoreWithBackend(state, $app).fail(function () {
+		syncStoreWithBackend(state, $app, { force: true }).fail(function () {
 			notify(getStepFourAjaxMessage('step_sync_failed', 'step_4.contact_ajax_step_sync_failed', 'Не удалось синхронизировать шаг. Обновите страницу.'), 'error');
 		});
 
@@ -9029,7 +9142,7 @@
 			withTransitionLock(state, $app, function () {
 				return postCheckout('session_set_scenario', { scenario: nextScenario, context_id: state.flowContextId })
 					.then(function () {
-						return syncStoreWithBackend(state, $app);
+						return syncStoreWithBackend(state, $app, { force: true });
 					}).fail(function (xhr) {
 						var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
 						notify(payload.message || getStepFourAjaxMessage('scenario_sync_failed', 'step_4.contact_ajax_scenario_sync_failed', 'Не удалось сохранить выбор сценария.'), 'error');
@@ -9038,7 +9151,7 @@
 								detail: { scenario: nextScenario, payload: payload }
 							})
 						);
-						syncStoreWithBackend(state, $app);
+						syncStoreWithBackend(state, $app, { force: true });
 					});
 			});
 		});

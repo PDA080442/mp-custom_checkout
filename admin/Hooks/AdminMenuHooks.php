@@ -1383,6 +1383,9 @@ final class AdminMenuHooks {
 		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, '.eta' ) ) {
 			return __( 'Срок доставки (произвольный текст). Например: «2 дней», «в течение дня», пусто — не показывать.', 'mp-custom-checkout' );
 		}
+		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, 'wc_rate_id' ) && false === strpos( $p, '.tariffs.' ) ) {
+			return __( 'Идентификатор ставки WooCommerce для метода без тарифов (как в нативном checkout: method_id:instance_id, например flat_rate:12). Нужен для режима цен «woocommerce» и синхронизации выбранного способа с сессией WC. Поле дублируется в блоке «Каталог доставки» вверху вкладки.', 'mp-custom-checkout' );
+		}
 		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, 'tariffs' ) && false !== strpos( $p, 'wc_rate_id' ) ) {
 			return __( 'Идентификатор ставки WooCommerce (как в нативном checkout: shipping_method:instance). При режиме цен «woocommerce» цена тарифа в каталоге подменяется на расчёт WC по адресу. Пусто — остаётся цена из каталога.', 'mp-custom-checkout' );
 		}

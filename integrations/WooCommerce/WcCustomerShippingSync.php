@@ -44,6 +44,13 @@ final class WcCustomerShippingSync {
 		self::run( 'session_set_scenario', '' );
 	}
 
+	/**
+	 * Полная синхронизация WC_Customer / сессии доставки СДЭК и пересчёт корзины перед созданием заказа из MP.
+	 */
+	public static function before_create_order_from_cart(): void {
+		self::sync_customer_from_flow_and_recalculate_cart();
+	}
+
 	private static function run( string $reason, string $step_id ): void {
 		if ( ! DependencyFailureGuard::is_woocommerce_integration_ready() ) {
 			return;
@@ -51,6 +58,10 @@ final class WcCustomerShippingSync {
 		if ( 'session_set_answers' === $reason && ! self::step_triggers_resync( $step_id ) ) {
 			return;
 		}
+		self::sync_customer_from_flow_and_recalculate_cart();
+	}
+
+	private static function sync_customer_from_flow_and_recalculate_cart(): void {
 		if ( ! function_exists( 'WC' ) ) {
 			return;
 		}
@@ -69,6 +80,7 @@ final class WcCustomerShippingSync {
 		OrderMetaHooks::apply_contact_location_to_customer( $wc->customer, $scenario, $contact );
 		$wc->customer->save();
 
+		CdekWcSessionBridge::sync_session_before_cart_totals();
 		$wc->cart->calculate_totals();
 
 		self::log_if_chosen_shipping_not_in_packages();

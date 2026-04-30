@@ -11,6 +11,7 @@ use MP\CustomCheckout\Checkout\Routing\CheckoutPermalinkCompatibility;
 use MP\CustomCheckout\Checkout\Hooks\CheckoutAjaxHooks;
 use MP\CustomCheckout\Checkout\Routing\CheckoutSessionService;
 use MP\CustomCheckout\Integrations\WooCommerce\GiftCardIntegration;
+use MP\CustomCheckout\Integrations\WooCommerce\WcCustomerShippingSync;
 use MP\CustomCheckout\Settings\FeatureFlagResolver;
 use MP\CustomCheckout\Settings\ScenarioStepRegistry;
 
@@ -195,7 +196,8 @@ final class CheckoutRouteContext {
 		if ( isset( $delivery_answers['shipping_price'] ) && is_numeric( $delivery_answers['shipping_price'] ) ) {
 			$session_shipping_price_value = max( 0.0, (float) $delivery_answers['shipping_price'] );
 		}
-		if ( null !== $session_shipping_price_value && $session_shipping_price_value > 0.0 ) {
+		$woocommerce_pricing = WcCustomerShippingSync::is_woocommerce_pricing_mode();
+		if ( ! $woocommerce_pricing && null !== $session_shipping_price_value && $session_shipping_price_value > 0.0 ) {
 			$shipping_total = $session_shipping_price_value;
 		}
 		$requires_address_for_shipping = true;
@@ -203,13 +205,16 @@ final class CheckoutRouteContext {
 			$requires_address_for_shipping = filter_var( $delivery_answers['shipping_requires_address'], FILTER_VALIDATE_BOOLEAN );
 		}
 		$shipping_method_chosen = '' !== trim( (string) ( $delivery_answers['shipping_method_id'] ?? '' ) );
+		// Почта/курьер с адресом: в answers часто shipping_price=0 до синка с фронта, но WC уже пересчитал пакеты — показываем сумму из корзины.
+		$wc_address_shipping_ready = $shipping_method_chosen && $requires_address_for_shipping && $cart_shipping_total > 0.0;
 		$session_shipping_price_chosen = ( null !== $session_shipping_price_value && $session_shipping_price_value > 0.0 )
 			|| (
 				null !== $session_shipping_price_value
 				&& 0.0 === $session_shipping_price_value
 				&& $shipping_method_chosen
 				&& ! $requires_address_for_shipping
-			);
+			)
+			|| $wc_address_shipping_ready;
 		$steps_pre_payment     = array(
 			ScenarioStepRegistry::STEP_ADDRESS_DELIVERY,
 			ScenarioStepRegistry::STEP_RECIPIENT,
@@ -218,7 +223,7 @@ final class CheckoutRouteContext {
 		if ( $cart->needs_shipping() ) {
 			if ( ScenarioStepRegistry::SCENARIO_PICKUP === $scenario_for_shipping ) {
 				$suppress_shipping_in_summary = true;
-			} elseif ( '' !== $current_step_id && in_array( $current_step_id, $steps_pre_payment, true ) && ! $session_shipping_price_chosen ) {
+			} elseif ( ! $woocommerce_pricing && '' !== $current_step_id && in_array( $current_step_id, $steps_pre_payment, true ) && ! $session_shipping_price_chosen ) {
 				// Пока покупатель не выбрал тариф на шаге 1, не подмешиваем «чужую» WC-доставку в строки и итог.
 				// После выбора цена лежит в answers.step_one — показываем и включаем в total.
 				$suppress_shipping_in_summary = true;
@@ -251,7 +256,7 @@ final class CheckoutRouteContext {
 			$ship_amt = (float) $cart->get_shipping_total();
 			$total_tax_display = max( 0.0, $total_tax_display - $ship_tax );
 			$total_edit        = max( 0.0, $total_edit - $ship_tax - $ship_amt );
-		} elseif ( null !== $session_shipping_price_value && $session_shipping_price_value > 0.0 ) {
+		} elseif ( ! $woocommerce_pricing && null !== $session_shipping_price_value && $session_shipping_price_value > 0.0 ) {
 			$total_edit = max( 0.0, $total_edit - $cart_shipping_total + $shipping_total );
 		}
 		$result['summary']['tax']   = (string) wc_price( $total_tax_display );
