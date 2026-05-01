@@ -101,6 +101,12 @@ final class CheckoutAjaxHooks {
 		if ( 'session_set_answers' === $sub_action ) {
 			$step_id = isset( $_POST['step_id'] ) ? sanitize_key( wp_unslash( $_POST['step_id'] ) ) : '';
 			$answers = isset( $_POST['answers'] ) && is_array( $_POST['answers'] ) ? wp_unslash( $_POST['answers'] ) : array();
+			// Фронт шлёт два запроса подряд (recipient → address_delivery): без флага дважды вызывается
+			// WcCustomerShippingSync (calculate_totals) — очень медленно с внешними API доставки.
+			$skip_wc_resync = isset( $_POST['skip_wc_resync'] ) && '1' === (string) wp_unslash( (string) $_POST['skip_wc_resync'] );
+			if ( $skip_wc_resync && 'recipient' !== $step_id ) {
+				$skip_wc_resync = false;
+			}
 			if ( '' === $step_id ) {
 				wp_send_json_error( array( 'code' => 'invalid_step_id', 'message' => __( 'Не указан шаг checkout.', 'mp-custom-checkout' ) ), 400 );
 			}
@@ -132,7 +138,9 @@ final class CheckoutAjaxHooks {
 				}
 			}
 			CheckoutSessionService::set_step_answers( $step_id, $answers );
-			WcCustomerShippingSync::after_session_set_answers( $step_id );
+			if ( ! $skip_wc_resync ) {
+				WcCustomerShippingSync::after_session_set_answers( $step_id );
+			}
 			wp_send_json_success( array( 'sub_action' => $sub_action, 'step_id' => $step_id, 'flow' => self::build_flow_payload(), 'cart' => CheckoutRouteContext::get_cart_data() ) );
 		}
 		if ( 'session_set_scenario' === $sub_action ) {
