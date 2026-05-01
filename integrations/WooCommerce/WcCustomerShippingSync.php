@@ -76,6 +76,11 @@ final class WcCustomerShippingSync {
 		$answers  = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : array();
 		$contact  = self::merge_contact_from_answers( $answers );
 		$scenario = isset( $flow['scenario'] ) ? CheckoutScenarioRules::sanitize_scenario( (string) $flow['scenario'] ) : ScenarioStepRegistry::SCENARIO_PICKUP;
+		$merged_delivery = array_replace(
+			isset( $answers['step_one'] ) && is_array( $answers['step_one'] ) ? $answers['step_one'] : array(),
+			isset( $answers['date_conditions'] ) && is_array( $answers['date_conditions'] ) ? $answers['date_conditions'] : array()
+		);
+		$scenario = CheckoutScenarioRules::elevate_scenario_if_pickup_but_carrier_method_selected( $scenario, $merged_delivery );
 
 		OrderMetaHooks::apply_contact_location_to_customer( $wc->customer, $scenario, $contact );
 		$wc->customer->save();

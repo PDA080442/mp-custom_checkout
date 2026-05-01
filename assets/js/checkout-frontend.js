@@ -49,6 +49,8 @@
 	var pendingShippingTariffChoice = null;
 	/** Отложенный выбор другого способа доставки (иначе радио/кнопка «залипают» визуально при гонке AJAX). */
 	var pendingShippingMethodChoice = null;
+	/** Пока идёт «Рассчитать доставку» — не даём render() убрать кнопку из-за гонки с черновиком / get_state. */
+	var shippingRecalcPending = false;
 
 	function getUiText(path, fallback) {
 		var source = (window.mpCcCheckout && window.mpCcCheckout.uiText) ? window.mpCcCheckout.uiText : {};
@@ -6189,15 +6191,10 @@
 
 		if (persistAddrFirst) {
 			return postCheckout('session_set_answers', {
-				step_id: 'recipient',
+				step_id: stepId,
 				context_id: ctx,
-				answers: addrPayload
-			}).then(function () {
-				return postCheckout('session_set_answers', {
-					step_id: stepId,
-					context_id: ctx,
-					answers: payload
-				});
+				answers: payload,
+				merge_contact_billing: addrPayload
 			}).then(function () {
 				setRuntimeFlag(state, 'dirty', false);
 			});
@@ -6932,12 +6929,8 @@
 		return '';
 	}
 
-	function shouldShowShippingRecalcButton(state) {
-		if (!state || state.currentStepId !== 'address_delivery' || !state.frontendStore) {
-			return false;
-		}
-		var sc = normalizeScenarioId(state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenario || '') : '');
-		if (sc === 'pickup') {
+	function hasCartLinesForShippingRecalc(state) {
+		if (!state || !state.frontendStore) {
 			return false;
 		}
 		var sum = state.frontendStore.cart && state.frontendStore.cart.summary ? state.frontendStore.cart.summary : {};
@@ -6946,6 +6939,23 @@
 			n = state.frontendStore.cart.items.length;
 		}
 		return n > 0;
+	}
+
+	function shouldShowShippingRecalcButton(state) {
+		if (!state || !state.frontendStore) {
+			return false;
+		}
+		if (state.currentStepId !== 'address_delivery' && !shippingRecalcPending) {
+			return false;
+		}
+		var rawScenario = String(state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenario || '') : '');
+		var dateBox = state.frontendStore.fulfillment && state.frontendStore.fulfillment.date ? state.frontendStore.fulfillment.date : {};
+		var shipMethod = String(dateBox.shipping_method_id || '');
+		// Сценарий в сессии часто остаётся pickup до session_set_scenario; выбор «Почта России» живёт в step_one.
+		if (rawScenario === 'pickup' && (!shipMethod || shipMethod === 'pickup')) {
+			return false;
+		}
+		return hasCartLinesForShippingRecalc(state);
 	}
 
 	function buildSummaryHtml(state) {
@@ -7012,7 +7022,7 @@
 				html += '<p class="mp-cc-summary-card__meta"><span class="mp-cc-summary-card__amount-label">' + escapeHtml(amountLabel) + ':</span> <span class="mp-cc-summary-card__amount" data-summary-amount="1">' + wcPriceHtmlFragment(displayAmount) + '</span></p>';
 			}
 		}
-		if (state.currentStepId === 'address_delivery') {
+		if (state.currentStepId === 'address_delivery' || shippingRecalcPending) {
 			html += '<div class="mp-cc-summary-card__actions">';
 			html += '<button type="button" class="mp-cc-summary-card__btn mp-cc-summary-card__btn--primary" data-summary-action="continue">' + escapeHtml(getStepOneLabel(state, 'continue_label', 'step_1.continue', 'Continue')) + '</button>';
 			html += '<a href="' + escapeHtml(returnUrl) + '" class="mp-cc-summary-card__btn mp-cc-summary-card__btn--ghost">' + escapeHtml(getStepOneLabel(state, 'return_label', 'step_1.return_to_shop', 'Return to shop')) + '</a>';
@@ -8081,25 +8091,57 @@
 			if ($btn.prop('disabled')) {
 				return;
 			}
+			if (draftSaveTimer) {
+				window.clearTimeout(draftSaveTimer);
+				draftSaveTimer = null;
+			}
+			cancelAddressRatesBackendSync();
+			shippingRecalcPending = true;
 			var idleLabel = String($btn.text() || '');
 			$btn.attr('data-loading-label', idleLabel);
 			$btn.text(getUiText('order_review.recalc_shipping_loading', 'Рассчитываем...'));
 			$btn.prop('disabled', true).attr('aria-busy', 'true').addClass('is-loading');
+			var $checkoutRoot = $(selectors.root);
+			if ($checkoutRoot.length) {
+				$checkoutRoot.addClass('is-shipping-recalc-loading');
+			}
 			if ($app && $app.length) {
 				$app.addClass('is-shipping-recalc-loading');
 			}
-			flushContactFormFromDom(state, $app);
-			saveCurrentStepDraft(state).then(function () {
-				window.location.reload();
-			}).fail(function () {
-				var restoreLabel = String($btn.attr('data-loading-label') || idleLabel || getUiText('order_review.recalc_shipping', 'Рассчитать доставку'));
-				$btn.text(restoreLabel);
-				$btn.prop('disabled', false).removeAttr('aria-busy').removeClass('is-loading');
-				if ($app && $app.length) {
-					$app.removeClass('is-shipping-recalc-loading');
-				}
-				notify(getUiText('order_review.recalc_shipping_failed', 'Не удалось сохранить адрес. Проверьте поля и попробуйте снова.'), 'error');
-			});
+			var runSave = function () {
+				flushContactFormFromDom(state, $app);
+				saveCurrentStepDraft(state).then(function () {
+					shippingRecalcPending = false;
+					window.location.reload();
+				}).fail(function (xhr) {
+					shippingRecalcPending = false;
+					if ($checkoutRoot.length) {
+						$checkoutRoot.removeClass('is-shipping-recalc-loading');
+					}
+					if ($app && $app.length) {
+						$app.removeClass('is-shipping-recalc-loading');
+					}
+					render(state, $app);
+					var payload422 = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
+					var serverMsg = trimNonEmpty(payload422.message) ? String(payload422.message) : '';
+					var fallback = getUiText('order_review.recalc_shipping_failed', 'Не удалось сохранить адрес. Проверьте поля и попробуйте снова.');
+					var netHint = '';
+					var st = xhr && typeof xhr.status === 'number' ? xhr.status : 0;
+					if (st === 0) {
+						netHint = ' ' + getUiText('order_review.recalc_shipping_network', 'Проверьте соединение или отключите VPN и попробуйте снова.');
+					} else if (st === 504 || st === 524) {
+						netHint = ' ' + getUiText('order_review.recalc_shipping_gateway_timeout', 'Сервер долго отвечал (таймаут). Подождите минуту и повторите.');
+					}
+					notify(serverMsg || (fallback + netHint), 'error');
+				});
+			};
+			if (typeof window.requestAnimationFrame === 'function') {
+				window.requestAnimationFrame(function () {
+					window.requestAnimationFrame(runSave);
+				});
+			} else {
+				window.setTimeout(runSave, 0);
+			}
 		});
 
 		$progress.find('.mp-cc-progress__btn').off('click').on('click', function () {

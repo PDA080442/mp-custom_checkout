@@ -1608,14 +1608,36 @@
 	flex: 0 0 auto;
 }
 
+.mp-cc-summary-card__btn.mp-cc-summary-card__btn--ghost.is-loading::before {
+	border-color: rgba(17, 17, 17, 0.45);
+	border-right-color: transparent;
+}
+
 @keyframes mp-cc-spin-rotate {
 	from { transform: rotate(0deg); }
 	to { transform: rotate(360deg); }
 }
 
+#mp-cc-checkout.is-shipping-recalc-loading .mp-cc-layout__main {
+	position: relative;
+	opacity: 0.52;
+	filter: saturate(0.82);
+	pointer-events: none;
+	transition: opacity var(--mp-cc-transition-duration) ease, filter var(--mp-cc-transition-duration) ease;
+}
+
+#mp-cc-checkout.is-shipping-recalc-loading .mp-cc-layout__main::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	z-index: 3;
+	background: rgba(15, 23, 42, 0.12);
+	pointer-events: none;
+}
 
 .mp-cc-checkout__app.is-shipping-recalc-loading .mp-cc-step-card[data-step-id='address_delivery'],
-.mp-cc-checkout__app.is-shipping-recalc-loading .mp-cc-step-panel[data-step-panel='delivery_screen'] {
+.mp-cc-checkout__app.is-shipping-recalc-loading .mp-cc-step-panel[data-step-panel='delivery_screen'],
+.mp-cc-checkout__app.is-shipping-recalc-loading .mp-cc-step-panel[data-step-panel='address_delivery'] {
 	opacity: 0.55;
 	filter: saturate(0.85);
 	pointer-events: none;

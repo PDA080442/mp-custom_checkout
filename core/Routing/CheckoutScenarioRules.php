@@ -148,4 +148,25 @@ final class CheckoutScenarioRules {
 			'label' => self::scenario_label( $scenario ),
 		);
 	}
+
+	/**
+	 * В сессии часто остаётся pickup, пока не вызван session_set_scenario; выбор почты/курьера уже в step_one.
+	 * Для WC, сводки корзины и правил полей в ответе API поднимаем сценарий до «доставки».
+	 *
+	 * @param array<string, mixed> $merged_delivery_answers step_one + date_conditions (как mergeDateConditionsFromFlowAnswers).
+	 */
+	public static function elevate_scenario_if_pickup_but_carrier_method_selected( string $sanitized_scenario, array $merged_delivery_answers ): string {
+		if ( ScenarioStepRegistry::SCENARIO_PICKUP !== $sanitized_scenario ) {
+			return $sanitized_scenario;
+		}
+		$method_id = isset( $merged_delivery_answers['shipping_method_id'] ) ? sanitize_key( (string) $merged_delivery_answers['shipping_method_id'] ) : '';
+		if ( '' === $method_id || 'pickup' === $method_id ) {
+			return $sanitized_scenario;
+		}
+		if ( ScenarioStepRegistry::SCENARIO_KRASNOYARSK_DELIVERY === $method_id ) {
+			return ScenarioStepRegistry::SCENARIO_KRASNOYARSK_DELIVERY;
+		}
+
+		return ScenarioStepRegistry::SCENARIO_OTHER_CITY_DELIVERY;
+	}
 }
