@@ -191,6 +191,7 @@ final class CheckoutRouteContext {
 		$date_answers         = isset( $answers_for_totals['date_conditions'] ) && is_array( $answers_for_totals['date_conditions'] ) ? $answers_for_totals['date_conditions'] : array();
 		// Как на фронте mergeDateConditionsFromFlowAnswers: база step_one, date_conditions перекрывает.
 		$delivery_answers = array_replace( $step_one_answers, $date_answers );
+		$scenario_for_shipping = CheckoutScenarioRules::elevate_scenario_if_pickup_but_carrier_method_selected( $scenario_for_shipping, $delivery_answers );
 		// Числовой "0" из каталога (ещё без тарифа / без wc_rate_id) не должен затирать фактическую доставку WC.
 		$session_shipping_price_value = null;
 		if ( isset( $delivery_answers['shipping_price'] ) && is_numeric( $delivery_answers['shipping_price'] ) ) {

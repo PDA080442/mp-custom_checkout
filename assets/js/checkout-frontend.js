@@ -6191,16 +6191,10 @@
 
 		if (persistAddrFirst) {
 			return postCheckout('session_set_answers', {
-				step_id: 'recipient',
+				step_id: stepId,
 				context_id: ctx,
-				answers: addrPayload,
-				skip_wc_resync: '1'
-			}).then(function () {
-				return postCheckout('session_set_answers', {
-					step_id: stepId,
-					context_id: ctx,
-					answers: payload
-				});
+				answers: payload,
+				merge_contact_billing: addrPayload
 			}).then(function () {
 				setRuntimeFlag(state, 'dirty', false);
 			});
@@ -6955,7 +6949,10 @@
 			return false;
 		}
 		var rawScenario = String(state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenario || '') : '');
-		if (rawScenario === 'pickup') {
+		var dateBox = state.frontendStore.fulfillment && state.frontendStore.fulfillment.date ? state.frontendStore.fulfillment.date : {};
+		var shipMethod = String(dateBox.shipping_method_id || '');
+		// Сценарий в сессии часто остаётся pickup до session_set_scenario; выбор «Почта России» живёт в step_one.
+		if (rawScenario === 'pickup' && (!shipMethod || shipMethod === 'pickup')) {
 			return false;
 		}
 		return hasCartLinesForShippingRecalc(state);

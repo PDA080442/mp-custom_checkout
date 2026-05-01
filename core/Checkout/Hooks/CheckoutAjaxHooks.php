@@ -101,8 +101,8 @@ final class CheckoutAjaxHooks {
 		if ( 'session_set_answers' === $sub_action ) {
 			$step_id = isset( $_POST['step_id'] ) ? sanitize_key( wp_unslash( $_POST['step_id'] ) ) : '';
 			$answers = isset( $_POST['answers'] ) && is_array( $_POST['answers'] ) ? wp_unslash( $_POST['answers'] ) : array();
-			// Фронт шлёт два запроса подряд (recipient → address_delivery): без флага дважды вызывается
-			// WcCustomerShippingSync (calculate_totals) — очень медленно с внешними API доставки.
+			// recipient-only + skip_wc_resync=1: только запись в flow без calculate_totals (редкий путь).
+			// Иначе при address_delivery + merge_contact_billing[] контакт пишется в том же запросе перед step_one — один WC sync.
 			$skip_wc_resync = isset( $_POST['skip_wc_resync'] ) && '1' === (string) wp_unslash( (string) $_POST['skip_wc_resync'] );
 			if ( $skip_wc_resync && 'recipient' !== $step_id ) {
 				$skip_wc_resync = false;
@@ -111,6 +111,13 @@ final class CheckoutAjaxHooks {
 				wp_send_json_error( array( 'code' => 'invalid_step_id', 'message' => __( 'Не указан шаг checkout.', 'mp-custom-checkout' ) ), 400 );
 			}
 			$answers = self::sanitize_payload_shape( is_array( $answers ) ? $answers : array(), 4, 80 );
+			$merge_contact_billing = array();
+			if ( 'address_delivery' === $step_id && isset( $_POST['merge_contact_billing'] ) && is_array( $_POST['merge_contact_billing'] ) ) {
+				$merge_contact_billing = self::sanitize_payload_shape( wp_unslash( $_POST['merge_contact_billing'] ), 4, 80 );
+			}
+			if ( 'address_delivery' === $step_id && ! empty( $merge_contact_billing ) ) {
+				CheckoutSessionService::set_step_answers( 'recipient', $merge_contact_billing );
+			}
 			if ( in_array( $step_id, array( 'address_delivery', 'date', 'conditions' ), true ) ) {
 				$flow          = CheckoutSessionService::get_flow();
 				$existing_date = array();
