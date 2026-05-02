@@ -67,7 +67,7 @@ MP **не** дублирует произвольный список meta СДЭ
 
 - Отправка оплаты с пустой корзиной блокируется в `handle_submit_payment`.  
 - Полный сброс flow: `CheckoutSessionService::clear()` (успех, abandon, часть сценариев отмены заказа) — вместе с ним исчезает и `step_one`.  
-- Если корзина стала пустой **без** явного `clear`, старый flow может ещё жить до TTL (`is_flow_stale` в `get_public_state`) — поведение офиса тогда определяется следующим успешным `session_get_state` / перезаходом; отдельной очистки только `cdek_office_code` при `cart->is_empty()` в коде MP на момент §29.1 **нет** (зафиксировано как наблюдение для §29.5 при необходимости).
+- Если корзина стала пустой **без** явного `clear`, старый flow может ещё жить до TTL (`is_flow_stale` в `get_public_state`) — поведение офиса тогда определяется следующим успешным `session_get_state` / перезаходом; отдельной очистки только `cdek_office_code` при `cart->is_empty()` в коде MP **нет**. Инвалидация офиса при смене города/метода — см. §10 (§29.5).
 
 ---
 
@@ -93,3 +93,20 @@ MP **не** дублирует произвольный список meta СДЭ
 3. **Валидация кода на AJAX:** непустой `office_code` должен удовлетворять мягкому формату (длина 1–32, `[A-Za-z0-9_-]`); иначе **400** `invalid_office_code`, лог `event_type` = `pvz_office_save_failed`, flow **не** меняется.
 4. **Фронт:** `window.mpCcSetCdekOfficeCode` использует общий флаг `shippingMutationInFlight` с выбором метода/тарифа; при конфликте офис ставится в очередь `pendingCdekOfficeCode` и отправляется после завершения цепочки доставки; повтор того же кода после trim — **no-op** без AJAX; при ответе с `success: false` или HTTP-ошибке — notify, локальный откат `cdek_office_code`, `syncStoreWithBackend({ force: true })`.
 5. **Виджет карты:** двойной `onChoose` блокируется флагом `chosenInFlight` в `cdek-widget-bridge.js`; успешное закрытие модала только после успешного deferred от `mpCcSetCdekOfficeCode`.
+
+---
+
+## 10. §29.5 — Инвалидация ПВЗ при смене города или метода
+
+Частичный merge в `CheckoutSessionService::set_step_answers` для `step_one` и `contact_billing` не удаляет ключи, которых нет в payload (`array_replace`). Из-за этого старый `cdek_office_code` мог «прилипать» к flow после смены города или после ухода с метода `pvz`.
+
+**Сервер (`CheckoutSessionService::set_step_answers`):**
+
+- После merge **`contact_billing`**: если нормализованный `city` до и после merge оба непустые и различаются — `unset( $answers['step_one']['cdek_office_code'] )`. Лог: `[pvz] office_invalidated`, `reason` = `city_change` (в payload только длины строк города, без полного текста).
+- После merge **`step_one`**: если новый `shipping_method_id` непустой и **не** `pvz` — `unset( cdek_office_code )` в том же `step_one`. Лог: `reason` = `method_change`, плюс `prev_method` / `new_method`.
+
+Далее обычная цепочка `WcCustomerShippingSync::after_session_set_answers` → `CdekWcSessionBridge::sync_session_before_cart_totals` очищает `WC()->session['official_cdek_office_code']`, когда метод не `pvz` или офис пуст.
+
+**Фронт:** при реальном изменении города в `[data-city-input]` (оба значения непустые, регистр игнорируется) — локально `delete fulfillment.date.cdek_office_code`, `invalidateV2DownstreamFrom(state, 0)`, сброс строки доставки в summary; без дополнительных `session_get_state`.
+
+**§29.4 (выравнивание):** серверный гвард `assert_pvz_has_office_or_fail` читает метод и офис из `CdekWcSessionBridge::get_merged_delivery_answers( $flow )`, а не только из `date_conditions`.

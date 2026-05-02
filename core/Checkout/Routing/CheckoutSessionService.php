@@ -169,10 +169,12 @@ final class CheckoutSessionService {
 		if ( 'contact_billing' === $storage_key ) {
 			$prev_contact = isset( $current['contact_billing'] ) && is_array( $current['contact_billing'] ) ? $current['contact_billing'] : array();
 			$current[ $storage_key ] = array_replace( $prev_contact, $sanitized_answers );
+			self::maybe_invalidate_pvz_office_on_city_change( $current, $prev_contact, $current[ $storage_key ] );
 		} elseif ( 'step_one' === $storage_key ) {
 			// Частичный session_set_answers не должен затирать cdek_office_code и прочие поля шага (§29.1 docs/pvz-data-contract.md).
 			$prev_step = isset( $current['step_one'] ) && is_array( $current['step_one'] ) ? $current['step_one'] : array();
 			$current[ $storage_key ] = array_replace( $prev_step, $sanitized_answers );
+			self::maybe_invalidate_pvz_office_on_method_change( $current, $storage_key, $prev_step );
 		} else {
 			$current[ $storage_key ] = $sanitized_answers;
 		}
@@ -415,6 +417,79 @@ final class CheckoutSessionService {
 	/** @param array<string, mixed> $answers @return array<string, mixed> */
 	private static function merge_answers_with_defaults( array $answers ): array {
 		return array_replace_recursive( self::default_answers_structure(), $answers );
+	}
+
+	/**
+	 * §29.5: сравнение города до/после merge контакта (регистронезависимо).
+	 */
+	private static function normalize_city_for_pvz_invalidation( string $value ): string {
+		$s = trim( $value );
+		if ( '' === $s ) {
+			return '';
+		}
+		if ( function_exists( 'mb_strtolower' ) ) {
+			return mb_strtolower( $s, 'UTF-8' );
+		}
+
+		return strtolower( $s );
+	}
+
+	/**
+	 * §29.5: при смене города в контакте — удалить устаревший ПВЗ из step_one.
+	 *
+	 * @param array<string, mixed> $current Mutated answers blob.
+	 * @param array<string, mixed> $prev_contact
+	 * @param array<string, mixed> $new_contact
+	 */
+	private static function maybe_invalidate_pvz_office_on_city_change( array &$current, array $prev_contact, array $new_contact ): void {
+		$prev_city = self::normalize_city_for_pvz_invalidation( isset( $prev_contact['city'] ) ? (string) $prev_contact['city'] : '' );
+		$new_city  = self::normalize_city_for_pvz_invalidation( isset( $new_contact['city'] ) ? (string) $new_contact['city'] : '' );
+		if ( '' === $prev_city || '' === $new_city || $prev_city === $new_city ) {
+			return;
+		}
+		$step_one = isset( $current['step_one'] ) && is_array( $current['step_one'] ) ? $current['step_one'] : array();
+		if ( ! isset( $step_one['cdek_office_code'] ) || '' === trim( (string) $step_one['cdek_office_code'] ) ) {
+			return;
+		}
+		unset( $current['step_one']['cdek_office_code'] );
+		do_action(
+			'mp_custom_checkout_log',
+			'info',
+			'[pvz] office_invalidated',
+			array(
+				'reason'    => 'city_change',
+				'prev_len'  => strlen( $prev_city ),
+				'new_len'   => strlen( $new_city ),
+			)
+		);
+	}
+
+	/**
+	 * §29.5: метод не ПВЗ — код офиса в step_one недопустим (иначе бридж СДЭК восстановит official_cdek_office_code).
+	 *
+	 * @param array<string, mixed> $current Mutated answers blob.
+	 * @param array<string, mixed> $prev_step Prior step_one before merge.
+	 */
+	private static function maybe_invalidate_pvz_office_on_method_change( array &$current, string $storage_key, array $prev_step ): void {
+		$new_method = isset( $current[ $storage_key ]['shipping_method_id'] ) ? sanitize_key( (string) $current[ $storage_key ]['shipping_method_id'] ) : '';
+		if ( '' === $new_method || 'pvz' === $new_method ) {
+			return;
+		}
+		if ( ! isset( $current[ $storage_key ]['cdek_office_code'] ) || '' === trim( (string) $current[ $storage_key ]['cdek_office_code'] ) ) {
+			return;
+		}
+		unset( $current[ $storage_key ]['cdek_office_code'] );
+		$prev_method = isset( $prev_step['shipping_method_id'] ) ? sanitize_key( (string) $prev_step['shipping_method_id'] ) : '';
+		do_action(
+			'mp_custom_checkout_log',
+			'info',
+			'[pvz] office_invalidated',
+			array(
+				'reason'      => 'method_change',
+				'prev_method' => $prev_method,
+				'new_method'  => $new_method,
+			)
+		);
 	}
 
 	private static function normalize_answers_storage_key( string $step_id ): string {

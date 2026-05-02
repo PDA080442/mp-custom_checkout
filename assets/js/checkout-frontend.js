@@ -8494,10 +8494,31 @@
 			var city = rawCity || '';
 			state.frontendStore.form = state.frontendStore.form || {};
 			state.frontendStore.form.contact = state.frontendStore.form.contact || {};
+			var normCityPvz = function (v) {
+				var t = String(v === undefined || v === null ? '' : v).trim();
+				return t ? t.toLowerCase() : '';
+			};
+			var prevCityNorm = normCityPvz(state.frontendStore.form.contact.city);
 			if (city) {
 				state.frontendStore.form.contact.city = city;
 			} else {
 				delete state.frontendStore.form.contact.city;
+			}
+			var nextCityNorm = normCityPvz(city);
+			if (prevCityNorm && nextCityNorm && prevCityNorm !== nextCityNorm) {
+				state.frontendStore.fulfillment = state.frontendStore.fulfillment || {};
+				state.frontendStore.fulfillment.date = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+					? state.frontendStore.fulfillment.date
+					: {};
+				delete state.frontendStore.fulfillment.date.cdek_office_code;
+				invalidateV2DownstreamFrom(state, 0);
+				var summaryCity = state.frontendStore.cart && state.frontendStore.cart.summary && typeof state.frontendStore.cart.summary === 'object'
+					? state.frontendStore.cart.summary
+					: {};
+				summaryCity = $.extend({}, summaryCity);
+				summaryCity.shipping_total = 0;
+				summaryCity.shipping = '';
+				state.frontendStore.cart.summary = summaryCity;
 			}
 			invalidateShippingIfNotInCatalog(state);
 			state.frontendStore.fulfillment = state.frontendStore.fulfillment || {};

@@ -854,8 +854,7 @@ final class CheckoutAjaxHooks {
 	 * @param array<string, mixed> $flow Raw flow from CheckoutSessionService::get_flow().
 	 */
 	private static function assert_pvz_has_office_or_fail( array $flow, string $log_step_id ): void {
-		$answers  = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : array();
-		$delivery = isset( $answers['date_conditions'] ) && is_array( $answers['date_conditions'] ) ? $answers['date_conditions'] : array();
+		$delivery = CdekWcSessionBridge::get_merged_delivery_answers( $flow );
 		$method   = isset( $delivery['shipping_method_id'] ) ? sanitize_key( (string) $delivery['shipping_method_id'] ) : '';
 		if ( 'pvz' !== $method ) {
 			return;
