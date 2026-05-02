@@ -33,6 +33,8 @@ final class CdekWcSessionBridge {
 		$answers = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : array();
 		$step    = isset( $answers['step_one'] ) && is_array( $answers['step_one'] ) ? $answers['step_one'] : array();
 		$date    = isset( $answers['date_conditions'] ) && is_array( $answers['date_conditions'] ) ? $answers['date_conditions'] : array();
+		// Код ПВЗ — только из step_one; legacy в date_conditions не должен перекрывать очистку (§29.1 deep-audit).
+		unset( $date['cdek_office_code'] );
 
 		return array_replace( $step, $date );
 	}

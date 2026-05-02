@@ -220,27 +220,50 @@ final class OrderMetaHooks {
 		if ( ! $order instanceof \WC_Order ) {
 			return;
 		}
-		$flow    = CheckoutSessionService::get_flow();
+		$flow     = CheckoutSessionService::get_flow();
 		$delivery = CdekWcSessionBridge::get_merged_delivery_answers( is_array( $flow ) ? $flow : array() );
-		$method  = sanitize_key( (string) ( $delivery['shipping_method_id'] ?? '' ) );
+		$method   = sanitize_key( (string) ( $delivery['shipping_method_id'] ?? '' ) );
 		if ( 'pvz' !== $method ) {
 			$order->delete_meta_data( OrderMetaKeys::CDEK_OFFICE_CODE );
 			$order->delete_meta_data( OrderMetaKeys::CDEK_RATE_ID );
 			return;
 		}
-		$office  = trim( (string) ( $delivery['cdek_office_code'] ?? '' ) );
-		$tariff  = sanitize_key( (string) ( $delivery['shipping_tariff_id'] ?? '' ) );
-		$rate_id = CdekWcSessionBridge::resolve_wc_rate_id_from_catalog( $method, $tariff );
-		if ( '' !== $office ) {
-			$order->update_meta_data( OrderMetaKeys::CDEK_OFFICE_CODE, $office );
-		} else {
-			$order->delete_meta_data( OrderMetaKeys::CDEK_OFFICE_CODE );
+		$office = trim( (string) ( $delivery['cdek_office_code'] ?? '' ) );
+
+		$actual_rate_id = '';
+		foreach ( $order->get_items( 'shipping' ) as $ship_item ) {
+			if ( ! $ship_item instanceof \WC_Order_Item_Shipping ) {
+				continue;
+			}
+			if ( 'official_cdek' !== $ship_item->get_method_id() ) {
+				continue;
+			}
+			$actual_rate_id = CdekWcSessionBridge::OFFICIAL_CDEK_PREFIX . (string) $ship_item->get_instance_id();
+			break;
 		}
-		if ( '' !== $rate_id && 0 === strpos( $rate_id, CdekWcSessionBridge::OFFICIAL_CDEK_PREFIX ) ) {
-			$order->update_meta_data( OrderMetaKeys::CDEK_RATE_ID, $rate_id );
-		} else {
-			$order->delete_meta_data( OrderMetaKeys::CDEK_RATE_ID );
+
+		if ( '' !== $actual_rate_id ) {
+			$order->update_meta_data( OrderMetaKeys::CDEK_RATE_ID, $actual_rate_id );
+			if ( '' !== $office ) {
+				$order->update_meta_data( OrderMetaKeys::CDEK_OFFICE_CODE, $office );
+			} else {
+				$order->delete_meta_data( OrderMetaKeys::CDEK_OFFICE_CODE );
+			}
+			return;
 		}
+
+		$order->delete_meta_data( OrderMetaKeys::CDEK_OFFICE_CODE );
+		$order->delete_meta_data( OrderMetaKeys::CDEK_RATE_ID );
+		do_action(
+			'mp_custom_checkout_log',
+			'info',
+			'[pvz] order_meta_skipped_no_cdek_line',
+			array(
+				'order_id'             => (int) $order->get_id(),
+				'flow_method'          => 'pvz',
+				'flow_office_present' => '' !== $office,
+			)
+		);
 	}
 	public static function save_conditions_summary_meta( $order, $data = array() ): void { unset( $data ); if ( ! $order instanceof \WC_Order ) { return; } $flow = CheckoutSessionService::get_flow(); $scenario = isset( $flow['scenario'] ) ? CheckoutScenarioRules::sanitize_scenario( (string) $flow['scenario'] ) : ScenarioStepRegistry::SCENARIO_PICKUP; $text = CheckoutConditionsSummaryBuilder::build_for_flow( $scenario, $flow ); $text = (string) apply_filters( 'mp_custom_checkout_order_conditions_summary', $text, $order, $scenario, $flow ); if ( '' !== trim( $text ) ) { $order->update_meta_data( OrderMetaKeys::CONDITIONS_SUMMARY, $text ); } else { $order->delete_meta_data( OrderMetaKeys::CONDITIONS_SUMMARY ); } }
 	public static function save_discounts_meta( $order, $data = array() ): void { unset( $data ); if ( ! $order instanceof \WC_Order ) { return; } $flow = CheckoutSessionService::get_flow(); $answers = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : array(); $discounts = isset( $answers['discounts'] ) && is_array( $answers['discounts'] ) ? $answers['discounts'] : array(); $coupon_codes = isset( $discounts['coupons'] ) && is_array( $discounts['coupons'] ) ? array_values( array_map( 'sanitize_text_field', $discounts['coupons'] ) ) : array(); $gift_card_codes = isset( $discounts['gift_card'] ) && is_array( $discounts['gift_card'] ) ? array_values( array_map( 'sanitize_text_field', $discounts['gift_card'] ) ) : array(); if ( ! empty( $coupon_codes ) ) { $order->update_meta_data( OrderMetaKeys::APPLIED_COUPONS, wp_json_encode( $coupon_codes ) ); } else { $order->delete_meta_data( OrderMetaKeys::APPLIED_COUPONS ); } if ( ! empty( $gift_card_codes ) ) { $order->update_meta_data( OrderMetaKeys::APPLIED_GIFT_CARDS, wp_json_encode( $gift_card_codes ) ); } else { $order->delete_meta_data( OrderMetaKeys::APPLIED_GIFT_CARDS ); } $coupon_total = (float) $order->get_discount_total(); $order->update_meta_data( OrderMetaKeys::COUPON_DISCOUNT_TOTAL, (string) $coupon_total ); $gift_total = 0.0; foreach ( $order->get_items( 'fee' ) as $item ) { if ( ! $item instanceof \WC_Order_Item_Fee ) { continue; } $name = (string) $item->get_name(); $total = (float) $item->get_total(); if ( $total >= 0 ) { continue; } $lc_name = function_exists( 'mb_strtolower' ) ? mb_strtolower( $name ) : strtolower( $name ); if ( false === strpos( $lc_name, 'gift' ) && false === strpos( $lc_name, 'подар' ) && false === strpos( $lc_name, 'pw' ) ) { continue; } $gift_total += abs( $total ); } $order->update_meta_data( OrderMetaKeys::GIFT_CARD_TOTAL, (string) $gift_total ); }

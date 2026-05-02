@@ -48,9 +48,11 @@
 
 - **Shipping line:** `method_id = official_cdek`, `instance_id` совпадает, итоговая стоимость доставки идентична.
 - **Meta на shipping item:** ключ нативного плагина (`_official_cdek_office_code` или эквивалент с подстрокой `office_code`) присутствует в обоих заказах.
-- **Доп. mp-cc meta:** на заказе из MP checkout дополнительно могут быть `_mp_cc_cdek_office_code` и `_mp_cc_cdek_rate_id` (удобно для отчётов и QA); на нативном `/zakaz/` этих ключей нет — это ожидаемо.
+- **Доп. mp-cc meta:** на заказе из MP checkout дополнительно могут быть `_mp_cc_cdek_office_code` и `_mp_cc_cdek_rate_id` (удобно для отчётов и QA); на нативном `/zakaz/` этих ключей нет — это ожидаемо. **`_mp_cc_cdek_rate_id`** берётся из **реальной** shipping line заказа (`method_id = official_cdek`, `instance_id`), а не из каталога настроек — паритет с тем, что реально попало в заказ.
 
 При успешном копировании ставки `official_cdek:*` в логах mp-cc появляется `[pvz] order_shipping_line_persisted` (поле `office_meta_present` отражает наличие meta офиса на ставке до переноса).
+
+**Гард перед созданием заказа (§29.6):** если в flow выбран метод `pvz`, но в сессии нет выбранной ставки `official_cdek:*` из пакета 0 (например после `purge_ghost_official_cdek_chosen_rate`), `submit_payment` отвечает **422** с кодом `pvz_rate_unavailable`, лог `[pvz] order_shipping_line_missing` с `phase=guard`. Defense-in-depth: если гард когда-либо обойдён, при копировании доставки без CDEK-линии — тот же лог с `phase=copy`. Если на заказе нет shipping item с `official_cdek`, оба `_mp_cc_cdek_*` **не** пишутся; лог `[pvz] order_meta_skipped_no_cdek_line`.
 
 **Acceptance ЛК СДЭК / трекинга** — проверки вне кода плагина (если на стенде нет ключей API).
 
@@ -80,7 +82,7 @@
 #### Soft-режим валидации (`pvz_office_required`)
 
 - Флаг в **Служебное → Feature flags**: `pvz_office_required` (по умолчанию **вкл.** — поведение как до §29.7: 422 `pvz_required` без офиса).
-- **Выключение:** сервер пропускает жёсткую проверку в `assert_pvz_has_office_or_fail()`; в логах info `[pvz] office_required_flag_off_skip_validation`. Только для аварийных инцидентов (поломка виджета/фронта). Клиентская подсказка «выберите ПВЗ» может оставаться — флаг влияет на **серверный** ответ.
+- **Выключение:** сервер пропускает жёсткую проверку в `assert_pvz_has_office_or_fail()`; в логах info `[pvz] office_required_flag_off_skip_validation`. Только для аварийных инцидентов (поломка виджета/фронта). **Фронт:** `isPvzMissingOfficeRequired` в [`assets/js/checkout-frontend.js`](../assets/js/checkout-frontend.js) читает тот же флаг (`state.featureFlags.pvz_office_required`, fallback `true`) — preflight «Далее» на шагах доставки не блокирует `pvz` без офиса, в паритете с сервером.
 
 ## 5. Интеграция UI ПВЗ
 

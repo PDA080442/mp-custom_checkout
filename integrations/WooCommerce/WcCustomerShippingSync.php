@@ -76,9 +76,11 @@ final class WcCustomerShippingSync {
 		$answers  = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : array();
 		$contact  = self::merge_contact_from_answers( $answers );
 		$scenario = isset( $flow['scenario'] ) ? CheckoutScenarioRules::sanitize_scenario( (string) $flow['scenario'] ) : ScenarioStepRegistry::SCENARIO_PICKUP;
+		$date_conditions = isset( $answers['date_conditions'] ) && is_array( $answers['date_conditions'] ) ? $answers['date_conditions'] : array();
+		unset( $date_conditions['cdek_office_code'] );
 		$merged_delivery = array_replace(
 			isset( $answers['step_one'] ) && is_array( $answers['step_one'] ) ? $answers['step_one'] : array(),
-			isset( $answers['date_conditions'] ) && is_array( $answers['date_conditions'] ) ? $answers['date_conditions'] : array()
+			$date_conditions
 		);
 		$scenario = CheckoutScenarioRules::elevate_scenario_if_pickup_but_carrier_method_selected( $scenario, $merged_delivery );
 
@@ -88,7 +90,41 @@ final class WcCustomerShippingSync {
 		CdekWcSessionBridge::sync_session_before_cart_totals();
 		$wc->cart->calculate_totals();
 
+		self::purge_ghost_official_cdek_chosen_rate();
 		self::log_if_chosen_shipping_not_in_packages();
+	}
+
+	/**
+	 * После пересчёта: каталог мог отдать несуществующий official_cdek:* — убираем из chosen[0], иначе заказ без shipping line (§29.3).
+	 */
+	private static function purge_ghost_official_cdek_chosen_rate(): void {
+		if ( ! function_exists( 'WC' ) || ! WC()->session ) {
+			return;
+		}
+		$session = WC()->session;
+		$chosen  = (array) $session->get( 'chosen_shipping_methods', array() );
+		$pick    = isset( $chosen[0] ) ? (string) $chosen[0] : '';
+		if ( '' === $pick || 0 !== strpos( $pick, CdekWcSessionBridge::OFFICIAL_CDEK_PREFIX ) ) {
+			return;
+		}
+		$packages = WC()->shipping()->get_packages();
+		$package  = isset( $packages[0] ) && is_array( $packages[0] ) ? $packages[0] : array();
+		$rates    = isset( $package['rates'] ) && is_array( $package['rates'] ) ? $package['rates'] : array();
+		if ( isset( $rates[ $pick ] ) ) {
+			return;
+		}
+		unset( $chosen[0] );
+		$session->set( 'chosen_shipping_methods', $chosen );
+		do_action(
+			'mp_custom_checkout_log',
+			'warning',
+			'[pvz] chosen_rate_purged_ghost',
+			array(
+				'rate_id'        => $pick,
+				'rate_id_count'  => count( array_keys( $rates ) ),
+				'rate_id_sample' => array_slice( array_map( 'strval', array_keys( $rates ) ), 0, 15 ),
+			)
+		);
 	}
 
 	private static function step_triggers_resync( string $step_id ): bool {

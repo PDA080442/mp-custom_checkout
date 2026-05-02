@@ -51,6 +51,8 @@
 	var pendingShippingMethodChoice = null;
 	/** Отложенный cdek_set_office во время shippingMutationInFlight (§29.3). */
 	var pendingCdekOfficeCode = null;
+	/** Deferred для очереди office-save: резолвится только после реального AJAX (модал карты не закрывается на «фейковом» resolve). */
+	var pendingCdekOfficeDeferred = null;
 	/** Пока идёт «Рассчитать доставку» — не даём render() убрать кнопку из-за гонки с черновиком / get_state. */
 	var shippingRecalcPending = false;
 
@@ -1646,6 +1648,17 @@
 			notify(getUiText('order_review.payment_in_progress', 'Оплата уже отправляется. Подождите.'), 'info');
 			return;
 		}
+		awaitShippingMutationFlush({ timeoutMs: 8000 }).then(function () {
+			submitFinalPaymentAfterShippingFlush(state, $app);
+		}).fail(function () {
+			notify(getUiText('order_review.shipping_still_saving', 'Подождите завершения сохранения доставки и ПВЗ.'), 'error');
+		});
+	}
+
+	function submitFinalPaymentAfterShippingFlush(state, $app) {
+		if (!state || !state.frontendStore) {
+			return;
+		}
 		if (!lockCriticalRequest('paymentSubmit')) {
 			notify(getUiText('order_review.payment_in_progress', 'Оплата уже отправляется. Подождите.'), 'info');
 			return;
@@ -1665,6 +1678,9 @@
 					recoverFromFailedPayment(state, $app, data);
 					handlePvzRequiredFailureUi(state, $app);
 					notify(trimNonEmpty(data.message) || getStepOneLabel(state, 'pvz_required', 'step_1.errors.pvz_required', 'Выберите пункт выдачи (ПВЗ), чтобы продолжить.'), 'error');
+				} else if (String(data.code || '') === 'pvz_rate_unavailable') {
+					recoverFromFailedPayment(state, $app, data);
+					notify(trimNonEmpty(data.message) || getUiText('order_review.pvz_rate_unavailable', 'Ставка доставки ПВЗ недоступна. Обновите страницу или выберите другой способ доставки.'), 'error');
 				} else {
 					recoverFromFailedPayment(state, $app, data);
 					notify(trimNonEmpty(data.message) || getUiText('order_review.payment_submit_failed', 'Не удалось отправить оплату. Попробуйте ещё раз.'), 'error');
@@ -1693,6 +1709,10 @@
 			if (String(payload.code || '') === 'pvz_required') {
 				handlePvzRequiredFailureUi(state, $app);
 				notify(trimNonEmpty(payload.message) || getStepOneLabel(state, 'pvz_required', 'step_1.errors.pvz_required', 'Выберите пункт выдачи (ПВЗ), чтобы продолжить.'), 'error');
+				return;
+			}
+			if (String(payload.code || '') === 'pvz_rate_unavailable') {
+				notify(trimNonEmpty(payload.message) || getUiText('order_review.pvz_rate_unavailable', 'Ставка доставки ПВЗ недоступна. Обновите страницу или выберите другой способ доставки.'), 'error');
 				return;
 			}
 			if (String(payload.code || '') === 'gateway_not_available') {
@@ -2299,6 +2319,12 @@
 		return !isKrasnoyarskCityLabel(cy);
 	}
 
+	/** §29.5: нормализация города для сравнения до/после (регистронезависимо), как на сервере. */
+	function normalizeCityForPvzInvalidation(value) {
+		var t = String(value === undefined || value === null ? '' : value).trim();
+		return t ? t.toLowerCase() : '';
+	}
+
 	function invalidateShippingIfNotInCatalog(state) {
 		if (!state || !state.frontendStore || !state.frontendStore.fulfillment) {
 			return;
@@ -2484,7 +2510,8 @@
 		var dateBox = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
 			? state.frontendStore.fulfillment.date
 			: {};
-		delete dateBox.cdek_office_code;
+		// Не затираем cdek_office_code здесь — syncFromFlow после выбора ПВЗ иначе «съедает» чип (§29.3).
+		// Локальная очистка офиса только при явной смене метода с pvz (applyShippingMethodUserChoice).
 		dateBox.shipping_method_id = String(selection.method_id || '');
 		dateBox.shipping_method_title = String(selection.method_title || '');
 		dateBox.shipping_tariff_id = String(selection.tariff_id || '');
@@ -5417,6 +5444,7 @@
 			url: localized.ajaxUrl,
 			method: 'POST',
 			dataType: 'json',
+			timeout: 30000,
 			data: $.extend(
 				{
 					action: 'mp_cc_checkout',
@@ -5429,6 +5457,9 @@
 		});
 		if (subAction !== 'ajax_error_log' && subAction !== 'client_error_log') {
 			request.fail(function (xhr, statusText, errorThrown) {
+				if (String(statusText || '') === 'timeout') {
+					notify(getUiText('common.ajax_timeout', 'Сервер не ответил вовремя. Попробуйте ещё раз.'), 'error');
+				}
 				var responseSnippet = '';
 				if (xhr && xhr.responseText) {
 					responseSnippet = String(xhr.responseText).slice(0, 300);
@@ -5936,10 +5967,9 @@
 					marker: 'step_transition_failed'
 				});
 				if (code === 'pvz_required') {
-					setStepInvalidState(state, 'address_delivery', true);
+					handlePvzRequiredFailureUi(state, $app);
+					logValidationFailure(state, 'address_delivery', { cdek_office_code: 'pvz_required' });
 					notify(trimNonEmpty(payload.message) || getStepOneLabel(state, 'pvz_required', 'step_1.errors.pvz_required', 'Выберите пункт выдачи (ПВЗ), чтобы продолжить.'), 'error');
-					render(state, $app);
-					scrollToFirstInvalidField($app);
 					return;
 				}
 				if (code === 'stale_context') {
@@ -6023,35 +6053,39 @@
 				return;
 			}
 			if (currentScreen.id === 'delivery_screen') {
-				var shipDateBox = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.date || {}) : {};
-				if (!trimNonEmpty(shipDateBox.shipping_method_id)) {
-					setV2StepInvalidState(state, currentScreen.id, true);
-					notify('Выберите способ доставки, чтобы продолжить.', 'error');
-					render(state, $app);
-					scrollToFirstInvalidField($app);
-					return;
-				}
-				var selectedDateV2 = state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.date
-					? String(state.frontendStore.fulfillment.date.selected_date || '')
-					: '';
-				if (!selectedDateV2 || !parseIsoDate(selectedDateV2)) {
-					setV2StepInvalidState(state, currentScreen.id, true);
-					notify(getStepThreeErrorCopy('empty_date', 'Выберите дату, чтобы продолжить.'), 'error');
-					render(state, $app);
-					scrollToFirstInvalidField($app);
-					return;
-				}
-				if (isPvzMissingOfficeRequired(state)) {
-					setV2StepInvalidState(state, currentScreen.id, true);
-					logValidationFailure(state, 'delivery_screen', { cdek_office_code: 'pvz_required' });
-					notify(getStepOneLabel(state, 'pvz_required', 'step_1.errors.pvz_required', 'Выберите пункт выдачи (ПВЗ), чтобы продолжить.'), 'error');
-					render(state, $app);
-					scrollToFirstInvalidField($app);
-					return;
-				}
-				setV2StepInvalidState(state, currentScreen.id, false);
-				saveCurrentStepDraft(state);
-				setCurrentV2Screen(state, $app, v2Idx + 1);
+				awaitShippingMutationFlush({ timeoutMs: 8000 }).then(function () {
+					var shipDateBox = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.date || {}) : {};
+					if (!trimNonEmpty(shipDateBox.shipping_method_id)) {
+						setV2StepInvalidState(state, currentScreen.id, true);
+						notify('Выберите способ доставки, чтобы продолжить.', 'error');
+						render(state, $app);
+						scrollToFirstInvalidField($app);
+						return;
+					}
+					var selectedDateV2 = state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.date
+						? String(state.frontendStore.fulfillment.date.selected_date || '')
+						: '';
+					if (!selectedDateV2 || !parseIsoDate(selectedDateV2)) {
+						setV2StepInvalidState(state, currentScreen.id, true);
+						notify(getStepThreeErrorCopy('empty_date', 'Выберите дату, чтобы продолжить.'), 'error');
+						render(state, $app);
+						scrollToFirstInvalidField($app);
+						return;
+					}
+					if (isPvzMissingOfficeRequired(state)) {
+						setV2StepInvalidState(state, currentScreen.id, true);
+						logValidationFailure(state, 'delivery_screen', { cdek_office_code: 'pvz_required' });
+						notify(getStepOneLabel(state, 'pvz_required', 'step_1.errors.pvz_required', 'Выберите пункт выдачи (ПВЗ), чтобы продолжить.'), 'error');
+						render(state, $app);
+						scrollToFirstInvalidField($app);
+						return;
+					}
+					setV2StepInvalidState(state, currentScreen.id, false);
+					saveCurrentStepDraft(state);
+					setCurrentV2Screen(state, $app, v2Idx + 1);
+				}).fail(function () {
+					notify(getUiText('order_review.shipping_still_saving', 'Подождите завершения сохранения доставки и ПВЗ.'), 'error');
+				});
 				return;
 			}
 			if (currentScreen.id === 'recipient_screen') {
@@ -6094,104 +6128,108 @@
 				return;
 			}
 		}
-		var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
-		if (currentIndex < 0) {
-			return;
-		}
-		if (currentIndex >= state.visibleSteps.length - 1) {
-			if (state.currentStepId === 'confirm') {
+		awaitShippingMutationFlush({ timeoutMs: 8000 }).then(function () {
+			var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
+			if (currentIndex < 0) {
+				return;
+			}
+			if (currentIndex >= state.visibleSteps.length - 1) {
+				if (state.currentStepId === 'confirm') {
+					ensureContactDefaults(state);
+					if (!validateContactPaymentStep(state)) {
+						setStepInvalidState(state, 'confirm', true);
+						logValidationFailure(state, 'confirm', state.frontendStore.form.errors ? state.frontendStore.form.errors.contact : {});
+						notify(getUiText('step_4.contact_error_all_required', 'Не все обязательные поля заполнены.'), 'error');
+						render(state, $app);
+						scrollToFirstInvalidField($app);
+						return;
+					}
+					setStepInvalidState(state, 'confirm', false);
+					saveCurrentStepDraft(state).fail(function () {
+						notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
+					});
+					state.frontendStore.runtime = state.frontendStore.runtime || {};
+					document.dispatchEvent(
+						new CustomEvent('mp_cc_pre_payment_confirmed', {
+							detail: {
+								context_id: state.flowContextId,
+								payment_gateway: state.frontendStore && state.frontendStore.payment ? state.frontendStore.payment.gateway : ''
+							}
+						})
+					);
+					submitFinalPayment(state, $app);
+				}
+				return;
+			}
+			var target = state.visibleSteps[currentIndex + 1];
+			var cartSummary = state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart.summary || {} : {};
+			if (state.currentStepId === 'address_delivery') {
+				if (!isAddressDeliveryStepReady(state)) {
+					state.frontendStore.form.errors = state.frontendStore.form.errors || {};
+					state.frontendStore.form.errors.shipping_method_id = 'required';
+					setStepInvalidState(state, 'address_delivery', true);
+					logValidationFailure(state, 'address_delivery', { shipping_method_id: 'required' });
+					notify(getShippingErrorCopy().methodRequired || 'Выберите способ доставки, чтобы продолжить.', 'error');
+					render(state, $app);
+					scrollToFirstInvalidField($app);
+					return;
+				}
+				if (isPvzMissingOfficeRequired(state)) {
+					state.frontendStore.form.errors = state.frontendStore.form.errors || {};
+					state.frontendStore.form.errors.cdek_office_code = 'pvz_required';
+					setStepInvalidState(state, 'address_delivery', true);
+					logValidationFailure(state, 'address_delivery', { cdek_office_code: 'pvz_required' });
+					notify(getStepOneLabel(state, 'pvz_required', 'step_1.errors.pvz_required', 'Выберите пункт выдачи (ПВЗ), чтобы продолжить.'), 'error');
+					render(state, $app);
+					scrollToFirstInvalidField($app);
+					return;
+				}
+				state.frontendStore.form.errors = state.frontendStore.form.errors || {};
+				state.frontendStore.form.errors.date = '';
+				state.frontendStore.form.errors.shipping_method_id = '';
+				state.frontendStore.form.errors.cdek_office_code = '';
+				setStepInvalidState(state, 'address_delivery', false);
+			}
+			if (state.currentStepId === 'recipient') {
+				flushContactFormFromDom(state, $app);
 				ensureContactDefaults(state);
-				if (!validateContactPaymentStep(state)) {
-					setStepInvalidState(state, 'confirm', true);
-					logValidationFailure(state, 'confirm', state.frontendStore.form.errors ? state.frontendStore.form.errors.contact : {});
+				if (!validateRecipientStep(state)) {
+					setStepInvalidState(state, 'recipient', true);
+					logValidationFailure(state, 'recipient', state.frontendStore.form.errors ? state.frontendStore.form.errors.contact : {});
 					notify(getUiText('step_4.contact_error_all_required', 'Не все обязательные поля заполнены.'), 'error');
 					render(state, $app);
 					scrollToFirstInvalidField($app);
 					return;
 				}
-				setStepInvalidState(state, 'confirm', false);
-				saveCurrentStepDraft(state).fail(function () {
-					notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
-				});
-				state.frontendStore.runtime = state.frontendStore.runtime || {};
-				document.dispatchEvent(
-					new CustomEvent('mp_cc_pre_payment_confirmed', {
-						detail: {
-							context_id: state.flowContextId,
-							payment_gateway: state.frontendStore && state.frontendStore.payment ? state.frontendStore.payment.gateway : ''
-						}
-					})
-				);
-				submitFinalPayment(state, $app);
+				setStepInvalidState(state, 'recipient', false);
 			}
-			return;
-		}
-		var target = state.visibleSteps[currentIndex + 1];
-		var cartSummary = state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart.summary || {} : {};
-		if (state.currentStepId === 'address_delivery') {
-			if (!isAddressDeliveryStepReady(state)) {
-				state.frontendStore.form.errors = state.frontendStore.form.errors || {};
-				state.frontendStore.form.errors.shipping_method_id = 'required';
-				setStepInvalidState(state, 'address_delivery', true);
-				logValidationFailure(state, 'address_delivery', { shipping_method_id: 'required' });
-				notify(getShippingErrorCopy().methodRequired || 'Выберите способ доставки, чтобы продолжить.', 'error');
-				render(state, $app);
-				scrollToFirstInvalidField($app);
-				return;
+			if (state.currentStepId === 'payment') {
+				var selectedGateway = trimNonEmpty(state.frontendStore && state.frontendStore.payment ? state.frontendStore.payment.gateway : '');
+				if (!selectedGateway) {
+					state.frontendStore.form.errors = state.frontendStore.form.errors || {};
+					state.frontendStore.form.errors.contact = state.frontendStore.form.errors.contact || {};
+					state.frontendStore.form.errors.contact.payment_gateway = 'required';
+					setStepInvalidState(state, 'payment', true);
+					notify(getUiText('step_4.payment_error_required', 'Выберите способ оплаты.'), 'error');
+					render(state, $app);
+					scrollToFirstInvalidField($app);
+					return;
+				}
+				setStepInvalidState(state, 'payment', false);
 			}
-			if (isPvzMissingOfficeRequired(state)) {
-				state.frontendStore.form.errors = state.frontendStore.form.errors || {};
-				state.frontendStore.form.errors.cdek_office_code = 'pvz_required';
-				setStepInvalidState(state, 'address_delivery', true);
-				logValidationFailure(state, 'address_delivery', { cdek_office_code: 'pvz_required' });
-				notify(getStepOneLabel(state, 'pvz_required', 'step_1.errors.pvz_required', 'Выберите пункт выдачи (ПВЗ), чтобы продолжить.'), 'error');
-				render(state, $app);
-				scrollToFirstInvalidField($app);
-				return;
-			}
-			state.frontendStore.form.errors = state.frontendStore.form.errors || {};
-			state.frontendStore.form.errors.date = '';
-			state.frontendStore.form.errors.shipping_method_id = '';
-			state.frontendStore.form.errors.cdek_office_code = '';
-			setStepInvalidState(state, 'address_delivery', false);
-		}
-		if (state.currentStepId === 'recipient') {
-			flushContactFormFromDom(state, $app);
-			ensureContactDefaults(state);
-			if (!validateRecipientStep(state)) {
-				setStepInvalidState(state, 'recipient', true);
-				logValidationFailure(state, 'recipient', state.frontendStore.form.errors ? state.frontendStore.form.errors.contact : {});
-				notify(getUiText('step_4.contact_error_all_required', 'Не все обязательные поля заполнены.'), 'error');
-				render(state, $app);
-				scrollToFirstInvalidField($app);
-				return;
-			}
-			setStepInvalidState(state, 'recipient', false);
-		}
-		if (state.currentStepId === 'payment') {
-			var selectedGateway = trimNonEmpty(state.frontendStore && state.frontendStore.payment ? state.frontendStore.payment.gateway : '');
-			if (!selectedGateway) {
-				state.frontendStore.form.errors = state.frontendStore.form.errors || {};
-				state.frontendStore.form.errors.contact = state.frontendStore.form.errors.contact || {};
-				state.frontendStore.form.errors.contact.payment_gateway = 'required';
-				setStepInvalidState(state, 'payment', true);
-				notify(getUiText('step_4.payment_error_required', 'Выберите способ оплаты.'), 'error');
-				render(state, $app);
-				scrollToFirstInvalidField($app);
-				return;
-			}
-			setStepInvalidState(state, 'payment', false);
-		}
-		requestForwardValidation(state.currentStepId).then(function (valid) {
-			if (!valid) {
-				setRuntimeFlag(state, 'blocked', true);
-				var vm = getStepFourValidationMessages();
-				notify(trimNonEmpty(vm.step_blocked) || getUiText('step_4.contact_error_step_blocked', 'Заполните обязательные поля текущего шага.'), 'error');
-				return;
-			}
-			setRuntimeFlag(state, 'blocked', false);
-			setStepInvalidState(state, state.currentStepId, false);
-			setCurrentStep(state, $app, target.id);
+			requestForwardValidation(state.currentStepId).then(function (valid) {
+				if (!valid) {
+					setRuntimeFlag(state, 'blocked', true);
+					var vm = getStepFourValidationMessages();
+					notify(trimNonEmpty(vm.step_blocked) || getUiText('step_4.contact_error_step_blocked', 'Заполните обязательные поля текущего шага.'), 'error');
+					return;
+				}
+				setRuntimeFlag(state, 'blocked', false);
+				setStepInvalidState(state, state.currentStepId, false);
+				setCurrentStep(state, $app, target.id);
+			});
+		}).fail(function () {
+			notify(getUiText('order_review.shipping_still_saving', 'Подождите завершения сохранения доставки и ПВЗ.'), 'error');
 		});
 	}
 
@@ -6335,7 +6373,10 @@
 			return state.frontendStore.cart.snapshot || {};
 		}
 		if (storageKey === 'date_conditions') {
-			return state.frontendStore.fulfillment.date || {};
+			var srcDate = state.frontendStore.fulfillment.date || {};
+			var dateCopy = $.extend({}, srcDate);
+			delete dateCopy.cdek_office_code;
+			return dateCopy;
 		}
 		if (storageKey === 'contact_billing') {
 			var rawContact = state.frontendStore.form.contact || {};
@@ -6602,6 +6643,9 @@
 	}
 
 	function isPvzMissingOfficeRequired(state) {
+		if (!isFlagEnabled(state, 'pvz_office_required', true)) {
+			return false;
+		}
 		var dateBox = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.date || {}) : {};
 		var methodId = String(dateBox.shipping_method_id || '');
 		if (methodId !== 'pvz') {
@@ -7638,10 +7682,15 @@
 			}
 			if (shippingMutationInFlight) {
 				pendingCdekOfficeCode = c;
-				return $.Deferred().resolve().promise();
+				if (!pendingCdekOfficeDeferred) {
+					pendingCdekOfficeDeferred = $.Deferred();
+				}
+				return pendingCdekOfficeDeferred.promise();
 			}
 			shippingMutationInFlight = true;
-			return postCheckout('cdek_set_office', {
+			var queuedResultDeferred = pendingCdekOfficeDeferred;
+			pendingCdekOfficeDeferred = null;
+			var pipeline = postCheckout('cdek_set_office', {
 				context_id: state.flowContextId,
 				office_code: c
 			}).then(function (response) {
@@ -7651,6 +7700,8 @@
 				var d = response.data;
 				if (d.flow) {
 					syncFromFlow(state, d.flow, d.cart || {}, paymentFieldPayloadFromAjaxData(d));
+				} else {
+					state.frontendStore.fulfillment.date.cdek_office_code = c;
 				}
 				var savedOffice = state.frontendStore.fulfillment.date && trimNonEmpty(state.frontendStore.fulfillment.date.cdek_office_code);
 				if (savedOffice) {
@@ -7658,6 +7709,7 @@
 					setV2StepInvalidState(state, 'delivery_screen', false);
 				}
 				render(state, $app);
+				return response;
 			}).fail(function () {
 				notify(getStepOneLabel(state, 'address_form.pvz_save_failed', '', 'Не удалось сохранить пункт ПВЗ. Попробуйте ещё раз.'), 'error');
 				state.frontendStore.fulfillment.date = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
@@ -7673,6 +7725,14 @@
 				shippingMutationInFlight = false;
 				flushPendingShippingMutation(state, $app, '');
 			});
+			if (queuedResultDeferred) {
+				pipeline.then(
+					function (v) { queuedResultDeferred.resolve(v); },
+					function (err) { queuedResultDeferred.reject(err); }
+				);
+				return queuedResultDeferred.promise();
+			}
+			return pipeline;
 		};
 		window.mpCcLogValidationFailure = function (stepId, errorsMap) {
 			logValidationFailure(state, stepId, errorsMap);
@@ -7801,6 +7861,47 @@
 		);
 	}
 
+	function rejectPendingCdekOfficeDeferred(reason) {
+		if (pendingCdekOfficeDeferred) {
+			try {
+				pendingCdekOfficeDeferred.reject(reason || { code: 'office_queue_cleared' });
+			} catch (rejErr) {
+				// ignore
+			}
+			pendingCdekOfficeDeferred = null;
+		}
+	}
+
+	/**
+	 * Ждём завершения цепочки способ/тариф/PVZ и сохранения города (§29.3 / §29.5): submit и «Далее» не обгоняют AJAX.
+	 * @param {{timeoutMs?: number}} opt
+	 * @return {JQuery.Promise}
+	 */
+	function awaitShippingMutationFlush(opt) {
+		opt = opt || {};
+		var timeoutMs = typeof opt.timeoutMs === 'number' ? opt.timeoutMs : 8000;
+		var dfd = $.Deferred();
+		var started = Date.now();
+		function tick() {
+			if (
+				!shippingMutationInFlight &&
+				pendingCdekOfficeCode === null &&
+				pendingShippingMethodChoice === null &&
+				pendingShippingTariffChoice === null
+			) {
+				dfd.resolve();
+				return;
+			}
+			if (Date.now() - started > timeoutMs) {
+				dfd.reject({ code: 'shipping_flush_timeout' });
+				return;
+			}
+			window.setTimeout(tick, 50);
+		}
+		tick();
+		return dfd.promise();
+	}
+
 	function flushPendingShippingMutation(state, $app, tariffMustMatchMethodId) {
 		tariffMustMatchMethodId = String(tariffMustMatchMethodId || '');
 		if (pendingShippingMethodChoice) {
@@ -7844,6 +7945,21 @@
 		pendingShippingMethodChoice = null;
 		var methods = getV2ShippingCatalog(state);
 		var dateBox = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.date || {}) : {};
+		var prevMethodIdForPvz = String(dateBox.shipping_method_id || '');
+		if (pendingCdekOfficeCode !== null && methodId !== 'pvz') {
+			pendingCdekOfficeCode = null;
+			rejectPendingCdekOfficeDeferred({ code: 'office_queue_cleared', reason: 'non_pvz_method' });
+		}
+		if (prevMethodIdForPvz === 'pvz' && methodId !== 'pvz') {
+			if (state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object') {
+				delete state.frontendStore.fulfillment.date.cdek_office_code;
+			}
+			setV2StepInvalidState(state, 'delivery_screen', false);
+			setStepInvalidState(state, 'address_delivery', false);
+			if (state.frontendStore.form.errors && state.frontendStore.form.errors.cdek_office_code) {
+				state.frontendStore.form.errors.cdek_office_code = '';
+			}
+		}
 		var selectedMethod = null;
 		for (var mi = 0; mi < methods.length; mi += 1) {
 			if (String(methods[mi].id || '') === methodId) {
@@ -7984,8 +8100,40 @@
 	}
 
 	function afterDadataContactGeocode(state, $app, touchedKeys) {
+		touchedKeys = Array.isArray(touchedKeys) ? touchedKeys : [];
+		var prevCityNorm = normalizeCityForPvzInvalidation(
+			state.frontendStore && state.frontendStore.form && state.frontendStore.form.contact
+				? state.frontendStore.form.contact.city
+				: ''
+		);
 		flushContactFormFromDom(state, $app);
-		invalidateV2DownstreamFrom(state, 1);
+		var contactAfter = state.frontendStore && state.frontendStore.form ? (state.frontendStore.form.contact || {}) : {};
+		var nextCityNorm = normalizeCityForPvzInvalidation(contactAfter.city);
+		var cityTouched = false;
+		var ci;
+		for (ci = 0; ci < touchedKeys.length; ci += 1) {
+			if (touchedKeys[ci] === 'city') {
+				cityTouched = true;
+				break;
+			}
+		}
+		if (cityTouched && prevCityNorm && nextCityNorm && prevCityNorm !== nextCityNorm) {
+			state.frontendStore.fulfillment = state.frontendStore.fulfillment || {};
+			state.frontendStore.fulfillment.date = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+				? state.frontendStore.fulfillment.date
+				: {};
+			delete state.frontendStore.fulfillment.date.cdek_office_code;
+			var summaryDd = state.frontendStore.cart && state.frontendStore.cart.summary && typeof state.frontendStore.cart.summary === 'object'
+				? state.frontendStore.cart.summary
+				: {};
+			summaryDd = $.extend({}, summaryDd);
+			summaryDd.shipping_total = 0;
+			summaryDd.shipping = '';
+			state.frontendStore.cart.summary = summaryDd;
+			invalidateV2DownstreamFrom(state, 0);
+		} else {
+			invalidateV2DownstreamFrom(state, 1);
+		}
 		scheduleCurrentStepDraftSave(state, function () {
 			notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
 		});
@@ -8494,17 +8642,13 @@
 			var city = rawCity || '';
 			state.frontendStore.form = state.frontendStore.form || {};
 			state.frontendStore.form.contact = state.frontendStore.form.contact || {};
-			var normCityPvz = function (v) {
-				var t = String(v === undefined || v === null ? '' : v).trim();
-				return t ? t.toLowerCase() : '';
-			};
-			var prevCityNorm = normCityPvz(state.frontendStore.form.contact.city);
+			var prevCityNorm = normalizeCityForPvzInvalidation(state.frontendStore.form.contact.city);
 			if (city) {
 				state.frontendStore.form.contact.city = city;
 			} else {
 				delete state.frontendStore.form.contact.city;
 			}
-			var nextCityNorm = normCityPvz(city);
+			var nextCityNorm = normalizeCityForPvzInvalidation(city);
 			if (prevCityNorm && nextCityNorm && prevCityNorm !== nextCityNorm) {
 				state.frontendStore.fulfillment = state.frontendStore.fulfillment || {};
 				state.frontendStore.fulfillment.date = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
@@ -8532,20 +8676,35 @@
 			state.frontendStore.runtime = state.frontendStore.runtime || {};
 			state.frontendStore.runtime.step1_city_editing = false;
 			render(state, $app);
-			postCheckout('session_set_answers', {
-				step_id: 'contact_payment',
-				context_id: state.flowContextId,
-				answers: state.frontendStore.form.contact || {}
-			}).fail(function () {
-				notify('Не удалось сохранить город.', 'error');
-			});
-			postCheckout('session_set_answers', {
-				step_id: 'scenario',
-				context_id: state.flowContextId,
-				answers: scenarioData
-			}).fail(function () {
-				notify('Не удалось сохранить город пункта выдачи.', 'error');
-			});
+			function sendCitySessionUpdates() {
+				shippingMutationInFlight = true;
+				var reqContact = postCheckout('session_set_answers', {
+					step_id: 'contact_payment',
+					context_id: state.flowContextId,
+					answers: state.frontendStore.form.contact || {}
+				}).fail(function () {
+					notify('Не удалось сохранить город.', 'error');
+				});
+				var reqScenario = postCheckout('session_set_answers', {
+					step_id: 'scenario',
+					context_id: state.flowContextId,
+					answers: scenarioData
+				}).fail(function () {
+					notify('Не удалось сохранить город пункта выдачи.', 'error');
+				});
+				function releaseCityMutations() {
+					shippingMutationInFlight = false;
+					flushPendingShippingMutation(state, $app, '');
+				}
+				$.when(reqContact, reqScenario).always(releaseCityMutations);
+			}
+			if (shippingMutationInFlight || pendingCdekOfficeCode !== null) {
+				awaitShippingMutationFlush({ timeoutMs: 8000 }).always(function () {
+					sendCitySessionUpdates();
+				});
+			} else {
+				sendCitySessionUpdates();
+			}
 		});
 
 		$app.find('[data-pvz-edit]').off('click').on('click', function () {

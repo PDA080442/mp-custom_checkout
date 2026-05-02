@@ -49,7 +49,7 @@
 | `custom_checkout_route` | вкл. | Использовать **кастомный маршрут** checkout плагина. |
 | `multi_step_flow` | вкл. | **Многошаговый** сценарий. |
 | `multi_pickup_points` | выкл. | Несколько **точек магазинного самовывоза** (`pickup`), если доработано — **не** относится к ПВЗ СДЭК. |
-| `pvz_office_required` | вкл. | Жёсткое требование выбрать офис при методе `pvz` (серверная валидация). Выключение — аварийный soft-режим; см. §29.7 в [cdek-mp-checkout-checklist.md](../cdek-mp-checkout-checklist.md). |
+| `pvz_office_required` | вкл. | Жёсткое требование выбрать офис при методе `pvz` (сервер и preflight «Далее» на доставке). Выключение — аварийный soft-режим; см. §29.7 в [cdek-mp-checkout-checklist.md](../cdek-mp-checkout-checklist.md). |
 | `conditions_step` | вкл. | Шаг с **условиями** (дата/согласие и т.д.). |
 | `discount_block_placement` | вкл. | Управление **размещением блока скидок**. |
 | `checkout_testing_mode` | выкл. | **Тестовый режим** оплаты (опасно на проде). |

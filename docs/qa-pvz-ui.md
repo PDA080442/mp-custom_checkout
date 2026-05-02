@@ -51,7 +51,8 @@
 
 ## §29.6 — submit order: mp-cc meta и лог shipping line
 
-1. **Заказ через `/mp-checkout/` с `pvz` и выбранным офисом:** в order meta `_mp_cc_cdek_office_code = <code>`, `_mp_cc_cdek_rate_id = official_cdek:<id>` (если в каталоге задан `wc_rate_id` для метода/тарифа). В логах info: `[pvz] order_shipping_line_persisted` с `office_meta_present=true` (когда на ставке есть meta с `office_code`).
-2. **Заказ через `/mp-checkout/` с `courier` или `post_russia`:** ключей `_mp_cc_cdek_office_code` / `_mp_cc_cdek_rate_id` нет; поведение Почты России не регрессирует.
-3. **Заказ через `/mp-checkout/` с `pickup` (магазин):** есть `PICKUP_POINT_*` при выборе точки; `_mp_cc_cdek_*` отсутствуют.
-4. **Export → import настроек:** метод `pvz` и его тарифы после импорта сохраняют `wc_rate_id` (проверка в админке каталога доставки).
+1. **Заказ через `/mp-checkout/` с `pvz` и выбранным офисом:** в order meta `_mp_cc_cdek_office_code = <code>`, **`_mp_cc_cdek_rate_id = official_cdek:<instance_id>`** из **фактической** shipping line заказа (совпадает с `method_id`/`instance_id` на строке доставки). В логах info: `[pvz] order_shipping_line_persisted` с `office_meta_present=true` (когда на ставке есть meta с `office_code`).
+2. **`pvz` выбран, но ставки `official_cdek:*` нет в пакете 0** (несовпадение `wc_rate_id` в каталоге с runtime instance плагина CDEK, ghost rate и т.п.): **submit** не создаёт заказ — ответ **422** `pvz_rate_unavailable`, в логах warning `[pvz] order_shipping_line_missing` с `phase=guard`.
+3. **Заказ через `/mp-checkout/` с `courier` или `post_russia`:** ключей `_mp_cc_cdek_office_code` / `_mp_cc_cdek_rate_id` нет; поведение Почты России не регрессирует.
+4. **Заказ через `/mp-checkout/` с `pickup` (магазин):** есть `PICKUP_POINT_*` при выборе точки; `_mp_cc_cdek_*` отсутствуют.
+5. **Export → import настроек:** метод `pvz` и его тарифы после импорта сохраняют `wc_rate_id` (проверка в админке каталога доставки).

@@ -137,6 +137,21 @@ final class CheckoutAjaxHooks {
 				if ( is_array( $flow ) && isset( $flow['answers']['date_conditions'] ) && is_array( $flow['answers']['date_conditions'] ) ) {
 					$existing_date = $flow['answers']['date_conditions'];
 				}
+				if ( array_key_exists( 'cdek_office_code', $existing_date ) ) {
+					$had_legacy_office = '' !== trim( (string) ( $existing_date['cdek_office_code'] ?? '' ) );
+					unset( $existing_date['cdek_office_code'] );
+					if ( $had_legacy_office ) {
+						do_action(
+							'mp_custom_checkout_log',
+							'warning',
+							'[pvz] existing_date_office_dropped_pre_merge',
+							array(
+								'step_id'   => $step_id,
+								'had_value' => true,
+							)
+						);
+					}
+				}
 				// Частичный payload (напр. только с шага «условия») дополняем сохранённым date_conditions.
 				$answers = array_replace_recursive( $existing_date, $answers );
 				// Дата выбирается на отдельном шаге (если включён). Для address_delivery валидируем только доставку.
@@ -373,10 +388,11 @@ final class CheckoutAjaxHooks {
 	 * Контракт полей и жизненный цикл: docs/pvz-data-contract.md (§29.1).
 	 */
 	private static function handle_cdek_set_office(): void {
-		$flow     = CheckoutSessionService::get_flow();
-		$step_one = isset( $flow['answers']['step_one'] ) && is_array( $flow['answers']['step_one'] ) ? $flow['answers']['step_one'] : array();
-		$code     = isset( $_POST['office_code'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['office_code'] ) ) : '';
-		$posted_ctx = isset( $_POST['context_id'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['context_id'] ) ) : '';
+		$flow          = CheckoutSessionService::get_flow();
+		$step_one      = isset( $flow['answers']['step_one'] ) && is_array( $flow['answers']['step_one'] ) ? $flow['answers']['step_one'] : array();
+		$step_one_before = $step_one;
+		$code          = isset( $_POST['office_code'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['office_code'] ) ) : '';
+		$posted_ctx    = isset( $_POST['context_id'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['context_id'] ) ) : '';
 
 		if ( '' !== $code && ! self::is_valid_cdek_office_code_format( $code ) ) {
 			$office_fp = substr( $code, 0, 4 ) . ':' . (string) strlen( $code );
@@ -402,7 +418,8 @@ final class CheckoutAjaxHooks {
 		}
 
 		if ( '' === $code ) {
-			unset( $step_one['cdek_office_code'] );
+			// Явная пустая строка — иначе array_replace в set_step_answers оставит старый код (ключ из unset отсутствует в payload).
+			$step_one['cdek_office_code'] = '';
 		} else {
 			$step_one['cdek_office_code'] = $code;
 		}
@@ -423,7 +440,29 @@ final class CheckoutAjaxHooks {
 				'office_fp'           => $office_fp,
 			)
 		);
-		WcCustomerShippingSync::after_session_set_answers( ScenarioStepRegistry::STEP_ADDRESS_DELIVERY );
+		try {
+			WcCustomerShippingSync::after_session_set_answers( ScenarioStepRegistry::STEP_ADDRESS_DELIVERY );
+		} catch ( \Throwable $e ) {
+			CheckoutSessionService::set_step_answers( ScenarioStepRegistry::STEP_ADDRESS_DELIVERY, $step_one_before );
+			$flow_after = CheckoutSessionService::get_flow();
+			do_action(
+				'mp_custom_checkout_log',
+				'error',
+				'[pvz] office_save_wc_sync_failed',
+				array(
+					'exception_class'   => get_class( $e ),
+					'office_fp'         => $office_fp,
+					'context_id_flow'   => is_array( $flow_after ) && isset( $flow_after['context_id'] ) ? (string) $flow_after['context_id'] : '',
+				)
+			);
+			wp_send_json_error(
+				array(
+					'code'    => 'wc_sync_failed',
+					'message' => __( 'Не удалось синхронизировать доставку с корзиной. Попробуйте ещё раз.', 'mp-custom-checkout' ),
+				),
+				500
+			);
+		}
 		wp_send_json_success(
 			array(
 				'sub_action' => 'cdek_set_office',
@@ -690,6 +729,7 @@ final class CheckoutAjaxHooks {
 		if ( ! $session instanceof \WC_Session ) {
 			return;
 		}
+		$cdek_lines_added = 0;
 		$packages = WC()->shipping()->get_packages();
 		$chosen   = (array) $session->get( 'chosen_shipping_methods', array() );
 		foreach ( $packages as $pkg_key => $package ) {
@@ -729,6 +769,7 @@ final class CheckoutAjaxHooks {
 			}
 			$order->add_item( $item );
 			if ( 0 === strpos( (string) $rate_id, CdekWcSessionBridge::OFFICIAL_CDEK_PREFIX ) ) {
+				$cdek_lines_added++;
 				$office_meta_present = false;
 				foreach ( $rate->get_meta_data() as $m ) {
 					if ( ! $m instanceof \WC_Meta_Data ) {
@@ -753,6 +794,25 @@ final class CheckoutAjaxHooks {
 				);
 			}
 		}
+		if ( 0 === $cdek_lines_added ) {
+			$flow     = CheckoutSessionService::get_flow();
+			$delivery = CdekWcSessionBridge::get_merged_delivery_answers( is_array( $flow ) ? $flow : array() );
+			$ship_mid = isset( $delivery['shipping_method_id'] ) ? sanitize_key( (string) $delivery['shipping_method_id'] ) : '';
+			if ( 'pvz' === $ship_mid ) {
+				$tariff = isset( $delivery['shipping_tariff_id'] ) ? sanitize_key( (string) $delivery['shipping_tariff_id'] ) : '';
+				do_action(
+					'mp_custom_checkout_log',
+					'warning',
+					'[pvz] order_shipping_line_missing',
+					array(
+						'phase'           => 'copy',
+						'order_id'        => (int) $order->get_id(),
+						'expected_method' => 'pvz',
+						'expected_tariff' => $tariff,
+					)
+				);
+			}
+		}
 	}
 
 	private static function create_order_from_cart_and_answers( array $contact, string $gateway ): ?\WC_Order {
@@ -760,6 +820,8 @@ final class CheckoutAjaxHooks {
 			return null;
 		}
 		WcCustomerShippingSync::before_create_order_from_cart();
+		$flow_for_guard = CheckoutSessionService::get_flow();
+		self::assert_pvz_rate_available_or_fail( is_array( $flow_for_guard ) ? $flow_for_guard : array() );
 		$order = wc_create_order();
 		if ( ! $order instanceof \WC_Order ) {
 			return null;
@@ -906,15 +968,83 @@ final class CheckoutAjaxHooks {
 			'warning',
 			'[validation] step_failed',
 			array(
-				'step_id'    => sanitize_key( $log_step_id ),
-				'errors'     => array( 'cdek_office_code' => 'pvz_required' ),
-				'context_id' => $ctx,
+				'step_id'             => sanitize_key( $log_step_id ),
+				'errors'              => array( 'cdek_office_code' => 'pvz_required' ),
+				'context_id'          => $ctx,
+				'shipping_method_id'  => isset( $delivery['shipping_method_id'] ) ? (string) $delivery['shipping_method_id'] : '',
+				'shipping_tariff_id'  => isset( $delivery['shipping_tariff_id'] ) ? (string) $delivery['shipping_tariff_id'] : '',
+				'scenario'            => isset( $flow['scenario'] ) ? (string) $flow['scenario'] : '',
 			)
 		);
 		wp_send_json_error(
 			array(
 				'code'    => 'pvz_required',
 				'message' => __( 'Выберите пункт выдачи (ПВЗ), чтобы продолжить.', 'mp-custom-checkout' ),
+			),
+			422
+		);
+	}
+
+	/**
+	 * §29.6: метод pvz требует выбранную в сессии ставку official_cdek:* из пакета 0 (иначе заказ без shipping line).
+	 *
+	 * @param array<string, mixed> $flow Raw flow from CheckoutSessionService::get_flow().
+	 */
+	private static function assert_pvz_rate_available_or_fail( array $flow ): void {
+		$delivery = CdekWcSessionBridge::get_merged_delivery_answers( $flow );
+		$method   = isset( $delivery['shipping_method_id'] ) ? sanitize_key( (string) $delivery['shipping_method_id'] ) : '';
+		if ( 'pvz' !== $method ) {
+			return;
+		}
+		if ( ! function_exists( 'WC' ) || ! WC()->shipping() || ! WC()->session instanceof \WC_Session ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'warning',
+				'[pvz] order_shipping_line_missing',
+				array(
+					'phase'   => 'guard',
+					'step_id' => 'confirm',
+					'reason'  => 'wc_session_or_shipping_unavailable',
+				)
+			);
+			wp_send_json_error(
+				array(
+					'code'    => 'pvz_rate_unavailable',
+					'message' => __( 'Ставка доставки ПВЗ недоступна. Обновите страницу или выберите другой способ доставки.', 'mp-custom-checkout' ),
+				),
+				422
+			);
+		}
+		$tariff           = sanitize_key( (string) ( $delivery['shipping_tariff_id'] ?? '' ) );
+		$expected_rate_id = CdekWcSessionBridge::resolve_wc_rate_id_from_catalog( $method, $tariff );
+		$chosen           = (array) WC()->session->get( 'chosen_shipping_methods', array() );
+		$picked           = isset( $chosen[0] ) ? (string) $chosen[0] : '';
+		$packages         = WC()->shipping()->get_packages();
+		$package0         = isset( $packages[0] ) && is_array( $packages[0] ) ? $packages[0] : array();
+		$rates            = isset( $package0['rates'] ) && is_array( $package0['rates'] ) ? $package0['rates'] : array();
+		$prefix           = CdekWcSessionBridge::OFFICIAL_CDEK_PREFIX;
+		$picked_ok        = '' !== $picked && 0 === strpos( $picked, $prefix ) && isset( $rates[ $picked ] );
+		if ( $picked_ok ) {
+			return;
+		}
+		$rate_keys = array_keys( $rates );
+		do_action(
+			'mp_custom_checkout_log',
+			'warning',
+			'[pvz] order_shipping_line_missing',
+			array(
+				'phase'              => 'guard',
+				'step_id'            => 'confirm',
+				'expected_rate_id'   => $expected_rate_id,
+				'chosen_method_id'   => $picked,
+				'rate_id_count'      => count( $rate_keys ),
+				'rate_id_sample'     => array_slice( array_map( 'strval', $rate_keys ), 0, 15 ),
+			)
+		);
+		wp_send_json_error(
+			array(
+				'code'    => 'pvz_rate_unavailable',
+				'message' => __( 'Ставка доставки ПВЗ недоступна. Обновите страницу или выберите другой способ доставки.', 'mp-custom-checkout' ),
 			),
 			422
 		);
