@@ -169,6 +169,10 @@ final class CheckoutSessionService {
 		if ( 'contact_billing' === $storage_key ) {
 			$prev_contact = isset( $current['contact_billing'] ) && is_array( $current['contact_billing'] ) ? $current['contact_billing'] : array();
 			$current[ $storage_key ] = array_replace( $prev_contact, $sanitized_answers );
+		} elseif ( 'step_one' === $storage_key ) {
+			// Частичный session_set_answers не должен затирать cdek_office_code и прочие поля шага (§29.1 docs/pvz-data-contract.md).
+			$prev_step = isset( $current['step_one'] ) && is_array( $current['step_one'] ) ? $current['step_one'] : array();
+			$current[ $storage_key ] = array_replace( $prev_step, $sanitized_answers );
 		} else {
 			$current[ $storage_key ] = $sanitized_answers;
 		}

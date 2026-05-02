@@ -9,6 +9,7 @@ namespace MP\CustomCheckout\Checkout\Hooks;
 
 use MP\CustomCheckout\DependencyFailureGuard;
 use MP\CustomCheckout\Hooks\CheckoutRouteHooks;
+use MP\CustomCheckout\Integrations\WooCommerce\CdekWcSessionBridge;
 use MP\CustomCheckout\Integrations\WooCommerce\GiftCardIntegration;
 use MP\CustomCheckout\Integrations\WooCommerce\WcCustomerShippingSync;
 use MP\CustomCheckout\Routing\CheckoutDateAvailabilityEngine;
@@ -356,6 +357,8 @@ final class CheckoutAjaxHooks {
 
 	/**
 	 * Сохраняет код ПВЗ СДЭК в flow (`answers.step_one.cdek_office_code`) и в WC-сессии плагина (`official_cdek_office_code`).
+	 *
+	 * Контракт полей и жизненный цикл: docs/pvz-data-contract.md (§29.1).
 	 */
 	private static function handle_cdek_set_office(): void {
 		$flow     = CheckoutSessionService::get_flow();
@@ -367,6 +370,23 @@ final class CheckoutAjaxHooks {
 			$step_one['cdek_office_code'] = $code;
 		}
 		CheckoutSessionService::set_step_answers( ScenarioStepRegistry::STEP_ADDRESS_DELIVERY, $step_one );
+		$flow_ctx = CheckoutSessionService::get_flow();
+		$delivery = CdekWcSessionBridge::get_merged_delivery_answers( is_array( $flow_ctx ) ? $flow_ctx : array() );
+		$posted_ctx = isset( $_POST['context_id'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['context_id'] ) ) : '';
+		$office_fp  = '' === $code ? 'cleared' : ( substr( $code, 0, 4 ) . ':' . (string) strlen( $code ) );
+		do_action(
+			'mp_custom_checkout_log',
+			'info',
+			'[pvz] office_session_update',
+			array(
+				'source'              => 'ajax',
+				'event_type'          => 'pvz_office_saved',
+				'context_id_posted'   => $posted_ctx,
+				'context_id_flow'     => is_array( $flow_ctx ) && isset( $flow_ctx['context_id'] ) ? (string) $flow_ctx['context_id'] : '',
+				'shipping_method_id'  => isset( $delivery['shipping_method_id'] ) ? (string) $delivery['shipping_method_id'] : '',
+				'office_fp'           => $office_fp,
+			)
+		);
 		WcCustomerShippingSync::after_session_set_answers( ScenarioStepRegistry::STEP_ADDRESS_DELIVERY );
 		wp_send_json_success(
 			array(

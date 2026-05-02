@@ -28,6 +28,8 @@
 
 ## 3. Сессия и данные flow
 
+Полный контракт ПВЗ (слияние `step_one`, `context_id`, заказ, логи): [pvz-data-contract.md](./pvz-data-contract.md).
+
 | Ключ | Назначение |
 |------|------------|
 | `WC()->session['official_cdek_office_code']` | Код ПВЗ для расчёта и пакетов (как `SaveOfficeToSessionAction`) |

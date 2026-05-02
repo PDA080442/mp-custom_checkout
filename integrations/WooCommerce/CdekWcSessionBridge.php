@@ -2,6 +2,8 @@
 /**
  * Синхронизация WC-сессии СДЭК (official_cdek) и chosen_shipping_methods с ответами MP checkout (§28 / план CDEK).
  *
+ * Карта полей ПВЗ и жизненный цикл: `docs/pvz-data-contract.md` (§29.1).
+ *
  * @package MP_Custom_Checkout
  */
 
