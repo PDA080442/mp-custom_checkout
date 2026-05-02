@@ -6681,13 +6681,47 @@
 		var officeRowLabelDefault = selectedMethodId === 'pvz' ? 'адрес пвз' : 'адрес офиса';
 		html += '<span class="mp-cc-address-form__label">' + escapeHtml(getStepOneLabel(state, officeRowLabelKey, '', officeRowLabelDefault)) + '</span>';
 		html += '<div class="mp-cc-address-form__control">';
-		if (pvzEditMode) {
-			var pickupCfg = getPickupConfig();
-			var points = pickupCfg.points || [];
-			if (points.length > 1) {
+		var pickupCfgRow = getPickupConfig();
+		var pointsRow = pickupCfgRow.points || [];
+		if (selectedMethodId === 'pvz') {
+			var wcfgPvz = (typeof window.mpCcCdekWidget !== 'undefined' && window.mpCcCdekWidget) ? window.mpCcCdekWidget : {};
+			var cdekOffice = trimNonEmpty(dateBox.cdek_office_code);
+			var pvzStatusText = cdekOffice
+				? getStepOneLabel(state, 'address_form.pvz_cdek_selected', '', 'ПВЗ СДЭК') + ': ' + cdekOffice
+				: getStepOneLabel(state, 'address_form.pvz_cdek_not_set', '', officeNotSet);
+			html += '<div class="mp-cc-pvz-card" role="status" aria-live="polite">';
+			html += '<span class="mp-cc-address-form__value mp-cc-pvz-card__status">' + escapeHtml(pvzStatusText) + '</span>';
+			html += '</div>';
+			html += '<div class="mp-cc-pvz-card__actions">';
+			html += '<button type="button" class="mp-cc-address-form__edit" data-pvz-open-picker aria-haspopup="dialog">';
+			html += escapeHtml(getStepOneLabel(state, 'address_form.pvz_choose_point_button', '', 'Выбрать пункт')) + '</button>';
+			if (wcfgPvz.map_ready) {
+				html += '<button type="button" class="mp-cc-address-form__edit mp-cc-pvz-card__map" data-pvz-open-map aria-haspopup="dialog">';
+				html += escapeHtml(getStepOneLabel(state, 'address_form.pvz_open_map_button', '', 'Выбрать пункт на карте')) + '</button>';
+			}
+			html += '</div>';
+			var pvzShowInlineList = wcfgPvz.fallback === true;
+			if (pvzShowInlineList && pvzEditMode && pointsRow.length > 1) {
 				html += '<div class="mp-cc-address-form__pvz-list">';
-				for (i = 0; i < points.length; i += 1) {
-					var item = points[i] || {};
+				for (i = 0; i < pointsRow.length; i += 1) {
+					var itemPvz = pointsRow[i] || {};
+					var itemIdPvz = String(itemPvz.id || '');
+					var isPointCheckedPvz = point && String(point.id || '') === itemIdPvz;
+					html += '<label class="mp-cc-address-form__pvz-item">';
+					html += '<input type="radio" name="mp-cc-pvz-point" data-pvz-point="' + escapeHtml(itemIdPvz) + '"' + (isPointCheckedPvz ? ' checked' : '') + '>';
+					html += '<span>' + escapeHtml(String(itemPvz.address || itemPvz.title || itemIdPvz)) + '</span>';
+					html += '</label>';
+				}
+				html += '</div>';
+			} else if (pvzShowInlineList && !pvzEditMode && pointsRow.length > 1) {
+				html += '<button type="button" class="mp-cc-address-form__edit" data-pvz-edit>';
+				html += escapeHtml(getStepOneLabel(state, 'address_form.pvz_shop_list_button', '', 'Список точек магазина')) + '</button>';
+			}
+		} else if (pvzEditMode) {
+			if (pointsRow.length > 1) {
+				html += '<div class="mp-cc-address-form__pvz-list">';
+				for (i = 0; i < pointsRow.length; i += 1) {
+					var item = pointsRow[i] || {};
 					var itemId = String(item.id || '');
 					var isPointChecked = point && String(point.id || '') === itemId;
 					html += '<label class="mp-cc-address-form__pvz-item">';
@@ -6701,6 +6735,10 @@
 			}
 		} else {
 			html += '<span class="mp-cc-address-form__value">' + escapeHtml(pointAddress) + '</span>';
+			if (selectedMethodId === 'pickup' && pointsRow.length > 1) {
+				html += ' <button type="button" class="mp-cc-address-form__edit" data-pvz-edit>';
+				html += escapeHtml(getStepOneLabel(state, 'address_form.pickup_change_point', '', 'Изменить точку')) + '</button>';
+			}
 		}
 		html += '</div>';
 		html += '</div>';
@@ -7515,6 +7553,9 @@
 				}
 				render(state, $app);
 			});
+		};
+		window.mpCcLogValidationFailure = function (stepId, errorsMap) {
+			logValidationFailure(state, stepId, errorsMap);
 		};
 		ensureV2ScreenState(state);
 		var $parcel = $(selectors.parcel);
@@ -8367,6 +8408,66 @@
 			state.frontendStore.runtime = state.frontendStore.runtime || {};
 			state.frontendStore.runtime.step1_pvz_editing = true;
 			render(state, $app);
+		});
+
+		function applyModalPickupPoint(pointId) {
+			var pid = String(pointId || '');
+			if (!pid) {
+				return;
+			}
+			var pt = getPickupPointById(pid);
+			if (!pt) {
+				return;
+			}
+			state.frontendStore.fulfillment = state.frontendStore.fulfillment || {};
+			state.frontendStore.fulfillment.scenarioData = state.frontendStore.fulfillment.scenarioData || {};
+			state.frontendStore.fulfillment.scenarioData.pickup_point = pt;
+			state.frontendStore.runtime = state.frontendStore.runtime || {};
+			state.frontendStore.runtime.step1_pvz_editing = false;
+			render(state, $app);
+			postCheckout('session_set_answers', {
+				step_id: 'scenario',
+				context_id: state.flowContextId,
+				answers: state.frontendStore.fulfillment.scenarioData || {}
+			}).fail(function () {
+				notify(getStepOneLabel(state, 'address_form.pvz_save_pickup_failed', '', 'Не удалось сохранить адрес ПВЗ.'), 'error');
+			});
+		}
+
+		$app.find('[data-pvz-open-map]').off('click.mpCcPvzMap').on('click.mpCcPvzMap', function () {
+			if (!window.MPCC_CDEKWidgetBridge || typeof window.MPCC_CDEKWidgetBridge.open !== 'function') {
+				notify(getStepOneLabel(state, 'address_form.pvz_map_bridge_missing', '', 'Не удалось открыть выбор пункта. Обновите страницу.'), 'error');
+				return;
+			}
+			var pickupCfgMap = getPickupConfig();
+			var ptsMap = pickupCfgMap.points || [];
+			window.MPCC_CDEKWidgetBridge.open({
+				mode: 'map',
+				trigger: this,
+				pickupPoints: ptsMap,
+				logValidationFailure: function (errorsMap) {
+					logValidationFailure(state, 'address_delivery', errorsMap);
+				},
+				onPickupPointChosen: applyModalPickupPoint
+			});
+		});
+
+		$app.find('[data-pvz-open-picker]').off('click.mpCcPvzPick').on('click.mpCcPvzPick', function () {
+			if (!window.MPCC_CDEKWidgetBridge || typeof window.MPCC_CDEKWidgetBridge.open !== 'function') {
+				notify(getStepOneLabel(state, 'address_form.pvz_map_bridge_missing', '', 'Не удалось открыть выбор пункта. Обновите страницу.'), 'error');
+				return;
+			}
+			var pickupCfgPick = getPickupConfig();
+			var ptsPick = pickupCfgPick.points || [];
+			window.MPCC_CDEKWidgetBridge.open({
+				mode: 'list',
+				trigger: this,
+				pickupPoints: ptsPick,
+				logValidationFailure: function (errorsMap) {
+					logValidationFailure(state, 'address_delivery', errorsMap);
+				},
+				onPickupPointChosen: applyModalPickupPoint
+			});
 		});
 
 		$app.find('[data-pvz-point]').off('change').on('change', function () {

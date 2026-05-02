@@ -10,6 +10,7 @@ namespace MP\CustomCheckout\Frontend\Hooks;
 use MP\CustomCheckout\DependencyFailureGuard;
 use MP\CustomCheckout\Hooks\CheckoutRouteHooks;
 use MP\CustomCheckout\Routing\PickupPointRegistry;
+use MP\CustomCheckout\Integrations\WooCommerce\CdekMpCheckoutWidgetConfig;
 use MP\CustomCheckout\Integrations\WooCommerce\GiftCardIntegration;
 use MP\CustomCheckout\Routing\CheckoutScenarioRules;
 use MP\CustomCheckout\Settings\DefaultLabelsRegistry;
@@ -25,6 +26,7 @@ final class FrontendAssetsHooks {
 
 	public const HANDLE_STYLE  = 'mp-cc-checkout-frontend';
 	public const HANDLE_SCRIPT = 'mp-cc-checkout-frontend';
+	public const HANDLE_CDEK_BRIDGE = 'mp-cc-cdek-widget-bridge';
 
 	public static function register(): void {
 		// Раньше основного enqueue: без этого при отложенном CSS (оптимизаторы темы / RUCSS)
@@ -71,10 +73,27 @@ final class FrontendAssetsHooks {
 		wp_add_inline_style( self::HANDLE_STYLE, self::build_checkout_layout_css() );
 		wp_add_inline_style( self::HANDLE_STYLE, self::build_motion_runtime_css() );
 
-		wp_enqueue_script( self::HANDLE_SCRIPT, MP_CUSTOM_CHECKOUT_URL . 'assets/js/checkout-frontend.js', self::script_dependencies(), $version, true );
+		$mp_ctx          = isset( $GLOBALS['mp_cc_checkout_context'] ) && is_array( $GLOBALS['mp_cc_checkout_context'] ) ? $GLOBALS['mp_cc_checkout_context'] : array();
+		$checkout_flow   = isset( $mp_ctx['checkout_flow'] ) && is_array( $mp_ctx['checkout_flow'] ) ? $mp_ctx['checkout_flow'] : null;
+		$cdek_widget_cfg = CdekMpCheckoutWidgetConfig::build_for_frontend( $checkout_flow );
+
+		self::maybe_register_cdek_widget_bundle( $cdek_widget_cfg );
+
+		$script_deps = self::script_dependencies();
+		if ( wp_script_is( 'cdek-widget', 'registered' ) && ! empty( $cdek_widget_cfg['map_ready'] ) ) {
+			wp_enqueue_script( 'cdek-widget' );
+			$script_deps[] = 'cdek-widget';
+		}
+
+		wp_enqueue_script( self::HANDLE_SCRIPT, MP_CUSTOM_CHECKOUT_URL . 'assets/js/checkout-frontend.js', array_values( array_unique( $script_deps ) ), $version, true );
 		$initial_context = isset( $GLOBALS['mp_cc_checkout_context'] ) && is_array( $GLOBALS['mp_cc_checkout_context'] )
 			? $GLOBALS['mp_cc_checkout_context']
 			: array();
+		wp_localize_script(
+			self::HANDLE_SCRIPT,
+			'mpCcCdekWidget',
+			$cdek_widget_cfg
+		);
 		wp_localize_script(
 			self::HANDLE_SCRIPT,
 			'mpCcCheckout',
@@ -111,7 +130,77 @@ final class FrontendAssetsHooks {
 				'dadata'                       => self::dadata_runtime_settings(),
 			)
 		);
+
+		$bridge_path = MP_CUSTOM_CHECKOUT_PATH . 'assets/js/cdek-widget-bridge.js';
+		if ( is_readable( $bridge_path ) ) {
+			$bridge_ver = (string) max( (int) filemtime( $bridge_path ), (int) filemtime( $script_path ) );
+			$bridge_deps = array( 'jquery', self::HANDLE_SCRIPT );
+			if ( wp_script_is( 'cdek-widget', 'registered' ) && ! empty( $cdek_widget_cfg['map_ready'] ) ) {
+				$bridge_deps[] = 'cdek-widget';
+			}
+			wp_enqueue_script(
+				self::HANDLE_CDEK_BRIDGE,
+				MP_CUSTOM_CHECKOUT_URL . 'assets/js/cdek-widget-bridge.js',
+				array_values( array_unique( $bridge_deps ) ),
+				MP_CUSTOM_CHECKOUT_VERSION . '-' . $bridge_ver,
+				true
+			);
+		}
 		do_action( 'mp_custom_checkout_enqueue_frontend_assets' );
+	}
+
+	/**
+	 * Регистрирует UMD CDEK Widget 3.x из официального плагина (handle `cdek-widget`, глобал `window.cdek` через wp_localize).
+	 *
+	 * @param array<string, mixed> $cdek_widget_cfg
+	 */
+	private static function maybe_register_cdek_widget_bundle( array $cdek_widget_cfg ): void {
+		if ( empty( $cdek_widget_cfg['map_ready'] ) ) {
+			return;
+		}
+		if ( class_exists( '\Cdek\UI\CdekWidget', false ) ) {
+			\Cdek\UI\CdekWidget::registerScripts();
+			return;
+		}
+		if ( ! class_exists( '\Cdek\Loader', false ) ) {
+			return;
+		}
+		$rel = 'build/cdek-widget.umd.js';
+		$abs = \Cdek\Loader::getPluginPath( $rel );
+		if ( ! is_readable( $abs ) ) {
+			return;
+		}
+		$url = \Cdek\Loader::getPluginUrl( $rel );
+		if ( ! is_string( $url ) || '' === $url ) {
+			return;
+		}
+		$mtime = is_readable( $abs ) ? (int) filemtime( $abs ) : 0;
+		wp_register_script(
+			'cdek-widget',
+			esc_url_raw( $url ),
+			array(),
+			$mtime > 0 ? (string) $mtime : false,
+			true
+		);
+		if ( function_exists( 'WC' ) && class_exists( '\Cdek\ShippingMethod', false ) && class_exists( '\WC_AJAX', false ) && class_exists( '\Cdek\Config', false ) ) {
+			try {
+				$shipping = \Cdek\ShippingMethod::factory();
+			} catch ( \Throwable $e ) {
+				return;
+			}
+			$locale = function_exists( 'get_user_locale' ) ? (string) get_user_locale() : '';
+			$lang   = ( 0 === mb_strpos( $locale, 'en' ) ) ? 'eng' : 'rus';
+			wp_localize_script(
+				'cdek-widget',
+				'cdek',
+				array(
+					'key'   => isset( $shipping->yandex_map_api_key ) ? (string) $shipping->yandex_map_api_key : '',
+					'close' => ! empty( $shipping->map_auto_close ),
+					'lang'  => $lang,
+					'saver' => \WC_AJAX::get_endpoint( \Cdek\Config::DELIVERY_NAME . '_save-office' ),
+				)
+			);
+		}
 	}
 
 	/**
