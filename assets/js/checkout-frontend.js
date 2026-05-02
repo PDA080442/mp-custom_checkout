@@ -1567,6 +1567,24 @@
 		saveCurrentStepDraft(state);
 	}
 
+	/** §29.4: после отказа сервера submit_payment — подсветка ПВЗ и возврат на экран доставки в V2. */
+	function handlePvzRequiredFailureUi(state, $app) {
+		setStepInvalidState(state, 'address_delivery', true);
+		setV2StepInvalidState(state, 'delivery_screen', true);
+		if (isV2CheckoutUiEnabled(state)) {
+			ensureV2ScreenState(state);
+			var i;
+			for (i = 0; i < state.v2Screens.length; i += 1) {
+				if (state.v2Screens[i].id === 'delivery_screen') {
+					state.v2CurrentIndex = i;
+					break;
+				}
+			}
+		}
+		render(state, $app);
+		scrollToFirstInvalidField($app);
+	}
+
 	function recoverFromStepAjaxFailure(state, $app, fallbackMessage) {
 		setRuntimeFlag(state, 'blocked', false);
 		syncStoreWithBackend(state, $app, { force: true }).always(function () {
@@ -1640,6 +1658,19 @@
 			context_id: state.flowContextId
 		}).then(function (response) {
 			var data = response && response.data ? response.data : {};
+			if (!response || !response.success) {
+				state.frontendStore.runtime.paymentSubmitting = false;
+				state.frontendStore.payment.state = 'error';
+				if (String(data.code || '') === 'pvz_required') {
+					recoverFromFailedPayment(state, $app, data);
+					handlePvzRequiredFailureUi(state, $app);
+					notify(trimNonEmpty(data.message) || getStepOneLabel(state, 'pvz_required', 'step_1.errors.pvz_required', 'Выберите пункт выдачи (ПВЗ), чтобы продолжить.'), 'error');
+				} else {
+					recoverFromFailedPayment(state, $app, data);
+					notify(trimNonEmpty(data.message) || getUiText('order_review.payment_submit_failed', 'Не удалось отправить оплату. Попробуйте ещё раз.'), 'error');
+				}
+				return;
+			}
 			state.frontendStore.runtime.paymentSubmitting = false;
 			state.frontendStore.payment.state = 'success';
 			if (data.flow || data.cart) {
@@ -1659,6 +1690,11 @@
 		}).fail(function (xhr) {
 			var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
 			recoverFromFailedPayment(state, $app, payload);
+			if (String(payload.code || '') === 'pvz_required') {
+				handlePvzRequiredFailureUi(state, $app);
+				notify(trimNonEmpty(payload.message) || getStepOneLabel(state, 'pvz_required', 'step_1.errors.pvz_required', 'Выберите пункт выдачи (ПВЗ), чтобы продолжить.'), 'error');
+				return;
+			}
 			if (String(payload.code || '') === 'gateway_not_available') {
 				notify(getUiText('order_review.gateway_unavailable', 'Выбранный gateway недоступен. Выберите другой способ оплаты.'), 'error');
 			}
@@ -5883,8 +5919,15 @@
 					marker: 'step_transition_ok'
 				});
 				return $.Deferred().resolve().promise();
-			}).fail(function (xhr) {
-				var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
+			}).fail(function (xhrOrResponse) {
+				var payload = {};
+				var httpStatus = 0;
+				if (xhrOrResponse && xhrOrResponse.responseJSON && xhrOrResponse.responseJSON.data) {
+					payload = xhrOrResponse.responseJSON.data;
+					httpStatus = typeof xhrOrResponse.status === 'number' ? xhrOrResponse.status : 0;
+				} else if (xhrOrResponse && xhrOrResponse.data && xhrOrResponse.success === false) {
+					payload = xhrOrResponse.data && typeof xhrOrResponse.data === 'object' ? xhrOrResponse.data : {};
+				}
 				var code = payload.code ? String(payload.code) : '';
 				postCheckout('validation_log', {
 					step_id: targetStepId,
@@ -5892,11 +5935,18 @@
 					errors: { transition: code || 'step_transition_failed' },
 					marker: 'step_transition_failed'
 				});
+				if (code === 'pvz_required') {
+					setStepInvalidState(state, 'address_delivery', true);
+					notify(trimNonEmpty(payload.message) || getStepOneLabel(state, 'pvz_required', 'step_1.errors.pvz_required', 'Выберите пункт выдачи (ПВЗ), чтобы продолжить.'), 'error');
+					render(state, $app);
+					scrollToFirstInvalidField($app);
+					return;
+				}
 				if (code === 'stale_context') {
 					recoverFromInvalidSessionState(state, $app);
 					return;
 				}
-				if (xhr && xhr.status === 422) {
+				if (httpStatus === 422) {
 					notify(payload.message || getUiText('common.error_generic', 'Произошла ошибка. Попробуйте ещё раз.'), 'error');
 				} else {
 					recoverFromStepAjaxFailure(state, $app, getStepFourAjaxMessage('step_sync_failed', 'step_4.contact_ajax_step_sync_failed', 'Не удалось синхронизировать шаг. Обновите страницу.'));
@@ -5991,6 +6041,14 @@
 					scrollToFirstInvalidField($app);
 					return;
 				}
+				if (isPvzMissingOfficeRequired(state)) {
+					setV2StepInvalidState(state, currentScreen.id, true);
+					logValidationFailure(state, 'delivery_screen', { cdek_office_code: 'pvz_required' });
+					notify(getStepOneLabel(state, 'pvz_required', 'step_1.errors.pvz_required', 'Выберите пункт выдачи (ПВЗ), чтобы продолжить.'), 'error');
+					render(state, $app);
+					scrollToFirstInvalidField($app);
+					return;
+				}
 				setV2StepInvalidState(state, currentScreen.id, false);
 				saveCurrentStepDraft(state);
 				setCurrentV2Screen(state, $app, v2Idx + 1);
@@ -6081,9 +6139,20 @@
 				scrollToFirstInvalidField($app);
 				return;
 			}
+			if (isPvzMissingOfficeRequired(state)) {
+				state.frontendStore.form.errors = state.frontendStore.form.errors || {};
+				state.frontendStore.form.errors.cdek_office_code = 'pvz_required';
+				setStepInvalidState(state, 'address_delivery', true);
+				logValidationFailure(state, 'address_delivery', { cdek_office_code: 'pvz_required' });
+				notify(getStepOneLabel(state, 'pvz_required', 'step_1.errors.pvz_required', 'Выберите пункт выдачи (ПВЗ), чтобы продолжить.'), 'error');
+				render(state, $app);
+				scrollToFirstInvalidField($app);
+				return;
+			}
 			state.frontendStore.form.errors = state.frontendStore.form.errors || {};
 			state.frontendStore.form.errors.date = '';
 			state.frontendStore.form.errors.shipping_method_id = '';
+			state.frontendStore.form.errors.cdek_office_code = '';
 			setStepInvalidState(state, 'address_delivery', false);
 		}
 		if (state.currentStepId === 'recipient') {
@@ -6532,6 +6601,16 @@
 		return html;
 	}
 
+	function isPvzMissingOfficeRequired(state) {
+		var dateBox = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.date || {}) : {};
+		var methodId = String(dateBox.shipping_method_id || '');
+		if (methodId !== 'pvz') {
+			return false;
+		}
+		var office = String(dateBox.cdek_office_code || '').trim();
+		return office === '';
+	}
+
 	function isAddressDeliveryStepReady(state) {
 		var methods = getV2ShippingCatalog(state);
 		var dateBox = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.date || {}) : {};
@@ -6691,14 +6770,19 @@
 			var pvzStatusText = cdekOffice
 				? getStepOneLabel(state, 'address_form.pvz_cdek_selected', '', 'ПВЗ СДЭК') + ': ' + cdekOffice
 				: getStepOneLabel(state, 'address_form.pvz_cdek_not_set', '', officeNotSet);
+			var rtPvzInv = runtime && typeof runtime === 'object' ? runtime : {};
+			var invMapV2Pvz = rtPvzInv.invalid_v2_steps && typeof rtPvzInv.invalid_v2_steps === 'object' ? rtPvzInv.invalid_v2_steps : {};
+			var invMapLegacyPvz = rtPvzInv.invalid_steps && typeof rtPvzInv.invalid_steps === 'object' ? rtPvzInv.invalid_steps : {};
+			var pvzBlockInvalid = Boolean(invMapV2Pvz.delivery_screen || invMapLegacyPvz.address_delivery);
+			var pvzInvalidAttr = pvzBlockInvalid ? ' aria-invalid="true" data-pvz-required="1"' : '';
 			html += '<div class="mp-cc-pvz-card" role="status" aria-live="polite">';
 			html += '<span class="mp-cc-address-form__value mp-cc-pvz-card__status">' + escapeHtml(pvzStatusText) + '</span>';
 			html += '</div>';
 			html += '<div class="mp-cc-pvz-card__actions">';
-			html += '<button type="button" class="mp-cc-address-form__edit" data-pvz-open-picker aria-haspopup="dialog">';
+			html += '<button type="button" class="mp-cc-address-form__edit" data-pvz-open-picker aria-haspopup="dialog"' + pvzInvalidAttr + '>';
 			html += escapeHtml(getStepOneLabel(state, 'address_form.pvz_choose_point_button', '', 'Выбрать пункт')) + '</button>';
 			if (wcfgPvz.map_ready) {
-				html += '<button type="button" class="mp-cc-address-form__edit mp-cc-pvz-card__map" data-pvz-open-map aria-haspopup="dialog">';
+				html += '<button type="button" class="mp-cc-address-form__edit mp-cc-pvz-card__map" data-pvz-open-map aria-haspopup="dialog"' + pvzInvalidAttr + '>';
 				html += escapeHtml(getStepOneLabel(state, 'address_form.pvz_open_map_button', '', 'Выбрать пункт на карте')) + '</button>';
 			}
 			html += '</div>';
@@ -7567,6 +7651,11 @@
 				var d = response.data;
 				if (d.flow) {
 					syncFromFlow(state, d.flow, d.cart || {}, paymentFieldPayloadFromAjaxData(d));
+				}
+				var savedOffice = state.frontendStore.fulfillment.date && trimNonEmpty(state.frontendStore.fulfillment.date.cdek_office_code);
+				if (savedOffice) {
+					setStepInvalidState(state, 'address_delivery', false);
+					setV2StepInvalidState(state, 'delivery_screen', false);
 				}
 				render(state, $app);
 			}).fail(function () {

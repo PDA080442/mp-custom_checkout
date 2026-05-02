@@ -89,6 +89,18 @@ final class CheckoutAjaxHooks {
 			if ( ! $manager->can_navigate_to( $step_id ) ) {
 				wp_send_json_error( array( 'code' => 'invalid_step_navigation', 'message' => __( 'Переход на указанный шаг недоступен.', 'mp-custom-checkout' ) ), 400 );
 			}
+			$current_step_id = $manager->get_current_step_id();
+			$visible         = $manager->get_visible_step_ids();
+			$target_idx      = array_search( $step_id, $visible, true );
+			$current_idx     = null !== $current_step_id ? array_search( $current_step_id, $visible, true ) : false;
+			if (
+				'address_delivery' === $current_step_id
+				&& false !== $current_idx
+				&& false !== $target_idx
+				&& (int) $target_idx > (int) $current_idx
+			) {
+				self::assert_pvz_has_office_or_fail( is_array( $flow ) ? $flow : array(), 'address_delivery' );
+			}
 			CheckoutSessionService::set_current_step( $step_id );
 			wp_send_json_success(
 				array(
@@ -539,6 +551,7 @@ final class CheckoutAjaxHooks {
 			wp_send_json_error( array( 'code' => 'empty_cart', 'message' => __( 'Корзина пуста. Невозможно отправить оплату.', 'mp-custom-checkout' ) ), 422 );
 		}
 		$flow    = CheckoutSessionService::get_flow();
+		self::assert_pvz_has_office_or_fail( is_array( $flow ) ? $flow : array(), 'confirm' );
 		$answers = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : array();
 		$contact = isset( $answers['contact_billing'] ) && is_array( $answers['contact_billing'] ) ? $answers['contact_billing'] : array();
 		$gateway = isset( $contact['payment_gateway'] ) ? sanitize_key( (string) $contact['payment_gateway'] ) : '';
@@ -833,6 +846,42 @@ final class CheckoutAjaxHooks {
 			do_action( 'mp_custom_checkout_log', 'error', '[date_sync] selected_date_not_available', array( 'selected_date' => $selected_date, 'scenario' => $scenario ) );
 		}
 		return $is_valid;
+	}
+
+	/**
+	 * §29.4: блокируем переход / оплату при выборе ПВЗ без кода офиса CDEK.
+	 *
+	 * @param array<string, mixed> $flow Raw flow from CheckoutSessionService::get_flow().
+	 */
+	private static function assert_pvz_has_office_or_fail( array $flow, string $log_step_id ): void {
+		$answers  = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : array();
+		$delivery = isset( $answers['date_conditions'] ) && is_array( $answers['date_conditions'] ) ? $answers['date_conditions'] : array();
+		$method   = isset( $delivery['shipping_method_id'] ) ? sanitize_key( (string) $delivery['shipping_method_id'] ) : '';
+		if ( 'pvz' !== $method ) {
+			return;
+		}
+		$office = isset( $delivery['cdek_office_code'] ) ? trim( (string) $delivery['cdek_office_code'] ) : '';
+		if ( '' !== $office ) {
+			return;
+		}
+		$ctx = isset( $_POST['context_id'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['context_id'] ) ) : '';
+		do_action(
+			'mp_custom_checkout_log',
+			'warning',
+			'[validation] step_failed',
+			array(
+				'step_id'    => sanitize_key( $log_step_id ),
+				'errors'     => array( 'cdek_office_code' => 'pvz_required' ),
+				'context_id' => $ctx,
+			)
+		);
+		wp_send_json_error(
+			array(
+				'code'    => 'pvz_required',
+				'message' => __( 'Выберите пункт выдачи (ПВЗ), чтобы продолжить.', 'mp-custom-checkout' ),
+			),
+			422
+		);
 	}
 
 	/** @param array<string, mixed> $answers */
