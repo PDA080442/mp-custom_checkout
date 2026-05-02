@@ -81,3 +81,15 @@ MP **не** дублирует произвольный список meta СДЭ
 
 - `MP\CustomCheckout\Integrations\WooCommerce\CdekWcSessionBridge::SESSION_OFFICE_KEY` = `official_cdek_office_code`  
 - `CdekWcSessionBridge::OFFICIAL_CDEK_PREFIX` = `official_cdek:`
+
+---
+
+## 9. §29.3 — порядок сохранения, сериализация, ошибки
+
+Чек-лист (без изменения логики `post_russia`):
+
+1. **Ordering сервера:** `handle_cdek_set_office` → `CheckoutSessionService::set_step_answers( address_delivery, step_one )` → `WcCustomerShippingSync::after_session_set_answers` → `CdekWcSessionBridge::sync_session_before_cart_totals` → `WC_Cart::calculate_totals()` (см. `CheckoutAjaxHooks::handle_cdek_set_office`).
+2. **Запись WC-сессии без лишних перезаписей:** `CdekWcSessionBridge::sync_session_before_cart_totals` обновляет `official_cdek_office_code` и `chosen_shipping_methods[0]` только если значение изменилось (меньше шумных пересчётов при смене ПВЗ в том же городе).
+3. **Валидация кода на AJAX:** непустой `office_code` должен удовлетворять мягкому формату (длина 1–32, `[A-Za-z0-9_-]`); иначе **400** `invalid_office_code`, лог `event_type` = `pvz_office_save_failed`, flow **не** меняется.
+4. **Фронт:** `window.mpCcSetCdekOfficeCode` использует общий флаг `shippingMutationInFlight` с выбором метода/тарифа; при конфликте офис ставится в очередь `pendingCdekOfficeCode` и отправляется после завершения цепочки доставки; повтор того же кода после trim — **no-op** без AJAX; при ответе с `success: false` или HTTP-ошибке — notify, локальный откат `cdek_office_code`, `syncStoreWithBackend({ force: true })`.
+5. **Виджет карты:** двойной `onChoose` блокируется флагом `chosenInFlight` в `cdek-widget-bridge.js`; успешное закрытие модала только после успешного deferred от `mpCcSetCdekOfficeCode`.

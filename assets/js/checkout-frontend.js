@@ -49,6 +49,8 @@
 	var pendingShippingTariffChoice = null;
 	/** Отложенный выбор другого способа доставки (иначе радио/кнопка «залипают» визуально при гонке AJAX). */
 	var pendingShippingMethodChoice = null;
+	/** Отложенный cdek_set_office во время shippingMutationInFlight (§29.3). */
+	var pendingCdekOfficeCode = null;
 	/** Пока идёт «Рассчитать доставку» — не даём render() убрать кнопку из-за гонки с черновиком / get_state. */
 	var shippingRecalcPending = false;
 
@@ -7536,22 +7538,51 @@
 	function render(state, $app) {
 		window.__mpCcCheckoutContextId = state && state.flowContextId ? String(state.flowContextId) : '';
 		window.mpCcSetCdekOfficeCode = function (code) {
-			var c = code === undefined || code === null ? '' : String(code);
+			var c = code === undefined || code === null ? '' : String(code).trim();
 			if (!state || !state.flowContextId) {
 				return $.Deferred().reject({ message: 'MP checkout: no context' }).promise();
 			}
+			state.frontendStore.fulfillment = state.frontendStore.fulfillment || {};
+			state.frontendStore.fulfillment.date = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+				? state.frontendStore.fulfillment.date
+				: {};
+			var dateBoxOffice = state.frontendStore.fulfillment.date;
+			var prevRaw = dateBoxOffice.cdek_office_code;
+			var prevOffice = prevRaw === undefined || prevRaw === null ? '' : String(prevRaw).trim();
+			if (c === prevOffice) {
+				return $.Deferred().resolve().promise();
+			}
+			if (shippingMutationInFlight) {
+				pendingCdekOfficeCode = c;
+				return $.Deferred().resolve().promise();
+			}
+			shippingMutationInFlight = true;
 			return postCheckout('cdek_set_office', {
 				context_id: state.flowContextId,
 				office_code: c
 			}).then(function (response) {
 				if (!response || !response.success || !response.data) {
-					return;
+					return $.Deferred().reject(response || {}).promise();
 				}
 				var d = response.data;
 				if (d.flow) {
 					syncFromFlow(state, d.flow, d.cart || {}, paymentFieldPayloadFromAjaxData(d));
 				}
 				render(state, $app);
+			}).fail(function () {
+				notify(getStepOneLabel(state, 'address_form.pvz_save_failed', '', 'Не удалось сохранить пункт ПВЗ. Попробуйте ещё раз.'), 'error');
+				state.frontendStore.fulfillment.date = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+					? state.frontendStore.fulfillment.date
+					: {};
+				if (prevOffice) {
+					state.frontendStore.fulfillment.date.cdek_office_code = prevOffice;
+				} else {
+					delete state.frontendStore.fulfillment.date.cdek_office_code;
+				}
+				syncStoreWithBackend(state, $app, { force: true });
+			}).always(function () {
+				shippingMutationInFlight = false;
+				flushPendingShippingMutation(state, $app, '');
 			});
 		};
 		window.mpCcLogValidationFailure = function (stepId, errorsMap) {
@@ -7699,6 +7730,14 @@
 			}
 			pendingShippingTariffChoice = null;
 			applyShippingTariffUserChoice(state, $app, q.methodId, q.tariffId);
+			return;
+		}
+		if (pendingCdekOfficeCode !== null) {
+			var cdekQueued = pendingCdekOfficeCode;
+			pendingCdekOfficeCode = null;
+			if (typeof window.mpCcSetCdekOfficeCode === 'function') {
+				window.mpCcSetCdekOfficeCode(cdekQueued);
+			}
 		}
 	}
 

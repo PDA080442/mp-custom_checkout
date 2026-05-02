@@ -210,6 +210,7 @@
 		}
 		var ctx = {
 			chosenThisOpen: false,
+			chosenInFlight: false,
 			widgetInstance: null,
 			logValidationFailure: opts.logValidationFailure,
 			onKey: null
@@ -285,15 +286,23 @@
 				canChoose: true,
 				sender: false,
 				onChoose: function (_type, _tariff, address) {
-					ctx.chosenThisOpen = true;
+					if (ctx.chosenInFlight) {
+						return;
+					}
 					var code = address && address.code ? String(address.code) : '';
-					if (code && typeof window.mpCcSetCdekOfficeCode === 'function') {
-						window.mpCcSetCdekOfficeCode(code).then(function () {
+					if (!code || typeof window.mpCcSetCdekOfficeCode !== 'function') {
+						$err.text(labels.map_pick_failed || 'Не удалось получить код пункта.');
+						return;
+					}
+					ctx.chosenInFlight = true;
+					window.mpCcSetCdekOfficeCode(code)
+						.always(function () {
+							ctx.chosenInFlight = false;
+						})
+						.then(function () {
+							ctx.chosenThisOpen = true;
 							closeModal(ctx, true);
 						});
-					} else {
-						$err.text(labels.map_pick_failed || 'Не удалось получить код пункта.');
-					}
 				}
 			});
 		} catch (err) {

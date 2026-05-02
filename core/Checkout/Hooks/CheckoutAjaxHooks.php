@@ -364,6 +364,31 @@ final class CheckoutAjaxHooks {
 		$flow     = CheckoutSessionService::get_flow();
 		$step_one = isset( $flow['answers']['step_one'] ) && is_array( $flow['answers']['step_one'] ) ? $flow['answers']['step_one'] : array();
 		$code     = isset( $_POST['office_code'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['office_code'] ) ) : '';
+		$posted_ctx = isset( $_POST['context_id'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['context_id'] ) ) : '';
+
+		if ( '' !== $code && ! self::is_valid_cdek_office_code_format( $code ) ) {
+			$office_fp = substr( $code, 0, 4 ) . ':' . (string) strlen( $code );
+			do_action(
+				'mp_custom_checkout_log',
+				'warning',
+				'[pvz] office_save_failed',
+				array(
+					'source'             => 'ajax',
+					'event_type'         => 'pvz_office_save_failed',
+					'context_id_posted'  => $posted_ctx,
+					'office_fp'          => $office_fp,
+					'reason'             => 'invalid_office_code_format',
+				)
+			);
+			wp_send_json_error(
+				array(
+					'code'    => 'invalid_office_code',
+					'message' => __( 'Некорректный код пункта выдачи.', 'mp-custom-checkout' ),
+				),
+				400
+			);
+		}
+
 		if ( '' === $code ) {
 			unset( $step_one['cdek_office_code'] );
 		} else {
@@ -372,7 +397,6 @@ final class CheckoutAjaxHooks {
 		CheckoutSessionService::set_step_answers( ScenarioStepRegistry::STEP_ADDRESS_DELIVERY, $step_one );
 		$flow_ctx = CheckoutSessionService::get_flow();
 		$delivery = CdekWcSessionBridge::get_merged_delivery_answers( is_array( $flow_ctx ) ? $flow_ctx : array() );
-		$posted_ctx = isset( $_POST['context_id'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['context_id'] ) ) : '';
 		$office_fp  = '' === $code ? 'cleared' : ( substr( $code, 0, 4 ) . ':' . (string) strlen( $code ) );
 		do_action(
 			'mp_custom_checkout_log',
@@ -395,6 +419,18 @@ final class CheckoutAjaxHooks {
 				'cart'       => CheckoutRouteContext::get_cart_data(),
 			)
 		);
+	}
+
+	/**
+	 * Мягкая проверка формата кода ПВЗ СДЭК (§29.3): длина 1–32, безопасный charset.
+	 */
+	private static function is_valid_cdek_office_code_format( string $code ): bool {
+		$len = strlen( $code );
+		if ( $len < 1 || $len > 32 ) {
+			return false;
+		}
+
+		return (bool) preg_match( '/^[A-Za-z0-9_-]+$/', $code );
 	}
 
 	/**

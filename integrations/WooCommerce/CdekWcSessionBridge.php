@@ -84,10 +84,10 @@ final class CdekWcSessionBridge {
 		$rate_id = self::resolve_wc_rate_id_from_catalog( $method_id, $tariff_id );
 		$is_cdek = ( '' !== $rate_id && 0 === strpos( $rate_id, self::OFFICIAL_CDEK_PREFIX ) );
 
-		if ( 'pvz' === $method_id && $is_cdek && '' !== $office ) {
-			$session->set( self::SESSION_OFFICE_KEY, $office );
-		} else {
-			$session->set( self::SESSION_OFFICE_KEY, '' );
+		$target_office = ( 'pvz' === $method_id && $is_cdek && '' !== $office ) ? $office : '';
+		$current_office = (string) $session->get( self::SESSION_OFFICE_KEY, '' );
+		if ( $current_office !== $target_office ) {
+			$session->set( self::SESSION_OFFICE_KEY, $target_office );
 		}
 
 		if ( ! $cart->needs_shipping() ) {
@@ -96,12 +96,17 @@ final class CdekWcSessionBridge {
 
 		$chosen = (array) $session->get( 'chosen_shipping_methods', array() );
 		if ( '' === $rate_id ) {
-			unset( $chosen[0] );
-			$session->set( 'chosen_shipping_methods', $chosen );
+			if ( array_key_exists( 0, $chosen ) ) {
+				unset( $chosen[0] );
+				$session->set( 'chosen_shipping_methods', $chosen );
+			}
 
 			return;
 		}
-		$chosen[0] = $rate_id;
-		$session->set( 'chosen_shipping_methods', $chosen );
+		$current_rate = isset( $chosen[0] ) ? (string) $chosen[0] : '';
+		if ( $current_rate !== $rate_id ) {
+			$chosen[0] = $rate_id;
+			$session->set( 'chosen_shipping_methods', $chosen );
+		}
 	}
 }
