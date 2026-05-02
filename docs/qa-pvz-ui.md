@@ -46,3 +46,12 @@
 2. **`pvz` → `courier` → снова `pvz`**: офис не подтягивается из flow после промежуточного не-ПВЗ метода (сервер чистит `step_one.cdek_office_code` при записи метода ≠ `pvz`).
 3. **`pickup` (магазинный самовывоз)**: сценарий и точки магазина не затрагиваются правкой (меняется только ключ `cdek_office_code` в `step_one`).
 4. **`post_russia`**: без изменений поведения тарифов/почты; при смене города контакта при активном `pvz` офис сбрасывается так же, как для любого другого метода с ПВЗ.
+
+---
+
+## §29.6 — submit order: mp-cc meta и лог shipping line
+
+1. **Заказ через `/mp-checkout/` с `pvz` и выбранным офисом:** в order meta `_mp_cc_cdek_office_code = <code>`, `_mp_cc_cdek_rate_id = official_cdek:<id>` (если в каталоге задан `wc_rate_id` для метода/тарифа). В логах info: `[pvz] order_shipping_line_persisted` с `office_meta_present=true` (когда на ставке есть meta с `office_code`).
+2. **Заказ через `/mp-checkout/` с `courier` или `post_russia`:** ключей `_mp_cc_cdek_office_code` / `_mp_cc_cdek_rate_id` нет; поведение Почты России не регрессирует.
+3. **Заказ через `/mp-checkout/` с `pickup` (магазин):** есть `PICKUP_POINT_*` при выборе точки; `_mp_cc_cdek_*` отсутствуют.
+4. **Export → import настроек:** метод `pvz` и его тарифы после импорта сохраняют `wc_rate_id` (проверка в админке каталога доставки).

@@ -21,6 +21,10 @@ final class OrderMetaKeys {
 	public const PICKUP_POINT_DESCRIPTION = '_mp_cc_pickup_point_description';
 	public const PICKUP_POINT_PAYLOAD     = '_mp_cc_pickup_point_payload';
 
+	// CDEK PVZ (official_cdek rate): snapshot from MP flow for QA / reporting — не дублирует meta самой ставки на shipping item.
+	public const CDEK_OFFICE_CODE = '_mp_cc_cdek_office_code';
+	public const CDEK_RATE_ID     = '_mp_cc_cdek_rate_id';
+
 	// Selected fulfillment date.
 	public const SELECTED_DATE       = '_mp_cc_selected_date';
 	public const SELECTED_DATE_LABEL = '_mp_cc_selected_date_label';
@@ -68,6 +72,8 @@ final class OrderMetaKeys {
 			self::PICKUP_POINT_ADDRESS,
 			self::PICKUP_POINT_DESCRIPTION,
 			self::PICKUP_POINT_PAYLOAD,
+			self::CDEK_OFFICE_CODE,
+			self::CDEK_RATE_ID,
 			self::SELECTED_DATE,
 			self::SELECTED_DATE_LABEL,
 			self::CONDITIONS_CONFIRMED,

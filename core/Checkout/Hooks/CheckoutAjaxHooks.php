@@ -728,6 +728,30 @@ final class CheckoutAjaxHooks {
 				}
 			}
 			$order->add_item( $item );
+			if ( 0 === strpos( (string) $rate_id, CdekWcSessionBridge::OFFICIAL_CDEK_PREFIX ) ) {
+				$office_meta_present = false;
+				foreach ( $rate->get_meta_data() as $m ) {
+					if ( ! $m instanceof \WC_Meta_Data ) {
+						continue;
+					}
+					$k = (string) ( $m->get_data()['key'] ?? '' );
+					if ( false !== strpos( $k, 'office_code' ) ) {
+						$office_meta_present = true;
+						break;
+					}
+				}
+				do_action(
+					'mp_custom_checkout_log',
+					'info',
+					'[pvz] order_shipping_line_persisted',
+					array(
+						'order_id'            => (int) $order->get_id(),
+						'rate_id'             => (string) $rate_id,
+						'instance_id'         => (string) $rate->get_instance_id(),
+						'office_meta_present' => $office_meta_present,
+					)
+				);
+			}
 		}
 	}
 
@@ -857,6 +881,19 @@ final class CheckoutAjaxHooks {
 		$delivery = CdekWcSessionBridge::get_merged_delivery_answers( $flow );
 		$method   = isset( $delivery['shipping_method_id'] ) ? sanitize_key( (string) $delivery['shipping_method_id'] ) : '';
 		if ( 'pvz' !== $method ) {
+			return;
+		}
+		if ( ! FeatureFlagResolver::is_enabled( DefaultFeatureFlagsRegistry::FLAG_PVZ_OFFICE_REQUIRED, true ) ) {
+			$ctx = isset( $_POST['context_id'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['context_id'] ) ) : '';
+			do_action(
+				'mp_custom_checkout_log',
+				'info',
+				'[pvz] office_required_flag_off_skip_validation',
+				array(
+					'step_id'    => sanitize_key( $log_step_id ),
+					'context_id' => $ctx,
+				)
+			);
 			return;
 		}
 		$office = isset( $delivery['cdek_office_code'] ) ? trim( (string) $delivery['cdek_office_code'] ) : '';

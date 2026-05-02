@@ -42,6 +42,46 @@
 
 Перед созданием заказа вызывается `WcCustomerShippingSync::before_create_order_from_cart()` (контакт в customer + bridge + `calculate_totals()` корзины). На заказ копируются **shipping lines** из пакетов корзины вместе с **meta ставки** (`copy_cart_shipping_to_order`), чтобы поведение было ближе к нативному checkout.
 
+### §29.6 — паритет заказа с ПВЗ (side-by-side и импорт)
+
+**Side-by-side `/zakaz/` и `/mp-checkout/`:** оформите одинаковую корзину и один и тот же ПВЗ на обоих URL и сравните заказы:
+
+- **Shipping line:** `method_id = official_cdek`, `instance_id` совпадает, итоговая стоимость доставки идентична.
+- **Meta на shipping item:** ключ нативного плагина (`_official_cdek_office_code` или эквивалент с подстрокой `office_code`) присутствует в обоих заказах.
+- **Доп. mp-cc meta:** на заказе из MP checkout дополнительно могут быть `_mp_cc_cdek_office_code` и `_mp_cc_cdek_rate_id` (удобно для отчётов и QA); на нативном `/zakaz/` этих ключей нет — это ожидаемо.
+
+При успешном копировании ставки `official_cdek:*` в логах mp-cc появляется `[pvz] order_shipping_line_persisted` (поле `office_meta_present` отражает наличие meta офиса на ставке до переноса).
+
+**Acceptance ЛК СДЭК / трекинга** — проверки вне кода плагина (если на стенде нет ключей API).
+
+**Export → import конфигурации:** после round-trip файла `mp-cc-config-*.json` у каждого метода и тарифа в каталоге должны сохраниться строковые `wc_rate_id`. Санитизация при импорте: `admin/Hooks/AdminMenuHooks.php`, `normalize_delivery_settings()` — для метода и каждого тарифа `wc_rate_id` проходит через `sanitize_text_field` (формат `official_cdek:<instance>`).
+
+### §29.7 — Ops, флаги, kill switch
+
+#### Map API rate sanity
+
+- Запросы к API СДЭК (офисы / тарифы внутри виджета) идут **из виджета CDEK Widget 3.x** по `apiKey` и `servicePath` ([`assets/js/cdek-widget-bridge.js`](../assets/js/cdek-widget-bridge.js)) — лимиты и квоты задаёт СДЭК, не наш PHP.
+- Наш бэкенд получает только финальный AJAX `cdek_set_office` — по сути **один запрос на успешный выбор ПВЗ**; есть защита от повторов: `chosenInFlight` в bridge, `shippingMutationInFlight` и очередь отложенного офиса в [`assets/js/checkout-frontend.js`](../assets/js/checkout-frontend.js).
+- Модалка карты singleton (`activeModal`), повторная инициализация виджета на одно открытие не дублируется.
+
+#### Лог-плейбук `chosen_method_not_in_rates`
+
+- **Источник:** [`integrations/WooCommerce/WcCustomerShippingSync.php`](../integrations/WooCommerce/WcCustomerShippingSync.php) — `mp_custom_checkout_log`, уровень `warning`, сообщение с префиксом `[wc_customer_shipping_sync] chosen_method_not_in_rates`.
+- **Поля:** `package_index`, `chosen_method_id`, `rate_id_count`, `rate_id_sample` (до 15 id ставок пакета).
+- **Алерт:** зафиксировать baseline по частоте до/после релиза ПВЗ; тревога при заметном росте (например по grep в файле логов плагина или по агрегации в вашей системе логов — поминутно/почасово).
+- **Типичные причины:** неверный `wc_rate_id` в каталоге относительно активного `instance_id` в WooCommerce; метод СДЭК отключён в WC, но метод `pvz` активен у нас; расхождение зон доставки. **Шаги:** проверить `delivery.shipping_catalog.methods.*.wc_rate_id` и тарифы, зоны WC, при необходимости export/import конфигурации.
+
+#### Kill switch ПВЗ через каталог (без деплоя кода)
+
+- В админке плагина: **Доставка** → каталог методов → для метода **`pvz`** снять флаг **active** → сохранить настройки. Реализация фильтра: [`core/Checkout/Hooks/CheckoutAjaxHooks.php`](../core/Checkout/Hooks/CheckoutAjaxHooks.php), `shipping_catalog()` — неактивные методы не попадают в выдачу чекаута.
+- На витрине метод ПВЗ исчезает из выбора; валидация `pvz_required` для этого метода не применяется, пока клиент не выберет другой доступный метод.
+- Уже сохранённый в сессии `cdek_office_code` при отключении метода сам по себе не очищается, но используется только при `shipping_method_id === pvz`.
+
+#### Soft-режим валидации (`pvz_office_required`)
+
+- Флаг в **Служебное → Feature flags**: `pvz_office_required` (по умолчанию **вкл.** — поведение как до §29.7: 422 `pvz_required` без офиса).
+- **Выключение:** сервер пропускает жёсткую проверку в `assert_pvz_has_office_or_fail()`; в логах info `[pvz] office_required_flag_off_skip_validation`. Только для аварийных инцидентов (поломка виджета/фронта). Клиентская подсказка «выберите ПВЗ» может оставаться — флаг влияет на **серверный** ответ.
+
 ## 5. Интеграция UI ПВЗ
 
 Встроенной карты СДЭК на странице MP может не быть. Минимальный контракт:

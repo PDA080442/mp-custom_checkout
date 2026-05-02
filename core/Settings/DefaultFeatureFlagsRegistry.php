@@ -22,6 +22,9 @@ final class DefaultFeatureFlagsRegistry {
 
 	public const FLAG_MULTI_PICKUP_POINTS = 'multi_pickup_points';
 
+	/** Серверная проверка: при методе `pvz` требуется выбранный офис (§29.7). Выключение — аварийный soft-режим. */
+	public const FLAG_PVZ_OFFICE_REQUIRED = 'pvz_office_required';
+
 	public const FLAG_CONDITIONS_STEP = 'conditions_step';
 
 	public const FLAG_DISCOUNT_BLOCK_PLACEMENT = 'discount_block_placement';
@@ -41,6 +44,7 @@ final class DefaultFeatureFlagsRegistry {
 			self::FLAG_CHECKOUT_UI_V2            => false,
 			self::FLAG_MULTI_STEP_FLOW           => true,
 			self::FLAG_MULTI_PICKUP_POINTS       => false,
+			self::FLAG_PVZ_OFFICE_REQUIRED       => true,
 			self::FLAG_CONDITIONS_STEP           => true,
 			self::FLAG_DISCOUNT_BLOCK_PLACEMENT  => true,
 			self::FLAG_CHECKOUT_TESTING_MODE     => false,
