@@ -31,6 +31,8 @@
 - `hideDeliveryOptions: { door: true }`
 - `onChoose(_type, _tariff, address)` → `address.code`
 
+В прод-сборке WooCommerce виджет открывается как **`popup: true`** без `root`: виджет сам рисует оверлей и карту. **Inline-режим** (`popup: false` + `root`) в MP-checkout **не используется** — в UMD-сборке карта в нашем модале оставалась пустой; паритет с эталоном — **нативный попап** [`assets/js/cdek-widget-bridge.js`](../assets/js/cdek-widget-bridge.js) (`openNativeCdekPopup`).
+
 ## 4. `servicePath` (виджет 3.x) — опционально для MP
 
 В типах npm-пакета `@cdek-it/widget` поле **`servicePath`** часто помечено как обязательное; на **фактическом WooCommerce-checkout официального плагина** виджет создаётся **без** него: скрипт `cdek-checkout-map.js` вызывает `new CDEKWidget({ apiKey: window.cdek.key, lang, defaultLocation, officesRaw, hideDeliveryOptions: { door: true }, onChoose, popup: true })` — без `servicePath` (сверить с собранным JS в каталоге плагина СДЭК на хостинге).
@@ -39,7 +41,8 @@
 
 1. **`map_ready`** в [`CdekMpCheckoutWidgetConfig.php`](../integrations/WooCommerce/CdekMpCheckoutWidgetConfig.php) — при активном способе СДЭК и заполненном **`yandex_map_api_key`** (не зависит от наличия `service.php`).
 2. Опциональный URL прокси: фильтр `mp_custom_checkout_cdek_widget_service_path`, иначе попытка прочитать `build/service.php` / `dist/service.php` у плагина — если файла нет, **`service_path`** остаётся пустым; bridge передаёт **`servicePath`** в конструктор виджета **только при непустом** значении ([`assets/js/cdek-widget-bridge.js`](../assets/js/cdek-widget-bridge.js)).
-3. Если нет ключа Яндекс.Карт или не загрузился UMD — **fallback**: список офисов из **`offices_json`** (не точки самовывоза магазина).
+3. Опционально для отладки консоли виджета: фильтр **`mp_custom_checkout_cdek_widget_debug`** (по умолчанию `false`) → поле **`debug`** в `mpCcCdekWidget`.
+4. Если нет ключа Яндекс.Карт или не загрузился UMD — **fallback**: список офисов из **`offices_json`** (не точки самовывоза магазина).
 
 ## 5. Опции PHP, которые читает MP (без дублирования в своих option)
 

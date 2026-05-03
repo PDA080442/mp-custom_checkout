@@ -4632,41 +4632,10 @@ body.mp-cc-cdek-modal-open {
 	overflow: hidden;
 }
 
-.mp-cc-cdek-modal__panel--map {
-	max-height: none;
-	height: min(90vh, 720px);
-}
-
-.mp-cc-cdek-modal__head {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 0.75rem;
-	padding: 0.65rem 0.85rem;
-	border-bottom: 1px solid var(--mp-cc-color-border, #e5e5e5);
-}
-
 .mp-cc-cdek-modal__title {
 	margin: 0;
 	font-size: 1.05rem;
 	font-weight: 600;
-}
-
-.mp-cc-cdek-modal__icon-close {
-	border: 0;
-	background: transparent;
-	font-size: 1.5rem;
-	line-height: 1;
-	cursor: pointer;
-	color: inherit;
-	padding: 0.15rem 0.45rem;
-	border-radius: var(--mp-cc-radius-sm, 6px);
-}
-
-.mp-cc-cdek-modal__icon-close:hover,
-.mp-cc-cdek-modal__icon-close:focus-visible {
-	background: rgba(0, 0, 0, 0.06);
-	outline: none;
 }
 
 .mp-cc-cdek-modal__live {
@@ -4674,13 +4643,6 @@ body.mp-cc-cdek-modal-open {
 	font-size: 0.92rem;
 	color: var(--mp-cc-color-error, #b91c1c);
 	min-height: 1.25rem;
-}
-
-.mp-cc-cdek-modal__map {
-	flex: 1 1 auto;
-	min-height: 360px;
-	width: 100%;
-	position: relative;
 }
 
 .mp-cc-cdek-modal__list {
@@ -4741,14 +4703,5 @@ body.mp-cc-cdek-modal-open {
 		max-height: 100vh;
 		height: 100%;
 		border-radius: 0;
-	}
-
-	.mp-cc-cdek-modal__panel--map {
-		height: 100vh;
-		max-height: none;
-	}
-
-	.mp-cc-cdek-modal__map {
-		min-height: 50vh;
 	}
 }

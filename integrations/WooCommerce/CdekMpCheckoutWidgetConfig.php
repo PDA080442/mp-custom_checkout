@@ -32,6 +32,7 @@ final class CdekMpCheckoutWidgetConfig {
 			'saver_url'      => '',
 			'service_path'   => '',
 			'goods'          => array(),
+			'debug'          => false,
 			'labels'         => self::modal_labels(),
 		);
 
@@ -112,6 +113,15 @@ final class CdekMpCheckoutWidgetConfig {
 		$map_ready = '' !== $api_key;
 		$fallback  = ! $map_ready;
 
+		/**
+		 * Включить verbose-логи виджета СДЭК в консоли (передаётся в `CDEKWidget` как `debug`).
+		 *
+		 * @param bool                           $debug         По умолчанию false.
+		 * @param \WC_Shipping_Method|false|null $shipping      Экземпляр способа СДЭК или false.
+		 * @param array<string, mixed>           $checkout_flow Контекст потока checkout (если передан вызывающим кодом).
+		 */
+		$debug_flag = (bool) apply_filters( 'mp_custom_checkout_cdek_widget_debug', false, $shipping, $checkout_flow );
+
 		return array(
 			'enabled'        => true,
 			'map_ready'      => $map_ready,
@@ -127,6 +137,7 @@ final class CdekMpCheckoutWidgetConfig {
 			'saver_url'      => $saver,
 			'service_path'   => $service_path,
 			'goods'          => $goods,
+			'debug'          => $debug_flag,
 			'labels'         => self::modal_labels(),
 		);
 	}

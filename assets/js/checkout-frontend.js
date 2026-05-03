@@ -8738,7 +8738,7 @@
 				return;
 			}
 			window.MPCC_CDEKWidgetBridge.open({
-				mode: 'pvz_map',
+				mode: 'pvz_list',
 				trigger: this,
 				logValidationFailure: function (errorsMap) {
 					logValidationFailure(state, 'address_delivery', errorsMap);
