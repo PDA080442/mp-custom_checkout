@@ -8,6 +8,7 @@
 namespace MP\CustomCheckout\Checkout\Routing;
 
 use MP\CustomCheckout\DependencyFailureGuard;
+use MP\CustomCheckout\Integrations\WooCommerce\CdekWcSessionBridge;
 use MP\CustomCheckout\Integrations\WooCommerce\GiftCardIntegration;
 use MP\CustomCheckout\Hooks\CheckoutRouteHooks;
 use MP\CustomCheckout\Routing\CheckoutScenarioRules;
@@ -143,6 +144,30 @@ final class CheckoutSessionService {
 			}
 		}
 		$answers['contact_billing'] = $contact;
+
+		if ( ScenarioStepRegistry::SCENARIO_PICKUP === $scenario ) {
+			$step_one = isset( $answers['step_one'] ) && is_array( $answers['step_one'] ) ? $answers['step_one'] : array();
+			$had_office = isset( $step_one['cdek_office_code'] ) && '' !== trim( (string) $step_one['cdek_office_code'] );
+			$prev_method = isset( $step_one['shipping_method_id'] ) ? sanitize_key( (string) $step_one['shipping_method_id'] ) : '';
+			foreach ( array( 'shipping_method_id', 'shipping_tariff_id', 'shipping_method_title', 'shipping_tariff_title', 'cdek_office_code', 'shipping_price', 'shipping_eta', 'shipping_requires_address' ) as $shipping_key ) {
+				if ( array_key_exists( $shipping_key, $step_one ) ) {
+					unset( $step_one[ $shipping_key ] );
+				}
+			}
+			$answers['step_one'] = $step_one;
+			if ( $had_office ) {
+				do_action(
+					'mp_custom_checkout_log',
+					'info',
+					'[pvz] office_invalidated',
+					array(
+						'reason'      => 'scenario_switch_to_pickup',
+						'prev_method' => $prev_method,
+					)
+				);
+			}
+		}
+
 		return $answers;
 	}
 
@@ -165,10 +190,35 @@ final class CheckoutSessionService {
 			if ( '' === $selected_date ) {
 				do_action( 'mp_custom_checkout_log', 'warning', '[date_sync] session_save_without_selected_date', array( 'step_id' => $step_id ) );
 			}
+			// Код ПВЗ живёт только в step_one; из date_conditions его не принимаем — иначе get_merged_delivery_answers перекроет step_one.
+			if ( array_key_exists( 'cdek_office_code', $sanitized_answers ) ) {
+				$had_value = '' !== trim( (string) ( $sanitized_answers['cdek_office_code'] ?? '' ) );
+				unset( $sanitized_answers['cdek_office_code'] );
+				do_action(
+					'mp_custom_checkout_log',
+					'warning',
+					'[pvz] date_conditions_office_stripped',
+					array(
+						'storage_key' => $storage_key,
+						'step_id'     => $step_id,
+						'had_value'   => $had_value,
+					)
+				);
+			}
+		}
+		$scenario_for_log = '';
+		if ( 'contact_billing' === $storage_key || 'step_one' === $storage_key ) {
+			$scenario_for_log = isset( $flow['scenario'] ) ? CheckoutScenarioRules::sanitize_scenario( (string) $flow['scenario'] ) : '';
 		}
 		if ( 'contact_billing' === $storage_key ) {
 			$prev_contact = isset( $current['contact_billing'] ) && is_array( $current['contact_billing'] ) ? $current['contact_billing'] : array();
 			$current[ $storage_key ] = array_replace( $prev_contact, $sanitized_answers );
+			self::maybe_invalidate_pvz_office_on_city_change( $current, $prev_contact, $current[ $storage_key ], $scenario_for_log );
+		} elseif ( 'step_one' === $storage_key ) {
+			// Частичный session_set_answers не должен затирать cdek_office_code и прочие поля шага (§29.1 docs/pvz-data-contract.md).
+			$prev_step = isset( $current['step_one'] ) && is_array( $current['step_one'] ) ? $current['step_one'] : array();
+			$current[ $storage_key ] = array_replace( $prev_step, $sanitized_answers );
+			self::maybe_invalidate_pvz_office_on_method_change( $current, $storage_key, $prev_step, $scenario_for_log );
 		} else {
 			$current[ $storage_key ] = $sanitized_answers;
 		}
@@ -222,6 +272,9 @@ final class CheckoutSessionService {
 			return;
 		}
 		$session->set( self::SESSION_KEY, array() );
+		// Иначе после abandon/thankyou в WC-сессии остаётся призрачный офис до следующего sync (§29.1 deep-audit).
+		$session->set( CdekWcSessionBridge::SESSION_OFFICE_KEY, '' );
+		do_action( 'mp_custom_checkout_log', 'info', '[pvz] wc_office_cleared_with_flow', array() );
 	}
 
 	/** @return array<string, mixed> */
@@ -411,6 +464,91 @@ final class CheckoutSessionService {
 	/** @param array<string, mixed> $answers @return array<string, mixed> */
 	private static function merge_answers_with_defaults( array $answers ): array {
 		return array_replace_recursive( self::default_answers_structure(), $answers );
+	}
+
+	/**
+	 * §29.5: сравнение города до/после merge контакта (регистронезависимо).
+	 */
+	private static function normalize_city_for_pvz_invalidation( string $value ): string {
+		$s = trim( $value );
+		if ( '' === $s ) {
+			return '';
+		}
+		if ( function_exists( 'mb_strtolower' ) ) {
+			return mb_strtolower( $s, 'UTF-8' );
+		}
+
+		return strtolower( $s );
+	}
+
+	/**
+	 * §29.5: при смене города в контакте — удалить устаревший ПВЗ из step_one.
+	 *
+	 * @param array<string, mixed> $current Mutated answers blob.
+	 * @param array<string, mixed> $prev_contact
+	 * @param array<string, mixed> $new_contact
+	 * @param string               $scenario Sanitized flow scenario for logs.
+	 */
+	private static function maybe_invalidate_pvz_office_on_city_change( array &$current, array $prev_contact, array $new_contact, string $scenario ): void {
+		$prev_city = self::normalize_city_for_pvz_invalidation( isset( $prev_contact['city'] ) ? (string) $prev_contact['city'] : '' );
+		$new_city  = self::normalize_city_for_pvz_invalidation( isset( $new_contact['city'] ) ? (string) $new_contact['city'] : '' );
+		if ( '' === $prev_city || '' === $new_city || $prev_city === $new_city ) {
+			return;
+		}
+		$step_one = isset( $current['step_one'] ) && is_array( $current['step_one'] ) ? $current['step_one'] : array();
+		if ( ! isset( $step_one['cdek_office_code'] ) || '' === trim( (string) $step_one['cdek_office_code'] ) ) {
+			return;
+		}
+		$prev_method = isset( $step_one['shipping_method_id'] ) ? sanitize_key( (string) $step_one['shipping_method_id'] ) : '';
+		unset( $current['step_one']['cdek_office_code'] );
+		do_action(
+			'mp_custom_checkout_log',
+			'info',
+			'[pvz] office_invalidated',
+			array(
+				'reason'      => 'city_change',
+				'prev_len'    => strlen( $prev_city ),
+				'new_len'     => strlen( $new_city ),
+				'scenario'    => $scenario,
+				'prev_method' => $prev_method,
+			)
+		);
+	}
+
+	/**
+	 * §29.5: метод не ПВЗ — код офиса в step_one недопустим (иначе бридж СДЭК восстановит official_cdek_office_code).
+	 *
+	 * @param array<string, mixed> $current Mutated answers blob.
+	 * @param array<string, mixed> $prev_step Prior step_one before merge.
+	 * @param string               $scenario Sanitized flow scenario for logs.
+	 */
+	private static function maybe_invalidate_pvz_office_on_method_change( array &$current, string $storage_key, array $prev_step, string $scenario ): void {
+		$new_method = isset( $current[ $storage_key ]['shipping_method_id'] ) ? sanitize_key( (string) $current[ $storage_key ]['shipping_method_id'] ) : '';
+		if ( '' === $new_method || 'pvz' === $new_method ) {
+			return;
+		}
+		if ( ! array_key_exists( 'cdek_office_code', $current[ $storage_key ] ) ) {
+			return;
+		}
+		$had_value = '' !== trim( (string) $current[ $storage_key ]['cdek_office_code'] );
+		unset( $current[ $storage_key ]['cdek_office_code'] );
+		if ( ! $had_value ) {
+			return;
+		}
+		$prev_method = isset( $prev_step['shipping_method_id'] ) ? sanitize_key( (string) $prev_step['shipping_method_id'] ) : '';
+		$prev_tariff = isset( $prev_step['shipping_tariff_id'] ) ? sanitize_key( (string) $prev_step['shipping_tariff_id'] ) : '';
+		do_action(
+			'mp_custom_checkout_log',
+			'info',
+			'[pvz] office_invalidated',
+			array(
+				'reason'      => 'method_change',
+				'prev_method' => $prev_method,
+				'new_method'  => $new_method,
+				'scenario'    => $scenario,
+				'prev_tariff' => $prev_tariff,
+			)
+		);
 	}
 
 	private static function normalize_answers_storage_key( string $step_id ): string {

@@ -4591,3 +4591,117 @@ body.mp-custom-checkout form.checkout.woocommerce-checkout {
 		width: 100%;
 	}
 }
+
+/* §29.2 — CDEK map / PVZ picker modal */
+.mp-cc-pvz-card {
+	margin-bottom: 0.35rem;
+}
+
+.mp-cc-pvz-card__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem 0.75rem;
+	margin-top: 0.45rem;
+}
+
+body.mp-cc-cdek-modal-open {
+	overflow: hidden;
+}
+
+.mp-cc-cdek-modal {
+	position: fixed;
+	inset: 0;
+	z-index: 100050;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 1rem;
+	background: rgba(15, 15, 20, 0.55);
+	box-sizing: border-box;
+}
+
+.mp-cc-cdek-modal__panel {
+	width: min(960px, 100%);
+	max-height: min(90vh, 880px);
+	display: flex;
+	flex-direction: column;
+	background: var(--mp-cc-color-background, #fff);
+	color: var(--mp-cc-color-text, #1a1a1a);
+	border-radius: var(--mp-cc-radius-md, 10px);
+	box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+	overflow: hidden;
+}
+
+.mp-cc-cdek-modal__title {
+	margin: 0;
+	font-size: 1.05rem;
+	font-weight: 600;
+}
+
+.mp-cc-cdek-modal__live {
+	padding: 0.35rem 0.85rem;
+	font-size: 0.92rem;
+	color: var(--mp-cc-color-error, #b91c1c);
+	min-height: 1.25rem;
+}
+
+.mp-cc-cdek-modal__list {
+	padding: 0.75rem 1rem 0.25rem;
+	overflow: auto;
+	max-height: 45vh;
+	display: grid;
+	row-gap: 0.45rem;
+}
+
+.mp-cc-cdek-modal__item {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.55rem;
+	font-size: 0.96rem;
+	cursor: pointer;
+}
+
+.mp-cc-cdek-modal__empty {
+	margin: 0.5rem 1rem;
+	font-size: 0.95rem;
+	color: var(--mp-cc-color-text-muted, #666);
+}
+
+.mp-cc-cdek-modal__actions {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	gap: 0.5rem;
+	padding: 0.75rem 1rem 1rem;
+	border-top: 1px solid var(--mp-cc-color-border, #e5e5e5);
+}
+
+.mp-cc-cdek-modal__btn {
+	min-height: 2.5rem;
+	padding: 0.45rem 1rem;
+	font: inherit;
+	border-radius: var(--mp-cc-radius-sm, 6px);
+	border: 1px solid var(--mp-cc-color-border, #e5e5e5);
+	background: #fff;
+	cursor: pointer;
+}
+
+.mp-cc-cdek-modal__btn--primary {
+	background: var(--mp-cc-color-accent, #111);
+	color: #fff;
+	border-color: var(--mp-cc-color-accent, #111);
+}
+
+@media (max-width: 720px) {
+	.mp-cc-cdek-modal {
+		align-items: stretch;
+		padding: 0;
+	}
+
+	.mp-cc-cdek-modal__panel {
+		width: 100%;
+		max-height: 100vh;
+		height: 100%;
+		border-radius: 0;
+	}
+}

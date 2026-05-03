@@ -9,6 +9,7 @@ namespace MP\CustomCheckout\Checkout\Hooks;
 
 use MP\CustomCheckout\DependencyFailureGuard;
 use MP\CustomCheckout\Hooks\CheckoutRouteHooks;
+use MP\CustomCheckout\Integrations\WooCommerce\CdekWcSessionBridge;
 use MP\CustomCheckout\Integrations\WooCommerce\GiftCardIntegration;
 use MP\CustomCheckout\Integrations\WooCommerce\WcCustomerShippingSync;
 use MP\CustomCheckout\Routing\CheckoutDateAvailabilityEngine;
@@ -29,6 +30,16 @@ final class CheckoutAjaxHooks {
 
 	public const ACTION = 'mp_cc_checkout';
 
+	private const CDEK_COUNTRY_OFFICES_TRANSIENT = 'mp_cc_cdek_offices_country';
+
+	private const CDEK_COUNTRY_OFFICES_BACKUP_TRANSIENT = 'mp_cc_cdek_offices_country_backup';
+
+	/**
+	 * Устаревшая option-резервная копия (до v3.4 backup лежал в `wp_options`).
+	 * Сохраняем имя только для одноразовой миграции/очистки.
+	 */
+	private const CDEK_COUNTRY_OFFICES_BACKUP_OPTION_LEGACY = 'mp_cc_cdek_offices_country_backup';
+
 	public static function register(): void {
 		add_action( 'wp_ajax_' . self::ACTION, array( __CLASS__, 'handle' ) );
 		add_action( 'wp_ajax_nopriv_' . self::ACTION, array( __CLASS__, 'handle' ) );
@@ -39,7 +50,21 @@ final class CheckoutAjaxHooks {
 			wp_send_json_error( array( 'message' => __( 'WooCommerce недоступен.', 'mp-custom-checkout' ) ), 503 );
 		}
 		if ( function_exists( 'wc_load_cart' ) ) {
-			wc_load_cart();
+			try {
+				wc_load_cart();
+			} catch ( \Throwable $cart_load_e ) {
+				do_action(
+					'mp_custom_checkout_log',
+					'warning',
+					'[ajax] wc_load_cart_failed',
+					array(
+						'source'          => 'ajax',
+						'event_type'      => 'wc_load_cart_failed',
+						'exception_class' => get_class( $cart_load_e ),
+						'exception_msg'   => substr( (string) $cart_load_e->getMessage(), 0, 200 ),
+					)
+				);
+			}
 		}
 		check_ajax_referer( 'mp_cc_checkout', 'nonce' );
 		$sub_action = isset( $_POST['sub_action'] ) ? sanitize_key( wp_unslash( $_POST['sub_action'] ) ) : '';
@@ -88,6 +113,18 @@ final class CheckoutAjaxHooks {
 			if ( ! $manager->can_navigate_to( $step_id ) ) {
 				wp_send_json_error( array( 'code' => 'invalid_step_navigation', 'message' => __( 'Переход на указанный шаг недоступен.', 'mp-custom-checkout' ) ), 400 );
 			}
+			$current_step_id = $manager->get_current_step_id();
+			$visible         = $manager->get_visible_step_ids();
+			$target_idx      = array_search( $step_id, $visible, true );
+			$current_idx     = null !== $current_step_id ? array_search( $current_step_id, $visible, true ) : false;
+			if (
+				'address_delivery' === $current_step_id
+				&& false !== $current_idx
+				&& false !== $target_idx
+				&& (int) $target_idx > (int) $current_idx
+			) {
+				self::assert_pvz_has_office_or_fail( is_array( $flow ) ? $flow : array(), 'address_delivery' );
+			}
 			CheckoutSessionService::set_current_step( $step_id );
 			wp_send_json_success(
 				array(
@@ -123,6 +160,21 @@ final class CheckoutAjaxHooks {
 				$existing_date = array();
 				if ( is_array( $flow ) && isset( $flow['answers']['date_conditions'] ) && is_array( $flow['answers']['date_conditions'] ) ) {
 					$existing_date = $flow['answers']['date_conditions'];
+				}
+				if ( array_key_exists( 'cdek_office_code', $existing_date ) ) {
+					$had_legacy_office = '' !== trim( (string) ( $existing_date['cdek_office_code'] ?? '' ) );
+					unset( $existing_date['cdek_office_code'] );
+					if ( $had_legacy_office ) {
+						do_action(
+							'mp_custom_checkout_log',
+							'warning',
+							'[pvz] existing_date_office_dropped_pre_merge',
+							array(
+								'step_id'   => $step_id,
+								'had_value' => true,
+							)
+						);
+					}
 				}
 				// Частичный payload (напр. только с шага «условия») дополняем сохранённым date_conditions.
 				$answers = array_replace_recursive( $existing_date, $answers );
@@ -254,6 +306,9 @@ final class CheckoutAjaxHooks {
 		if ( 'remove_gift_card' === $sub_action ) {
 			self::handle_remove_gift_card();
 		}
+		if ( 'cdek_get_offices' === $sub_action ) {
+			self::handle_cdek_get_offices();
+		}
 		if ( 'cdek_set_office' === $sub_action ) {
 			self::handle_cdek_set_office();
 		}
@@ -265,7 +320,7 @@ final class CheckoutAjaxHooks {
 	}
 
 	private static function is_session_sub_action( string $sub_action ): bool {
-		return in_array( $sub_action, array( 'session_set_step', 'session_set_answers', 'session_set_scenario', 'session_get_state', 'session_abandon', 'update_quantity', 'remove_item', 'validation_log', 'apply_coupon', 'remove_coupon', 'apply_gift_card', 'remove_gift_card', 'cdek_set_office', 'set_payment_gateway', 'gateway_render_diagnostics', 'submit_payment', 'client_error_log', 'ajax_error_log' ), true );
+		return in_array( $sub_action, array( 'session_set_step', 'session_set_answers', 'session_set_scenario', 'session_get_state', 'session_abandon', 'update_quantity', 'remove_item', 'validation_log', 'apply_coupon', 'remove_coupon', 'apply_gift_card', 'remove_gift_card', 'cdek_get_offices', 'cdek_set_office', 'set_payment_gateway', 'gateway_render_diagnostics', 'submit_payment', 'client_error_log', 'ajax_error_log' ), true );
 	}
 
 	/**
@@ -355,26 +410,580 @@ final class CheckoutAjaxHooks {
 	}
 
 	/**
+	 * Возвращает список офисов СДЭК для города (JSON-массив для `officesRaw` виджета).
+	 * Не меняет flow; синхронизация с эталонным `update_checkout` официального плагина.
+	 *
+	 * Режим `mode=country`: все ПВЗ РФ для карты (кэш transient + резерв в option при сбое API).
+	 */
+	private static function handle_cdek_get_offices(): void {
+		$mode = isset( $_POST['mode'] ) ? sanitize_key( wp_unslash( (string) $_POST['mode'] ) ) : '';
+
+		if ( 'country' === $mode ) {
+			self::handle_cdek_get_offices_country_mode();
+			return;
+		}
+
+		$city     = isset( $_POST['city'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['city'] ) ) : '';
+		$postcode = isset( $_POST['postcode'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['postcode'] ) ) : '';
+
+		if ( '' === $city ) {
+			wp_send_json_success(
+				array(
+					'sub_action'      => 'cdek_get_offices',
+					'offices_raw'     => array(),
+					'offices_count'   => 0,
+					'city'            => '',
+					'postcode'        => $postcode,
+				)
+			);
+		}
+
+		if ( ! self::ensure_cdek_classes_loaded() ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'warning',
+				'[pvz] cdek_api_unavailable',
+				array(
+					'source'     => 'ajax',
+					'event_type' => 'cdek_api_unavailable',
+					'mode'       => 'city',
+				)
+			);
+			wp_send_json_success(
+				array(
+					'sub_action'    => 'cdek_get_offices',
+					'offices_raw'   => array(),
+					'offices_count' => 0,
+					'city'          => $city,
+					'postcode'      => $postcode,
+					'fetch_error'   => true,
+					'reason'        => 'cdek_api_unavailable',
+				)
+			);
+		}
+
+		try {
+			$api    = new \Cdek\CdekApi();
+			$parsed = array();
+			$code   = $api->cityCodeGet( $city, '' !== $postcode ? $postcode : null );
+			if ( null !== $code ) {
+				$raw = $api->officeListRaw( $code );
+				if ( is_string( $raw ) && '' !== $raw ) {
+					$decoded = json_decode( $raw, true );
+					$parsed  = is_array( $decoded ) ? $decoded : array();
+				}
+			}
+			wp_send_json_success(
+				array(
+					'sub_action'    => 'cdek_get_offices',
+					'offices_raw'   => $parsed,
+					'offices_count' => count( $parsed ),
+					'city'          => $city,
+					'postcode'      => $postcode,
+				)
+			);
+		} catch ( \Throwable $e ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'warning',
+				'[pvz] cdek_get_offices_failed',
+				array(
+					'source'          => 'ajax',
+					'event_type'      => 'cdek_get_offices_failed',
+					'exception_class' => get_class( $e ),
+					'city_fp'         => substr( $city, 0, 40 ),
+				)
+			);
+			wp_send_json_error(
+				array(
+					'code'    => 'cdek_offices_failed',
+					'message' => __( 'Не удалось загрузить список пунктов СДЭК.', 'mp-custom-checkout' ),
+				),
+				500
+			);
+		}
+	}
+
+	/**
+	 * AJAX: все ПВЗ РФ для нативной карты СДЭК (transient + один запрос к /deliverypoints).
+	 *
+	 * Контракт ответа на пустые/ошибочные данные — `success: true, offices_raw: [], fetch_error: bool`,
+	 * чтобы клиент мог уйти в city-based fallback без 500.
+	 */
+	private static function handle_cdek_get_offices_country_mode(): void {
+		if ( ! self::ensure_cdek_classes_loaded() ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'warning',
+				'[pvz] cdek_api_unavailable',
+				array(
+					'source'     => 'ajax',
+					'event_type' => 'cdek_api_unavailable',
+					'mode'       => 'country',
+				)
+			);
+			$stale = self::get_country_offices_backup();
+			if ( count( $stale ) > 0 ) {
+				wp_send_json_success(
+					array(
+						'sub_action'    => 'cdek_get_offices',
+						'mode'          => 'country',
+						'offices_raw'   => $stale,
+						'offices_count' => count( $stale ),
+						'city'          => '',
+						'postcode'      => '',
+						'from_stale'    => true,
+						'fetch_error'   => true,
+						'reason'        => 'cdek_api_unavailable',
+					)
+				);
+			}
+			wp_send_json_success(
+				array(
+					'sub_action'    => 'cdek_get_offices',
+					'mode'          => 'country',
+					'offices_raw'   => array(),
+					'offices_count' => 0,
+					'city'          => '',
+					'postcode'      => '',
+					'fetch_error'   => true,
+					'reason'        => 'cdek_api_unavailable',
+				)
+			);
+		}
+
+		$ttl = (int) apply_filters( 'mp_custom_checkout_cdek_country_offices_ttl', 12 * HOUR_IN_SECONDS );
+		if ( $ttl < 60 ) {
+			$ttl = 12 * HOUR_IN_SECONDS;
+		}
+
+		$cached = get_transient( self::CDEK_COUNTRY_OFFICES_TRANSIENT );
+		if ( is_array( $cached ) && count( $cached ) > 0 ) {
+			wp_send_json_success(
+				array(
+					'sub_action'    => 'cdek_get_offices',
+					'mode'          => 'country',
+					'offices_raw'   => $cached,
+					'offices_count' => count( $cached ),
+					'city'          => '',
+					'postcode'      => '',
+					'from_cache'    => true,
+				)
+			);
+		}
+
+		try {
+			$result = self::fetch_country_offices_from_cdek_api();
+			$all    = $result['offices'];
+			$n      = count( $all );
+
+			do_action(
+				'mp_custom_checkout_log',
+				'info',
+				'[pvz] cdek_get_offices_country_ok',
+				array(
+					'source'      => 'ajax',
+					'event_type'  => 'cdek_get_offices_country_ok',
+					'count'       => $n,
+					'body_bytes'  => $result['body_bytes'],
+				)
+			);
+
+			if ( $n > 0 ) {
+				set_transient( self::CDEK_COUNTRY_OFFICES_TRANSIENT, $all, $ttl );
+				set_transient( self::CDEK_COUNTRY_OFFICES_BACKUP_TRANSIENT, $all, 30 * DAY_IN_SECONDS );
+				if ( false !== get_option( self::CDEK_COUNTRY_OFFICES_BACKUP_OPTION_LEGACY, false ) ) {
+					delete_option( self::CDEK_COUNTRY_OFFICES_BACKUP_OPTION_LEGACY );
+				}
+				wp_send_json_success(
+					array(
+						'sub_action'    => 'cdek_get_offices',
+						'mode'          => 'country',
+						'offices_raw'   => $all,
+						'offices_count' => $n,
+						'city'          => '',
+						'postcode'      => '',
+					)
+				);
+			}
+
+			$stale = self::get_country_offices_backup();
+			if ( count( $stale ) > 0 ) {
+				wp_send_json_success(
+					array(
+						'sub_action'    => 'cdek_get_offices',
+						'mode'          => 'country',
+						'offices_raw'   => $stale,
+						'offices_count' => count( $stale ),
+						'city'          => '',
+						'postcode'      => '',
+						'from_stale'    => true,
+						'fetch_error'   => true,
+					)
+				);
+			}
+
+			wp_send_json_success(
+				array(
+					'sub_action'    => 'cdek_get_offices',
+					'mode'          => 'country',
+					'offices_raw'   => array(),
+					'offices_count' => 0,
+					'city'          => '',
+					'postcode'      => '',
+					'fetch_error'   => true,
+					'reason'        => 'empty_response',
+				)
+			);
+		} catch ( \Throwable $e ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'warning',
+				'[pvz] cdek_get_offices_country_failed',
+				array(
+					'source'          => 'ajax',
+					'event_type'      => 'cdek_get_offices_country_failed',
+					'exception_class' => get_class( $e ),
+					'exception_msg'   => substr( (string) $e->getMessage(), 0, 200 ),
+				)
+			);
+			$stale = self::get_country_offices_backup();
+			if ( count( $stale ) > 0 ) {
+				wp_send_json_success(
+					array(
+						'sub_action'    => 'cdek_get_offices',
+						'mode'          => 'country',
+						'offices_raw'   => $stale,
+						'offices_count' => count( $stale ),
+						'city'          => '',
+						'postcode'      => '',
+						'from_stale'    => true,
+						'fetch_error'   => true,
+					)
+				);
+				return;
+			}
+			wp_send_json_success(
+				array(
+					'sub_action'    => 'cdek_get_offices',
+					'mode'          => 'country',
+					'offices_raw'   => array(),
+					'offices_count' => 0,
+					'city'          => '',
+					'postcode'      => '',
+					'fetch_error'   => true,
+					'reason'        => 'api_exception',
+				)
+			);
+		}
+	}
+
+	/**
+	 * Загружает все ПВЗ РФ из CDEK API v2 (один запрос к `/v2/deliverypoints`).
+	 *
+	 * Параметры подтверждены тремя независимыми SDK (cdek-it/sdk2.0, AntistressStore/cdek-sdk-v2,
+	 * cdek-simple-api): `country_code` — строка ISO 3166-1 alpha-2; пагинация (`size`/`page`)
+	 * у этого эндпоинта не поддерживается (есть только у `/location/cities` и `/location/regions`).
+	 *
+	 * @return array{offices: array<int, mixed>, body_bytes: int}
+	 *
+	 * @throws \Throwable
+	 */
+	private static function fetch_country_offices_from_cdek_api(): array {
+		if ( function_exists( 'wp_raise_memory_limit' ) ) {
+			wp_raise_memory_limit( 'admin' );
+		}
+
+		$shipping = \Cdek\ShippingMethod::factory();
+		if ( ! $shipping->test_mode ) {
+			$api_url = \Cdek\Config::API_URL;
+		} else {
+			/** @noinspection GlobalVariableUsageInspection */
+			$api_url = isset( $_ENV['CDEK_REST_API'] ) ? (string) $_ENV['CDEK_REST_API'] : \Cdek\Config::TEST_API_URL;
+		}
+
+		$token_storage = new \Cdek\Helpers\LegacyTokenStorage();
+		$token         = $token_storage->getToken();
+
+		$response = \Cdek\Transport\HttpClient::sendJsonRequest(
+			"{$api_url}deliverypoints",
+			'GET',
+			$token,
+			array(
+				'country_code' => 'RU',
+				'type'         => 'ALL',
+				'lang'         => 'rus',
+			)
+		);
+
+		$body       = (string) $response->body();
+		$body_bytes = strlen( $body );
+		$offices    = self::decode_cdek_deliverypoints_page( $body );
+
+		return array(
+			'offices'    => $offices,
+			'body_bytes' => $body_bytes,
+		);
+	}
+
+	/**
+	 * Гарантирует, что классы плагина СДЭК (`\Cdek\CdekApi`, `\Cdek\Transport\HttpClient`)
+	 * подключены. Сначала пробует обычный autoload (`class_exists` без второго аргумента),
+	 * затем при необходимости форсирует загрузку через активные плагины WP.
+	 *
+	 * Корень проблемы на проде: `class_exists(..., false)` без autoload возвращает false,
+	 * пока плагин CDEK не подгружен лениво — сервер отдавал 503, фронт уходил в fallback.
+	 */
+	private static function ensure_cdek_classes_loaded(): bool {
+		if ( class_exists( '\\Cdek\\CdekApi' ) && class_exists( '\\Cdek\\Transport\\HttpClient' ) ) {
+			return true;
+		}
+
+		if ( ! function_exists( 'is_plugin_active' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		}
+
+		$candidates = array();
+		if ( function_exists( 'wp_get_active_and_valid_plugins' ) ) {
+			$candidates = wp_get_active_and_valid_plugins();
+		}
+		if ( empty( $candidates ) && defined( 'WP_PLUGIN_DIR' ) ) {
+			foreach ( array( 'cdekdelivery', 'cdek-wordpress-plugin', 'cdek-delivery' ) as $slug ) {
+				$dir = WP_PLUGIN_DIR . '/' . $slug;
+				if ( is_dir( $dir ) ) {
+					$entry = $dir . '/' . $slug . '.php';
+					if ( file_exists( $entry ) ) {
+						$candidates[] = $entry;
+					}
+				}
+			}
+		}
+
+		foreach ( $candidates as $plugin_file ) {
+			if ( ! is_string( $plugin_file ) || '' === $plugin_file ) {
+				continue;
+			}
+			if ( false === stripos( $plugin_file, 'cdek' ) ) {
+				continue;
+			}
+			if ( ! file_exists( $plugin_file ) ) {
+				continue;
+			}
+			try {
+				include_once $plugin_file;
+			} catch ( \Throwable $e ) {
+				do_action(
+					'mp_custom_checkout_log',
+					'warning',
+					'[pvz] cdek_plugin_include_failed',
+					array(
+						'source'          => 'ajax',
+						'event_type'      => 'cdek_plugin_include_failed',
+						'plugin_file'     => $plugin_file,
+						'exception_class' => get_class( $e ),
+						'exception_msg'   => substr( (string) $e->getMessage(), 0, 200 ),
+					)
+				);
+			}
+			if ( class_exists( '\\Cdek\\CdekApi' ) && class_exists( '\\Cdek\\Transport\\HttpClient' ) ) {
+				return true;
+			}
+		}
+
+		return class_exists( '\\Cdek\\CdekApi' ) && class_exists( '\\Cdek\\Transport\\HttpClient' );
+	}
+
+	/**
+	 * Возвращает транзиентный backup; если его нет — пытается мигрировать со старой option и удаляет её.
+	 *
+	 * @return array<int, mixed>
+	 */
+	private static function get_country_offices_backup(): array {
+		$transient_backup = get_transient( self::CDEK_COUNTRY_OFFICES_BACKUP_TRANSIENT );
+		if ( is_array( $transient_backup ) && count( $transient_backup ) > 0 ) {
+			return $transient_backup;
+		}
+
+		$legacy = get_option( self::CDEK_COUNTRY_OFFICES_BACKUP_OPTION_LEGACY, false );
+		if ( is_array( $legacy ) && count( $legacy ) > 0 ) {
+			set_transient( self::CDEK_COUNTRY_OFFICES_BACKUP_TRANSIENT, $legacy, 30 * DAY_IN_SECONDS );
+			delete_option( self::CDEK_COUNTRY_OFFICES_BACKUP_OPTION_LEGACY );
+			return $legacy;
+		}
+
+		return array();
+	}
+
+	/**
+	 * @return array<int, mixed>
+	 */
+	private static function decode_cdek_deliverypoints_page( string $body ): array {
+		$decoded = json_decode( $body, true );
+		if ( ! is_array( $decoded ) ) {
+			return array();
+		}
+		if ( array() === $decoded ) {
+			return array();
+		}
+		$keys = array_keys( $decoded );
+		$is_list = $keys === range( 0, count( $decoded ) - 1 );
+		if ( $is_list ) {
+			return $decoded;
+		}
+		foreach ( array( 'entity', 'deliverypoints', 'items', 'data' ) as $k ) {
+			if ( isset( $decoded[ $k ] ) && is_array( $decoded[ $k ] ) ) {
+				$inner = $decoded[ $k ];
+				$ik    = array_keys( $inner );
+				if ( $ik === range( 0, count( $inner ) - 1 ) ) {
+					return $inner;
+				}
+			}
+		}
+
+		return array();
+	}
+
+	/**
 	 * Сохраняет код ПВЗ СДЭК в flow (`answers.step_one.cdek_office_code`) и в WC-сессии плагина (`official_cdek_office_code`).
+	 *
+	 * Контракт полей и жизненный цикл: docs/pvz-data-contract.md (§29.1).
 	 */
 	private static function handle_cdek_set_office(): void {
-		$flow     = CheckoutSessionService::get_flow();
-		$step_one = isset( $flow['answers']['step_one'] ) && is_array( $flow['answers']['step_one'] ) ? $flow['answers']['step_one'] : array();
-		$code     = isset( $_POST['office_code'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['office_code'] ) ) : '';
+		$flow          = CheckoutSessionService::get_flow();
+		$step_one      = isset( $flow['answers']['step_one'] ) && is_array( $flow['answers']['step_one'] ) ? $flow['answers']['step_one'] : array();
+		$step_one_before = $step_one;
+		$code          = isset( $_POST['office_code'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['office_code'] ) ) : '';
+		$posted_ctx    = isset( $_POST['context_id'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['context_id'] ) ) : '';
+
+		if ( '' !== $code && ! self::is_valid_cdek_office_code_format( $code ) ) {
+			$office_fp = substr( $code, 0, 4 ) . ':' . (string) strlen( $code );
+			do_action(
+				'mp_custom_checkout_log',
+				'warning',
+				'[pvz] office_save_failed',
+				array(
+					'source'             => 'ajax',
+					'event_type'         => 'pvz_office_save_failed',
+					'context_id_posted'  => $posted_ctx,
+					'office_fp'          => $office_fp,
+					'reason'             => 'invalid_office_code_format',
+				)
+			);
+			wp_send_json_error(
+				array(
+					'code'    => 'invalid_office_code',
+					'message' => __( 'Некорректный код пункта выдачи.', 'mp-custom-checkout' ),
+				),
+				400
+			);
+		}
+
 		if ( '' === $code ) {
-			unset( $step_one['cdek_office_code'] );
+			// Явная пустая строка — иначе array_replace в set_step_answers оставит старый код (ключ из unset отсутствует в payload).
+			$step_one['cdek_office_code'] = '';
 		} else {
 			$step_one['cdek_office_code'] = $code;
 		}
 		CheckoutSessionService::set_step_answers( ScenarioStepRegistry::STEP_ADDRESS_DELIVERY, $step_one );
-		WcCustomerShippingSync::after_session_set_answers( ScenarioStepRegistry::STEP_ADDRESS_DELIVERY );
-		wp_send_json_success(
+		$flow_ctx = CheckoutSessionService::get_flow();
+		$delivery = CdekWcSessionBridge::get_merged_delivery_answers( is_array( $flow_ctx ) ? $flow_ctx : array() );
+		$office_fp  = '' === $code ? 'cleared' : ( substr( $code, 0, 4 ) . ':' . (string) strlen( $code ) );
+		do_action(
+			'mp_custom_checkout_log',
+			'info',
+			'[pvz] office_session_update',
 			array(
-				'sub_action' => 'cdek_set_office',
-				'flow'       => self::build_flow_payload(),
-				'cart'       => CheckoutRouteContext::get_cart_data(),
+				'source'              => 'ajax',
+				'event_type'          => 'pvz_office_saved',
+				'context_id_posted'   => $posted_ctx,
+				'context_id_flow'     => is_array( $flow_ctx ) && isset( $flow_ctx['context_id'] ) ? (string) $flow_ctx['context_id'] : '',
+				'shipping_method_id'  => isset( $delivery['shipping_method_id'] ) ? (string) $delivery['shipping_method_id'] : '',
+				'office_fp'           => $office_fp,
 			)
 		);
+		$wc_sync_warning = '';
+		try {
+			WcCustomerShippingSync::after_session_set_answers( ScenarioStepRegistry::STEP_ADDRESS_DELIVERY );
+		} catch ( \Throwable $e ) {
+			// Код ПВЗ уже сохранён в session/flow — это главный side-effect этого AJAX.
+			// Падение WC-sync (recalculate_totals, shipping-плагины, customer->save) логируем как warning,
+			// но НЕ откатываем сохранение и НЕ возвращаем 500: иначе пользователь получит "не удалось сохранить"
+			// при том, что код фактически записан и при следующем шаге будет подхвачен.
+			$flow_after      = CheckoutSessionService::get_flow();
+			$wc_sync_warning = (string) $e->getMessage();
+			do_action(
+				'mp_custom_checkout_log',
+				'warning',
+				'[pvz] office_save_wc_sync_failed_soft',
+				array(
+					'source'           => 'ajax',
+					'event_type'       => 'pvz_office_wc_sync_soft_fail',
+					'exception_class'  => get_class( $e ),
+					'exception_msg'    => substr( $wc_sync_warning, 0, 300 ),
+					'office_fp'        => $office_fp,
+					'context_id_flow'  => is_array( $flow_after ) && isset( $flow_after['context_id'] ) ? (string) $flow_after['context_id'] : '',
+				)
+			);
+		}
+
+		// build_flow_payload / get_cart_data берут актуальное состояние session — даже если sync упал,
+		// они отдадут корректный flow с уже сохранённым cdek_office_code; их собственное падение
+		// (например, из-за внешнего плагина в фильтрах) ловим тут, чтобы не возвращать 500 на
+		// уже фактически выполненное сохранение кода ПВЗ. На фронте `if (d.flow)` тогда упадёт
+		// в ветку, где код просто записывается локально (`state.frontendStore.fulfillment.date.cdek_office_code = c`).
+		$response = array(
+			'sub_action' => 'cdek_set_office',
+		);
+		try {
+			$response['flow'] = self::build_flow_payload();
+		} catch ( \Throwable $flow_e ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'warning',
+				'[pvz] office_save_flow_payload_failed',
+				array(
+					'source'          => 'ajax',
+					'event_type'      => 'pvz_office_flow_payload_failed',
+					'exception_class' => get_class( $flow_e ),
+					'exception_msg'   => substr( (string) $flow_e->getMessage(), 0, 300 ),
+				)
+			);
+		}
+		try {
+			$response['cart'] = CheckoutRouteContext::get_cart_data();
+		} catch ( \Throwable $cart_e ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'warning',
+				'[pvz] office_save_cart_payload_failed',
+				array(
+					'source'          => 'ajax',
+					'event_type'      => 'pvz_office_cart_payload_failed',
+					'exception_class' => get_class( $cart_e ),
+					'exception_msg'   => substr( (string) $cart_e->getMessage(), 0, 300 ),
+				)
+			);
+		}
+		if ( '' !== $wc_sync_warning ) {
+			$response['wc_sync_soft_fail'] = true;
+		}
+		wp_send_json_success( $response );
+	}
+
+	/**
+	 * Мягкая проверка формата кода ПВЗ СДЭК (§29.3): длина 1–32, безопасный charset.
+	 *
+	 * Реальные коды СДЭК встречаются в формате `MSK1234`, `KRR12.A1`, `kras-321` —
+	 * допускаем буквы (любого регистра), цифры, `_`, `-`, `.`, чтобы не блокировать
+	 * валидный код от свежей версии CDEKWidget на 400.
+	 */
+	private static function is_valid_cdek_office_code_format( string $code ): bool {
+		$len = strlen( $code );
+		if ( $len < 1 || $len > 32 ) {
+			return false;
+		}
+
+		return (bool) preg_match( '/^[A-Za-z0-9_.\-]+$/', $code );
 	}
 
 	/**
@@ -483,6 +1092,7 @@ final class CheckoutAjaxHooks {
 			wp_send_json_error( array( 'code' => 'empty_cart', 'message' => __( 'Корзина пуста. Невозможно отправить оплату.', 'mp-custom-checkout' ) ), 422 );
 		}
 		$flow    = CheckoutSessionService::get_flow();
+		self::assert_pvz_has_office_or_fail( is_array( $flow ) ? $flow : array(), 'confirm' );
 		$answers = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : array();
 		$contact = isset( $answers['contact_billing'] ) && is_array( $answers['contact_billing'] ) ? $answers['contact_billing'] : array();
 		$gateway = isset( $contact['payment_gateway'] ) ? sanitize_key( (string) $contact['payment_gateway'] ) : '';
@@ -621,6 +1231,7 @@ final class CheckoutAjaxHooks {
 		if ( ! $session instanceof \WC_Session ) {
 			return;
 		}
+		$cdek_lines_added = 0;
 		$packages = WC()->shipping()->get_packages();
 		$chosen   = (array) $session->get( 'chosen_shipping_methods', array() );
 		foreach ( $packages as $pkg_key => $package ) {
@@ -659,6 +1270,50 @@ final class CheckoutAjaxHooks {
 				}
 			}
 			$order->add_item( $item );
+			if ( 0 === strpos( (string) $rate_id, CdekWcSessionBridge::OFFICIAL_CDEK_PREFIX ) ) {
+				$cdek_lines_added++;
+				$office_meta_present = false;
+				foreach ( $rate->get_meta_data() as $m ) {
+					if ( ! $m instanceof \WC_Meta_Data ) {
+						continue;
+					}
+					$k = (string) ( $m->get_data()['key'] ?? '' );
+					if ( false !== strpos( $k, 'office_code' ) ) {
+						$office_meta_present = true;
+						break;
+					}
+				}
+				do_action(
+					'mp_custom_checkout_log',
+					'info',
+					'[pvz] order_shipping_line_persisted',
+					array(
+						'order_id'            => (int) $order->get_id(),
+						'rate_id'             => (string) $rate_id,
+						'instance_id'         => (string) $rate->get_instance_id(),
+						'office_meta_present' => $office_meta_present,
+					)
+				);
+			}
+		}
+		if ( 0 === $cdek_lines_added ) {
+			$flow     = CheckoutSessionService::get_flow();
+			$delivery = CdekWcSessionBridge::get_merged_delivery_answers( is_array( $flow ) ? $flow : array() );
+			$ship_mid = isset( $delivery['shipping_method_id'] ) ? sanitize_key( (string) $delivery['shipping_method_id'] ) : '';
+			if ( 'pvz' === $ship_mid ) {
+				$tariff = isset( $delivery['shipping_tariff_id'] ) ? sanitize_key( (string) $delivery['shipping_tariff_id'] ) : '';
+				do_action(
+					'mp_custom_checkout_log',
+					'warning',
+					'[pvz] order_shipping_line_missing',
+					array(
+						'phase'           => 'copy',
+						'order_id'        => (int) $order->get_id(),
+						'expected_method' => 'pvz',
+						'expected_tariff' => $tariff,
+					)
+				);
+			}
 		}
 	}
 
@@ -667,6 +1322,8 @@ final class CheckoutAjaxHooks {
 			return null;
 		}
 		WcCustomerShippingSync::before_create_order_from_cart();
+		$flow_for_guard = CheckoutSessionService::get_flow();
+		self::assert_pvz_rate_available_or_fail( is_array( $flow_for_guard ) ? $flow_for_guard : array() );
 		$order = wc_create_order();
 		if ( ! $order instanceof \WC_Order ) {
 			return null;
@@ -777,6 +1434,122 @@ final class CheckoutAjaxHooks {
 			do_action( 'mp_custom_checkout_log', 'error', '[date_sync] selected_date_not_available', array( 'selected_date' => $selected_date, 'scenario' => $scenario ) );
 		}
 		return $is_valid;
+	}
+
+	/**
+	 * §29.4: блокируем переход / оплату при выборе ПВЗ без кода офиса CDEK.
+	 *
+	 * @param array<string, mixed> $flow Raw flow from CheckoutSessionService::get_flow().
+	 */
+	private static function assert_pvz_has_office_or_fail( array $flow, string $log_step_id ): void {
+		$delivery = CdekWcSessionBridge::get_merged_delivery_answers( $flow );
+		$method   = isset( $delivery['shipping_method_id'] ) ? sanitize_key( (string) $delivery['shipping_method_id'] ) : '';
+		if ( 'pvz' !== $method ) {
+			return;
+		}
+		if ( ! FeatureFlagResolver::is_enabled( DefaultFeatureFlagsRegistry::FLAG_PVZ_OFFICE_REQUIRED, true ) ) {
+			$ctx = isset( $_POST['context_id'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['context_id'] ) ) : '';
+			do_action(
+				'mp_custom_checkout_log',
+				'info',
+				'[pvz] office_required_flag_off_skip_validation',
+				array(
+					'step_id'    => sanitize_key( $log_step_id ),
+					'context_id' => $ctx,
+				)
+			);
+			return;
+		}
+		$office = isset( $delivery['cdek_office_code'] ) ? trim( (string) $delivery['cdek_office_code'] ) : '';
+		if ( '' !== $office ) {
+			return;
+		}
+		$ctx = isset( $_POST['context_id'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['context_id'] ) ) : '';
+		do_action(
+			'mp_custom_checkout_log',
+			'warning',
+			'[validation] step_failed',
+			array(
+				'step_id'             => sanitize_key( $log_step_id ),
+				'errors'              => array( 'cdek_office_code' => 'pvz_required' ),
+				'context_id'          => $ctx,
+				'shipping_method_id'  => isset( $delivery['shipping_method_id'] ) ? (string) $delivery['shipping_method_id'] : '',
+				'shipping_tariff_id'  => isset( $delivery['shipping_tariff_id'] ) ? (string) $delivery['shipping_tariff_id'] : '',
+				'scenario'            => isset( $flow['scenario'] ) ? (string) $flow['scenario'] : '',
+			)
+		);
+		wp_send_json_error(
+			array(
+				'code'    => 'pvz_required',
+				'message' => __( 'Выберите пункт выдачи (ПВЗ), чтобы продолжить.', 'mp-custom-checkout' ),
+			),
+			422
+		);
+	}
+
+	/**
+	 * §29.6: метод pvz требует выбранную в сессии ставку official_cdek:* из пакета 0 (иначе заказ без shipping line).
+	 *
+	 * @param array<string, mixed> $flow Raw flow from CheckoutSessionService::get_flow().
+	 */
+	private static function assert_pvz_rate_available_or_fail( array $flow ): void {
+		$delivery = CdekWcSessionBridge::get_merged_delivery_answers( $flow );
+		$method   = isset( $delivery['shipping_method_id'] ) ? sanitize_key( (string) $delivery['shipping_method_id'] ) : '';
+		if ( 'pvz' !== $method ) {
+			return;
+		}
+		if ( ! function_exists( 'WC' ) || ! WC()->shipping() || ! WC()->session instanceof \WC_Session ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'warning',
+				'[pvz] order_shipping_line_missing',
+				array(
+					'phase'   => 'guard',
+					'step_id' => 'confirm',
+					'reason'  => 'wc_session_or_shipping_unavailable',
+				)
+			);
+			wp_send_json_error(
+				array(
+					'code'    => 'pvz_rate_unavailable',
+					'message' => __( 'Ставка доставки ПВЗ недоступна. Обновите страницу или выберите другой способ доставки.', 'mp-custom-checkout' ),
+				),
+				422
+			);
+		}
+		$tariff           = sanitize_key( (string) ( $delivery['shipping_tariff_id'] ?? '' ) );
+		$expected_rate_id = CdekWcSessionBridge::resolve_wc_rate_id_from_catalog( $method, $tariff );
+		$chosen           = (array) WC()->session->get( 'chosen_shipping_methods', array() );
+		$picked           = isset( $chosen[0] ) ? (string) $chosen[0] : '';
+		$packages         = WC()->shipping()->get_packages();
+		$package0         = isset( $packages[0] ) && is_array( $packages[0] ) ? $packages[0] : array();
+		$rates            = isset( $package0['rates'] ) && is_array( $package0['rates'] ) ? $package0['rates'] : array();
+		$prefix           = CdekWcSessionBridge::OFFICIAL_CDEK_PREFIX;
+		$picked_ok        = '' !== $picked && 0 === strpos( $picked, $prefix ) && isset( $rates[ $picked ] );
+		if ( $picked_ok ) {
+			return;
+		}
+		$rate_keys = array_keys( $rates );
+		do_action(
+			'mp_custom_checkout_log',
+			'warning',
+			'[pvz] order_shipping_line_missing',
+			array(
+				'phase'              => 'guard',
+				'step_id'            => 'confirm',
+				'expected_rate_id'   => $expected_rate_id,
+				'chosen_method_id'   => $picked,
+				'rate_id_count'      => count( $rate_keys ),
+				'rate_id_sample'     => array_slice( array_map( 'strval', $rate_keys ), 0, 15 ),
+			)
+		);
+		wp_send_json_error(
+			array(
+				'code'    => 'pvz_rate_unavailable',
+				'message' => __( 'Ставка доставки ПВЗ недоступна. Обновите страницу или выберите другой способ доставки.', 'mp-custom-checkout' ),
+			),
+			422
+		);
 	}
 
 	/** @param array<string, mixed> $answers */
