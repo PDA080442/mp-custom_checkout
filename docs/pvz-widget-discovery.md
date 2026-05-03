@@ -42,7 +42,7 @@
 1. Фильтр `mp_custom_checkout_cdek_widget_service_path` (override).
 2. Иначе — `\Cdek\Loader::getPluginUrl('build/service.php')` если файл читается (аналогично `dist/service.php` на нестандартных сборках).
 
-Если `servicePath` недоступен, `map_ready = false` в `mpCcCdekWidget` — карта не подключается, остаётся **fallback** (список `getPickupConfig().points`).
+Если `servicePath` недоступен или нет ключа карты, `map_ready = false` в `mpCcCdekWidget` — UMD виджета может не быть; **fallback** — список офисов СДЭК из **`offices_json`** (не точки самовывоза магазина). См. [`assets/js/cdek-widget-bridge.js`](../assets/js/cdek-widget-bridge.js).
 
 ## 5. Опции PHP, которые читает MP (без дублирования в своих option)
 
@@ -55,7 +55,7 @@
 
 ## 6. Blockers
 
-- Нет установленного плагина СДЭК или нет `build/cdek-widget.umd.js` / `build/service.php` — только fallback-список.
-- Неверный/пустой Yandex key — `enabled` / карта недоступны.
+- Нет установленного плагина СДЭК или нет `build/cdek-widget.umd.js` / `build/service.php` — карта не поднимается; fallback — список офисов из `offices_json` (или пустое сообщение, если офисов нет).
+- Неверный/пустой Yandex key — `enabled` / карта недоступны; fallback как выше.
 
 См. также: [pvz-data-contract.md](./pvz-data-contract.md), [cdek-mp-checkout-checklist.md](./cdek-mp-checkout-checklist.md).

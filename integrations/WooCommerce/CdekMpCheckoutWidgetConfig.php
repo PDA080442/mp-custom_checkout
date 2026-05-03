@@ -22,6 +22,7 @@ final class CdekMpCheckoutWidgetConfig {
 			'map_ready'      => false,
 			'fallback'       => true,
 			'reason'         => 'cdek_unavailable',
+			'reason_hint'    => '',
 			'apiKey'         => '',
 			'lang'           => 'rus',
 			'default_city'   => '',
@@ -35,18 +36,35 @@ final class CdekMpCheckoutWidgetConfig {
 		);
 
 		if ( ! class_exists( '\Cdek\ShippingMethod', false ) ) {
-			return $base;
+			return array_merge(
+				$base,
+				array(
+					'reason_hint' => self::reason_hint_for_customers( 'cdek_unavailable' ),
+				)
+			);
 		}
 
 		try {
 			$shipping = \Cdek\ShippingMethod::factory();
 		} catch ( \Throwable $e ) {
-			return array_merge( $base, array( 'reason' => 'cdek_factory_failed' ) );
+			return array_merge(
+				$base,
+				array(
+					'reason'      => 'cdek_factory_failed',
+					'reason_hint' => self::reason_hint_for_customers( 'cdek_factory_failed' ),
+				)
+			);
 		}
 
 		$api_key = isset( $shipping->yandex_map_api_key ) ? trim( (string) $shipping->yandex_map_api_key ) : '';
 		if ( '' === $api_key ) {
-			return array_merge( $base, array( 'reason' => 'yandex_api_key_empty' ) );
+			return array_merge(
+				$base,
+				array(
+					'reason'      => 'yandex_api_key_empty',
+					'reason_hint' => self::reason_hint_for_customers( 'yandex_api_key_empty' ),
+				)
+			);
 		}
 
 		$locale = function_exists( 'get_user_locale' ) ? (string) get_user_locale() : '';
@@ -92,12 +110,14 @@ final class CdekMpCheckoutWidgetConfig {
 
 		$map_ready = '' !== $service_path;
 		$fallback    = ! $map_ready;
+		$fail_reason = $map_ready ? '' : 'service_path_missing';
 
 		return array(
 			'enabled'        => true,
 			'map_ready'      => $map_ready,
 			'fallback'       => $fallback,
-			'reason'         => $map_ready ? '' : 'service_path_missing',
+			'reason'         => $fail_reason,
+			'reason_hint'    => '' !== $fail_reason ? self::reason_hint_for_customers( $fail_reason ) : '',
 			'apiKey'         => $api_key,
 			'lang'           => $lang,
 			'default_city'   => $city,
@@ -122,7 +142,8 @@ final class CdekMpCheckoutWidgetConfig {
 			'map_title'              => __( 'Пункт СДЭК на карте', 'mp-custom-checkout' ),
 			'loading_map'            => __( 'Загружаем карту…', 'mp-custom-checkout' ),
 			'map_unavailable'        => __( 'Карта временно недоступна, выберите пункт из списка ниже.', 'mp-custom-checkout' ),
-			'map_unavailable_title'  => __( 'Список пунктов', 'mp-custom-checkout' ),
+			'map_unavailable_title'  => __( 'Список ПВЗ СДЭК (карта недоступна)', 'mp-custom-checkout' ),
+			'pvz_no_offices'         => __( 'Карта ПВЗ временно недоступна. Выберите другой способ доставки.', 'mp-custom-checkout' ),
 			'map_config_error'       => __( 'Карта недоступна: проверьте ключ карты и service.php плагина СДЭК.', 'mp-custom-checkout' ),
 			'map_init_failed'        => __( 'Не удалось открыть карту.', 'mp-custom-checkout' ),
 			'map_pick_failed'        => __( 'Не удалось получить код пункта.', 'mp-custom-checkout' ),
@@ -147,6 +168,23 @@ final class CdekMpCheckoutWidgetConfig {
 		}
 
 		return '';
+	}
+
+	/**
+	 * Короткий текст для покупателя (без машинных кодов). Код причины остаётся в `reason` для логов.
+	 */
+	private static function reason_hint_for_customers( string $reason ): string {
+		switch ( $reason ) {
+			case 'service_path_missing':
+				return __( 'Обновите плагин СДЭК для WooCommerce или обратитесь к администратору: для карты ПВЗ нужен файл service.php из комплекта плагина.', 'mp-custom-checkout' );
+			case 'yandex_api_key_empty':
+				return __( 'В настройках доставки СДЭК в WooCommerce укажите ключ API Яндекс.Карт.', 'mp-custom-checkout' );
+			case 'cdek_factory_failed':
+				return __( 'Проверьте настройки способа доставки СДЭК в WooCommerce.', 'mp-custom-checkout' );
+			case 'cdek_unavailable':
+			default:
+				return __( 'Установите и активируйте официальный плагин CDEKDelivery для WooCommerce.', 'mp-custom-checkout' );
+		}
 	}
 
 	/**

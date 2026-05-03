@@ -8718,45 +8718,17 @@
 			render(state, $app);
 		});
 
-		function applyModalPickupPoint(pointId) {
-			var pid = String(pointId || '');
-			if (!pid) {
-				return;
-			}
-			var pt = getPickupPointById(pid);
-			if (!pt) {
-				return;
-			}
-			state.frontendStore.fulfillment = state.frontendStore.fulfillment || {};
-			state.frontendStore.fulfillment.scenarioData = state.frontendStore.fulfillment.scenarioData || {};
-			state.frontendStore.fulfillment.scenarioData.pickup_point = pt;
-			state.frontendStore.runtime = state.frontendStore.runtime || {};
-			state.frontendStore.runtime.step1_pvz_editing = false;
-			render(state, $app);
-			postCheckout('session_set_answers', {
-				step_id: 'scenario',
-				context_id: state.flowContextId,
-				answers: state.frontendStore.fulfillment.scenarioData || {}
-			}).fail(function () {
-				notify(getStepOneLabel(state, 'address_form.pvz_save_pickup_failed', '', 'Не удалось сохранить адрес ПВЗ.'), 'error');
-			});
-		}
-
 		$app.find('[data-pvz-open-map]').off('click.mpCcPvzMap').on('click.mpCcPvzMap', function () {
 			if (!window.MPCC_CDEKWidgetBridge || typeof window.MPCC_CDEKWidgetBridge.open !== 'function') {
 				notify(getStepOneLabel(state, 'address_form.pvz_map_bridge_missing', '', 'Не удалось открыть выбор пункта. Обновите страницу.'), 'error');
 				return;
 			}
-			var pickupCfgMap = getPickupConfig();
-			var ptsMap = pickupCfgMap.points || [];
 			window.MPCC_CDEKWidgetBridge.open({
-				mode: 'map',
+				mode: 'pvz_map',
 				trigger: this,
-				pickupPoints: ptsMap,
 				logValidationFailure: function (errorsMap) {
 					logValidationFailure(state, 'address_delivery', errorsMap);
-				},
-				onPickupPointChosen: applyModalPickupPoint
+				}
 			});
 		});
 
@@ -8765,16 +8737,12 @@
 				notify(getStepOneLabel(state, 'address_form.pvz_map_bridge_missing', '', 'Не удалось открыть выбор пункта. Обновите страницу.'), 'error');
 				return;
 			}
-			var pickupCfgPick = getPickupConfig();
-			var ptsPick = pickupCfgPick.points || [];
 			window.MPCC_CDEKWidgetBridge.open({
-				mode: 'list',
+				mode: 'pvz_map',
 				trigger: this,
-				pickupPoints: ptsPick,
 				logValidationFailure: function (errorsMap) {
 					logValidationFailure(state, 'address_delivery', errorsMap);
-				},
-				onPickupPointChosen: applyModalPickupPoint
+				}
 			});
 		});
 

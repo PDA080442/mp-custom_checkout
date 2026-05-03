@@ -1,5 +1,6 @@
 /**
- * Модал выбора ПВЗ: CDEK Widget 3.x (UMD) или список точек магазина (§29.2).
+ * Модал выбора ПВЗ: CDEK Widget 3.x (UMD) или список офисов из offices_json (§29.2).
+ * Режим pickup_list — точки самовывоза магазина; pvz_map — только СДЭК (никогда не смешивать с pickupPoints).
  */
 (function ($) {
 	'use strict';
@@ -32,6 +33,67 @@
 		var fromPhp = getCfg().labels || {};
 		var fromOpts = opts && opts.labels && typeof opts.labels === 'object' ? opts.labels : {};
 		return $.extend({}, fromPhp, fromOpts);
+	}
+
+	/**
+	 * @param {string} mode
+	 * @returns {'pvz_map'|'pickup_list'}
+	 */
+	function normalizeBridgeMode(mode) {
+		var m = String(mode || 'pvz_map').toLowerCase();
+		if (m === 'list' || m === 'pickup_list' || m === 'pickup') {
+			return 'pickup_list';
+		}
+		return 'pvz_map';
+	}
+
+	function officeCodeFromRaw(o) {
+		if (!o || typeof o !== 'object') {
+			return '';
+		}
+		if (o.code != null && String(o.code).trim() !== '') {
+			return String(o.code).trim();
+		}
+		if (o.uuid != null && String(o.uuid).trim() !== '') {
+			return String(o.uuid).trim();
+		}
+		return '';
+	}
+
+	function officeAddressFromRaw(o) {
+		if (!o || typeof o !== 'object') {
+			return '';
+		}
+		var loc = o.location && typeof o.location === 'object' ? o.location : {};
+		var line = loc.address_full || loc.address || o.address || o.address_full || o.name || '';
+		return String(line || '').trim();
+	}
+
+	/**
+	 * @returns {Array<{id:string,address:string}>}
+	 */
+	function parseOfficesFromCfg(cfg) {
+		cfg = cfg && typeof cfg === 'object' ? cfg : {};
+		var raw;
+		try {
+			raw = JSON.parse(cfg.offices_json || '[]');
+		} catch (e1) {
+			raw = [];
+		}
+		if (!Array.isArray(raw)) {
+			return [];
+		}
+		var out = [];
+		for (var i = 0; i < raw.length; i += 1) {
+			var row = raw[i];
+			var code = officeCodeFromRaw(row);
+			if (!code) {
+				continue;
+			}
+			var addr = officeAddressFromRaw(row);
+			out.push({ id: code, address: addr || code });
+		}
+		return out;
 	}
 
 	function removeModal() {
@@ -94,23 +156,39 @@
 		}
 		removeModal();
 		restoreFocus();
-		if (!confirmed && !hadChoose && ctx && typeof ctx.logValidationFailure === 'function') {
+		if (
+			!confirmed &&
+			!hadChoose &&
+			ctx &&
+			typeof ctx.logValidationFailure === 'function' &&
+			!ctx.skipAbandonLog
+		) {
 			ctx.logValidationFailure({ event_type: 'pvz_picker_closed_without_selection' });
 		}
 	}
 
-	function showListModal(opts, labels, pickupPoints) {
+	/**
+	 * @param {'pickup_point'|'cdek_office'} selectionKind
+	 */
+	function showListModal(opts, labels, pickupPoints, selectionKind, titleOverride) {
 		pickupPoints = Array.isArray(pickupPoints) ? pickupPoints : [];
+		selectionKind = selectionKind || 'pickup_point';
 		var ctx = {
 			chosenThisOpen: false,
 			widgetInstance: null,
 			logValidationFailure: opts.logValidationFailure,
-			onKey: null
+			onKey: null,
+			skipAbandonLog: false
 		};
 		var $overlay = $('<div class="mp-cc-cdek-modal" role="dialog" aria-modal="true" aria-labelledby="mp-cc-cdek-modal-title"></div>');
 		var $panel = $('<div class="mp-cc-cdek-modal__panel"></div>');
 		var idTitle = 'mp-cc-cdek-modal-title';
-		$panel.append('<h2 class="mp-cc-cdek-modal__title" id="' + idTitle + '">' + escHtml(labels.list_title || labels.modal_list_title || 'Выбор пункта') + '</h2>');
+		var headTitle =
+			titleOverride ||
+			labels.list_title ||
+			labels.modal_list_title ||
+			'Выбор пункта';
+		$panel.append('<h2 class="mp-cc-cdek-modal__title" id="' + idTitle + '">' + escHtml(headTitle) + '</h2>');
 		var $live = $('<div class="mp-cc-cdek-modal__live" aria-live="polite"></div>');
 		$panel.append($live);
 		var $list = $('<div class="mp-cc-cdek-modal__list" role="radiogroup" aria-label="' + escHtml(labels.list_group || '') + '"></div>');
@@ -168,6 +246,22 @@
 				$live.text(labels.pick_required || 'Выберите пункт из списка.');
 				return;
 			}
+			if (selectionKind === 'cdek_office') {
+				if (typeof window.mpCcSetCdekOfficeCode !== 'function') {
+					$live.text(labels.map_pick_failed || 'Не удалось получить код пункта.');
+					return;
+				}
+				ctx.chosenThisOpen = true;
+				window
+					.mpCcSetCdekOfficeCode(String(val))
+					.fail(function () {
+						ctx.chosenThisOpen = false;
+					})
+					.then(function () {
+						closeModal(ctx, true);
+					});
+				return;
+			}
 			ctx.chosenThisOpen = true;
 			if (typeof opts.onPickupPointChosen === 'function') {
 				opts.onPickupPointChosen(String(val));
@@ -196,16 +290,103 @@
 		}, 0);
 	}
 
+	function showPvzEmptyModal(opts, labels) {
+		var cfg = getCfg();
+		var hint = String(cfg.reason_hint || labels.reason_hint || '').trim();
+		var ctx = {
+			chosenThisOpen: false,
+			widgetInstance: null,
+			logValidationFailure: opts.logValidationFailure,
+			onKey: null,
+			skipAbandonLog: true
+		};
+		var $overlay = $('<div class="mp-cc-cdek-modal" role="dialog" aria-modal="true" aria-labelledby="mp-cc-cdek-modal-empty-title"></div>');
+		var $panel = $('<div class="mp-cc-cdek-modal__panel"></div>');
+		var baseMsg =
+			labels.pvz_no_offices ||
+			labels.map_unavailable ||
+			'Карта ПВЗ временно недоступна. Выберите другой способ доставки.';
+		var body = hint ? baseMsg + ' ' + hint : baseMsg;
+		$panel.append(
+			'<h2 class="mp-cc-cdek-modal__title" id="mp-cc-cdek-modal-empty-title">' +
+				escHtml(labels.map_unavailable_title || labels.list_title || 'ПВЗ СДЭК') +
+				'</h2>'
+		);
+		$panel.append(
+			'<p class="mp-cc-cdek-modal__empty">' + escHtml(body) + '</p>'
+		);
+		var $actions = $('<div class="mp-cc-cdek-modal__actions"></div>');
+		var $close = $(
+			'<button type="button" class="mp-cc-cdek-modal__btn mp-cc-cdek-modal__btn--primary">' +
+				escHtml(labels.close || 'Закрыть') +
+				'</button>'
+		);
+		$actions.append($close);
+		$panel.append($actions);
+		$overlay.append($panel);
+		$('body').append($overlay).addClass('mp-cc-cdek-modal-open');
+
+		function onClose() {
+			closeModal(ctx, false);
+		}
+		$close.on('click', onClose);
+		$overlay.on('click', function (e) {
+			if ($(e.target).is('.mp-cc-cdek-modal')) {
+				onClose();
+			}
+		});
+		ctx.onKey = function (e) {
+			if (e.key === 'Escape') {
+				e.preventDefault();
+				onClose();
+				return;
+			}
+			trapTab(e, $overlay);
+		};
+		$(document).on('keydown.mpCcCdekModal', ctx.onKey);
+		activeModal = { $overlay: $overlay };
+		window.setTimeout(function () {
+			$close.trigger('focus');
+		}, 0);
+	}
+
+	function logPvzFallback(opts, cfg, subtype) {
+		if (opts && typeof opts.logValidationFailure === 'function') {
+			opts.logValidationFailure({
+				event_type: 'pvz_map_fallback_to_list',
+				reason: String(cfg.reason || ''),
+				subtype: subtype || ''
+			});
+		}
+	}
+
+	function openPvzMapFallback(opts, labels, logSubtype) {
+		var cfg = getCfg();
+		logPvzFallback(opts, cfg, logSubtype);
+		var offices = parseOfficesFromCfg(cfg);
+		if (!offices.length) {
+			if (typeof opts.logValidationFailure === 'function') {
+				opts.logValidationFailure({
+					event_type: 'pvz_map_empty_offices',
+					reason: String(cfg.reason || ''),
+					subtype: logSubtype || ''
+				});
+			}
+			showPvzEmptyModal(opts, labels);
+			return;
+		}
+		var listLabels = $.extend({}, labels, {
+			list_title: labels.map_unavailable_title || labels.list_title
+		});
+		showListModal(opts, listLabels, offices, 'cdek_office', listLabels.list_title);
+	}
+
 	function showMapModal(opts, labels) {
 		var Widget = getWidgetCtor();
 		var cfg = getCfg();
 		var inline = getCdekInline();
 		if (!Widget) {
-			showListModal(
-				opts,
-				$.extend({}, labels, { list_title: labels.map_unavailable_title || labels.list_title }),
-				opts.pickupPoints || []
-			);
+			openPvzMapFallback(opts, labels, 'cdek_widget_missing');
 			return;
 		}
 		var ctx = {
@@ -295,7 +476,8 @@
 						return;
 					}
 					ctx.chosenInFlight = true;
-					window.mpCcSetCdekOfficeCode(code)
+					window
+						.mpCcSetCdekOfficeCode(code)
 						.always(function () {
 							ctx.chosenInFlight = false;
 						})
@@ -306,7 +488,15 @@
 				}
 			});
 		} catch (err) {
-			$err.text(labels.map_init_failed || 'Не удалось открыть карту.');
+			if (ctx.onKey) {
+				$(document).off('keydown.mpCcCdekModal', ctx.onKey);
+			}
+			$overlay.remove();
+			$('body').removeClass('mp-cc-cdek-modal-open');
+			activeModal = null;
+			restoreFocus();
+			openPvzMapFallback(opts, labels, 'widget_init_failed');
+			return;
 		}
 		activeModal = { $overlay: $overlay };
 		window.setTimeout(function () {
@@ -317,17 +507,21 @@
 	function open(opts) {
 		opts = opts || {};
 		var labels = mergeLabels(opts);
-		var mode = String(opts.mode || 'map');
+		var bridgeMode = normalizeBridgeMode(opts.mode);
 		var pickupPoints = Array.isArray(opts.pickupPoints) ? opts.pickupPoints : [];
 		lastFocus = opts.trigger || document.activeElement;
-		if (mode === 'list') {
-			showListModal(opts, labels, pickupPoints);
+
+		if (bridgeMode === 'pickup_list') {
+			showListModal(opts, labels, pickupPoints, 'pickup_point', null);
 			return;
 		}
-		if (!getCfg().map_ready) {
-			showListModal(opts, labels, pickupPoints);
+
+		var cfg = getCfg();
+		if (!cfg.map_ready || !getWidgetCtor()) {
+			openPvzMapFallback(opts, labels, !cfg.map_ready ? 'map_not_ready' : 'cdek_widget_missing');
 			return;
 		}
+
 		showMapModal(opts, labels);
 	}
 
