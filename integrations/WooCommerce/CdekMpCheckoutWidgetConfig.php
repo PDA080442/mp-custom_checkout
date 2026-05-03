@@ -105,19 +105,19 @@ final class CdekMpCheckoutWidgetConfig {
 
 		$service_path = (string) apply_filters( 'mp_custom_checkout_cdek_widget_service_path', '', $shipping, $checkout_flow );
 		if ( '' === $service_path ) {
-			$service_path = self::resolve_default_service_path();
+			$service_path = self::resolve_optional_service_path();
 		}
 
-		$map_ready = '' !== $service_path;
-		$fallback    = ! $map_ready;
-		$fail_reason = $map_ready ? '' : 'service_path_missing';
+		// Карта доступна при ключе Яндекса; официальный фронт плагина (`cdek-checkout-map.js`) вызывает виджет без servicePath.
+		$map_ready = '' !== $api_key;
+		$fallback  = ! $map_ready;
 
 		return array(
 			'enabled'        => true,
 			'map_ready'      => $map_ready,
 			'fallback'       => $fallback,
-			'reason'         => $fail_reason,
-			'reason_hint'    => '' !== $fail_reason ? self::reason_hint_for_customers( $fail_reason ) : '',
+			'reason'         => '',
+			'reason_hint'    => '',
 			'apiKey'         => $api_key,
 			'lang'           => $lang,
 			'default_city'   => $city,
@@ -144,7 +144,7 @@ final class CdekMpCheckoutWidgetConfig {
 			'map_unavailable'        => __( 'Карта временно недоступна, выберите пункт из списка ниже.', 'mp-custom-checkout' ),
 			'map_unavailable_title'  => __( 'Список ПВЗ СДЭК (карта недоступна)', 'mp-custom-checkout' ),
 			'pvz_no_offices'         => __( 'Карта ПВЗ временно недоступна. Выберите другой способ доставки.', 'mp-custom-checkout' ),
-			'map_config_error'       => __( 'Карта недоступна: проверьте ключ карты и service.php плагина СДЭК.', 'mp-custom-checkout' ),
+			'map_config_error'       => __( 'Карта недоступна: проверьте ключ API Яндекс.Карт в настройках доставки СДЭК.', 'mp-custom-checkout' ),
 			'map_init_failed'        => __( 'Не удалось открыть карту.', 'mp-custom-checkout' ),
 			'map_pick_failed'        => __( 'Не удалось получить код пункта.', 'mp-custom-checkout' ),
 			'pick_required'          => __( 'Выберите пункт из списка.', 'mp-custom-checkout' ),
@@ -153,9 +153,9 @@ final class CdekMpCheckoutWidgetConfig {
 	}
 
 	/**
-	 * URL прокси service.php из установленного плагина CDEK (виджет 3.x требует servicePath).
+	 * Опциональный URL прокси service.php (если есть в сборке плагина). Виджет на эталонном checkout СДЭК работает без него.
 	 */
-	private static function resolve_default_service_path(): string {
+	private static function resolve_optional_service_path(): string {
 		if ( ! class_exists( '\Cdek\Loader', false ) ) {
 			return '';
 		}
@@ -175,8 +175,6 @@ final class CdekMpCheckoutWidgetConfig {
 	 */
 	private static function reason_hint_for_customers( string $reason ): string {
 		switch ( $reason ) {
-			case 'service_path_missing':
-				return __( 'Обновите плагин СДЭК для WooCommerce или обратитесь к администратору: для карты ПВЗ нужен файл service.php из комплекта плагина.', 'mp-custom-checkout' );
 			case 'yandex_api_key_empty':
 				return __( 'В настройках доставки СДЭК в WooCommerce укажите ключ API Яндекс.Карт.', 'mp-custom-checkout' );
 			case 'cdek_factory_failed':

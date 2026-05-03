@@ -435,8 +435,8 @@
 
 		var apiKey = cfg.apiKey || inline.key || '';
 		var lang = cfg.lang || inline.lang || 'rus';
-		var servicePath = cfg.service_path || '';
-		if (!apiKey || !servicePath) {
+		var servicePath = String(cfg.service_path || '').trim();
+		if (!apiKey) {
 			$err.text(labels.map_config_error || 'Карта недоступна: проверьте настройки СДЭК.');
 			activeModal = { $overlay: $overlay };
 			$btnClose.trigger('focus');
@@ -452,41 +452,45 @@
 		var defaultLocation = cfg.default_city || 'Москва';
 		var goods = Array.isArray(cfg.goods) && cfg.goods.length ? cfg.goods : [{ length: 10, width: 10, height: 10, weight: 1000 }];
 
-		try {
-			ctx.widgetInstance = new Widget({
-				root: '#mp-cc-cdek-modal__map',
-				apiKey: apiKey,
-				lang: lang,
-				servicePath: servicePath,
-				debug: false,
-				defaultLocation: defaultLocation,
-				officesRaw: officesRaw,
-				goods: goods,
-				hideDeliveryOptions: { door: true, office: false },
-				popup: false,
-				canChoose: true,
-				sender: false,
-				onChoose: function (_type, _tariff, address) {
-					if (ctx.chosenInFlight) {
-						return;
-					}
-					var code = address && address.code ? String(address.code) : '';
-					if (!code || typeof window.mpCcSetCdekOfficeCode !== 'function') {
-						$err.text(labels.map_pick_failed || 'Не удалось получить код пункта.');
-						return;
-					}
-					ctx.chosenInFlight = true;
-					window
-						.mpCcSetCdekOfficeCode(code)
-						.always(function () {
-							ctx.chosenInFlight = false;
-						})
-						.then(function () {
-							ctx.chosenThisOpen = true;
-							closeModal(ctx, true);
-						});
+		var widgetOpts = {
+			root: '#mp-cc-cdek-modal__map',
+			apiKey: apiKey,
+			lang: lang,
+			debug: false,
+			defaultLocation: defaultLocation,
+			officesRaw: officesRaw,
+			goods: goods,
+			hideDeliveryOptions: { door: true, office: false },
+			popup: false,
+			canChoose: true,
+			sender: false,
+			onChoose: function (_type, _tariff, address) {
+				if (ctx.chosenInFlight) {
+					return;
 				}
-			});
+				var code = address && address.code ? String(address.code) : '';
+				if (!code || typeof window.mpCcSetCdekOfficeCode !== 'function') {
+					$err.text(labels.map_pick_failed || 'Не удалось получить код пункта.');
+					return;
+				}
+				ctx.chosenInFlight = true;
+				window
+					.mpCcSetCdekOfficeCode(code)
+					.always(function () {
+						ctx.chosenInFlight = false;
+					})
+					.then(function () {
+						ctx.chosenThisOpen = true;
+						closeModal(ctx, true);
+					});
+			}
+		};
+		if (servicePath !== '') {
+			widgetOpts.servicePath = servicePath;
+		}
+
+		try {
+			ctx.widgetInstance = new Widget(widgetOpts);
 		} catch (err) {
 			if (ctx.onKey) {
 				$(document).off('keydown.mpCcCdekModal', ctx.onKey);

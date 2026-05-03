@@ -31,18 +31,15 @@
 - `hideDeliveryOptions: { door: true }`
 - `onChoose(_type, _tariff, address)` → `address.code`
 
-## 4. `servicePath` (виджет 3.x)
+## 4. `servicePath` (виджет 3.x) — опционально для MP
 
-В типах `@cdek-it/widget` поле **`servicePath` обязательное**; дефолт в схеме типов — `"/service.php"` (относительный путь к PHP-прокси пакета).
+В типах npm-пакета `@cdek-it/widget` поле **`servicePath`** часто помечено как обязательное; на **фактическом WooCommerce-checkout официального плагина** виджет создаётся **без** него: скрипт `cdek-checkout-map.js` вызывает `new CDEKWidget({ apiKey: window.cdek.key, lang, defaultLocation, officesRaw, hideDeliveryOptions: { door: true }, onChoose, popup: true })` — без `servicePath` (сверить с собранным JS в каталоге плагина СДЭК на хостинге).
 
-У **официального WooCommerce-плагина** рядом с UMD должен лежать прокси **`build/service.php`**, уже привязанный к учётным данным СДЭК из настроек плагина (не копировать «голый» `service.php` из npm — там заглушки логина/пароля).
+**MP-checkout:**
 
-**MP-checkout:** URL прокси берётся как:
-
-1. Фильтр `mp_custom_checkout_cdek_widget_service_path` (override).
-2. Иначе — `\Cdek\Loader::getPluginUrl('build/service.php')` если файл читается (аналогично `dist/service.php` на нестандартных сборках).
-
-Если `servicePath` недоступен или нет ключа карты, `map_ready = false` в `mpCcCdekWidget` — UMD виджета может не быть; **fallback** — список офисов СДЭК из **`offices_json`** (не точки самовывоза магазина). См. [`assets/js/cdek-widget-bridge.js`](../assets/js/cdek-widget-bridge.js).
+1. **`map_ready`** в [`CdekMpCheckoutWidgetConfig.php`](../integrations/WooCommerce/CdekMpCheckoutWidgetConfig.php) — при активном способе СДЭК и заполненном **`yandex_map_api_key`** (не зависит от наличия `service.php`).
+2. Опциональный URL прокси: фильтр `mp_custom_checkout_cdek_widget_service_path`, иначе попытка прочитать `build/service.php` / `dist/service.php` у плагина — если файла нет, **`service_path`** остаётся пустым; bridge передаёт **`servicePath`** в конструктор виджета **только при непустом** значении ([`assets/js/cdek-widget-bridge.js`](../assets/js/cdek-widget-bridge.js)).
+3. Если нет ключа Яндекс.Карт или не загрузился UMD — **fallback**: список офисов из **`offices_json`** (не точки самовывоза магазина).
 
 ## 5. Опции PHP, которые читает MP (без дублирования в своих option)
 
@@ -55,7 +52,8 @@
 
 ## 6. Blockers
 
-- Нет установленного плагина СДЭК или нет `build/cdek-widget.umd.js` / `build/service.php` — карта не поднимается; fallback — список офисов из `offices_json` (или пустое сообщение, если офисов нет).
-- Неверный/пустой Yandex key — `enabled` / карта недоступны; fallback как выше.
+- Нет установленного плагина СДЭК или не отдаётся **`build/cdek-widget.umd.js`** по URL (не зарегистрирован handle `cdek-widget`) — конструктор `window.CDEKWidget` отсутствует; fallback — список из `offices_json` или пустое сообщение.
+- Неверный/пустой **Yandex API key** — карта не поднимается; fallback как выше.
+- Отсутствие **`build/service.php`** в сборке плагина **не** блокирует карту в текущей интеграции MP (как и у эталонного checkout СДЭК без `servicePath`).
 
 См. также: [pvz-data-contract.md](./pvz-data-contract.md), [cdek-mp-checkout-checklist.md](./cdek-mp-checkout-checklist.md).

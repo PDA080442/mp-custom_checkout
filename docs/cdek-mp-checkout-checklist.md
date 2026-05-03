@@ -62,7 +62,7 @@
 
 #### Map API rate sanity
 
-- Запросы к API СДЭК (офисы / тарифы внутри виджета) идут **из виджета CDEK Widget 3.x** по `apiKey` и `servicePath` ([`assets/js/cdek-widget-bridge.js`](../assets/js/cdek-widget-bridge.js)) — лимиты и квоты задаёт СДЭК, не наш PHP.
+- Запросы к API СДЭК (офисы / тарифы внутри виджета) идут **из виджета CDEK Widget 3.x** по **`apiKey`** (Яндекс.Карты); опционально **`servicePath`**, если задан ([`assets/js/cdek-widget-bridge.js`](../assets/js/cdek-widget-bridge.js)) — лимиты и квоты задаёт СДЭК, не наш PHP.
 - Наш бэкенд получает только финальный AJAX `cdek_set_office` — по сути **один запрос на успешный выбор ПВЗ**; есть защита от повторов: `chosenInFlight` в bridge, `shippingMutationInFlight` и очередь отложенного офиса в [`assets/js/checkout-frontend.js`](../assets/js/checkout-frontend.js).
 - Модалка карты singleton (`activeModal`), повторная инициализация виджета на одно открытие не дублируется.
 
@@ -72,7 +72,7 @@
 
 1. **`window.mpCcCdekWidget`** — смотреть `enabled`, **`map_ready`**, **`reason`** (для логов), **`reason_hint`** (краткий текст для покупателя), длину **`offices_json`** (строка JSON; после парса — число офисов для текущего города из flow).
 2. **`typeof window.CDEKWidget`** — должен быть `'function'`, если MP подключил UMD виджет (зависит от `map_ready` и регистрации скрипта в [`frontend/Hooks/FrontendAssetsHooks.php`](../frontend/Hooks/FrontendAssetsHooks.php)).
-3. **Админка WooCommerce → доставка СДЭК (официальный плагин):** плагин активен; заполнен ключ Яндекс.Карт (`yandex_map_api_key`); в `wp-content/plugins/<cdek>/` есть **`build/cdek-widget.umd.js`** и **`build/service.php`** (или **`dist/service.php`** на нестандартной сборке).
+3. **Админка WooCommerce → доставка СДЭК (официальный плагин):** плагин активен; заполнен ключ Яндекс.Карт (`yandex_map_api_key`); по URL открывается **`build/cdek-widget.umd.js`** (путь как в `\Cdek\UI\CdekWidget::registerScripts()` — обычно `build/…`; если папку переименовали, скрипт должен отдаваться по зарегистрированному URL). Файл **`service.php`** в типичной сборке может отсутствовать — карта MP работает без него (как эталонный `cdek-checkout-map.js` без `servicePath`). При наличии `build/service.php` / `dist/service.php` MP может передать URL через фильтр или авто-резолв.
 4. **Город в шаге 1 / контактах:** если город пуст или СДЭК не находит код города, **`offices_json`** может быть `'[]'` — тогда fallback-список ПВЗ пуст и показывается сообщение «выберите другой способ доставки» (не точки самовывоза магазина).
 
 При fallback карты в лог валидации может попасть **`event_type`: `pvz_map_fallback_to_list`** с полем **`reason`** (см. [`assets/js/cdek-widget-bridge.js`](../assets/js/cdek-widget-bridge.js)).
