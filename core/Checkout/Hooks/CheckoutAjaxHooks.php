@@ -30,6 +30,16 @@ final class CheckoutAjaxHooks {
 
 	public const ACTION = 'mp_cc_checkout';
 
+	private const CDEK_COUNTRY_OFFICES_TRANSIENT = 'mp_cc_cdek_offices_country';
+
+	private const CDEK_COUNTRY_OFFICES_BACKUP_TRANSIENT = 'mp_cc_cdek_offices_country_backup';
+
+	/**
+	 * Устаревшая option-резервная копия (до v3.4 backup лежал в `wp_options`).
+	 * Сохраняем имя только для одноразовой миграции/очистки.
+	 */
+	private const CDEK_COUNTRY_OFFICES_BACKUP_OPTION_LEGACY = 'mp_cc_cdek_offices_country_backup';
+
 	public static function register(): void {
 		add_action( 'wp_ajax_' . self::ACTION, array( __CLASS__, 'handle' ) );
 		add_action( 'wp_ajax_nopriv_' . self::ACTION, array( __CLASS__, 'handle' ) );
@@ -40,7 +50,21 @@ final class CheckoutAjaxHooks {
 			wp_send_json_error( array( 'message' => __( 'WooCommerce недоступен.', 'mp-custom-checkout' ) ), 503 );
 		}
 		if ( function_exists( 'wc_load_cart' ) ) {
-			wc_load_cart();
+			try {
+				wc_load_cart();
+			} catch ( \Throwable $cart_load_e ) {
+				do_action(
+					'mp_custom_checkout_log',
+					'warning',
+					'[ajax] wc_load_cart_failed',
+					array(
+						'source'          => 'ajax',
+						'event_type'      => 'wc_load_cart_failed',
+						'exception_class' => get_class( $cart_load_e ),
+						'exception_msg'   => substr( (string) $cart_load_e->getMessage(), 0, 200 ),
+					)
+				);
+			}
 		}
 		check_ajax_referer( 'mp_cc_checkout', 'nonce' );
 		$sub_action = isset( $_POST['sub_action'] ) ? sanitize_key( wp_unslash( $_POST['sub_action'] ) ) : '';
@@ -388,8 +412,17 @@ final class CheckoutAjaxHooks {
 	/**
 	 * Возвращает список офисов СДЭК для города (JSON-массив для `officesRaw` виджета).
 	 * Не меняет flow; синхронизация с эталонным `update_checkout` официального плагина.
+	 *
+	 * Режим `mode=country`: все ПВЗ РФ для карты (кэш transient + резерв в option при сбое API).
 	 */
 	private static function handle_cdek_get_offices(): void {
+		$mode = isset( $_POST['mode'] ) ? sanitize_key( wp_unslash( (string) $_POST['mode'] ) ) : '';
+
+		if ( 'country' === $mode ) {
+			self::handle_cdek_get_offices_country_mode();
+			return;
+		}
+
 		$city     = isset( $_POST['city'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['city'] ) ) : '';
 		$postcode = isset( $_POST['postcode'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['postcode'] ) ) : '';
 
@@ -405,13 +438,27 @@ final class CheckoutAjaxHooks {
 			);
 		}
 
-		if ( ! class_exists( '\Cdek\CdekApi', false ) ) {
-			wp_send_json_error(
+		if ( ! self::ensure_cdek_classes_loaded() ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'warning',
+				'[pvz] cdek_api_unavailable',
 				array(
-					'code'    => 'cdek_api_unavailable',
-					'message' => __( 'Сервис ПВЗ временно недоступен.', 'mp-custom-checkout' ),
-				),
-				503
+					'source'     => 'ajax',
+					'event_type' => 'cdek_api_unavailable',
+					'mode'       => 'city',
+				)
+			);
+			wp_send_json_success(
+				array(
+					'sub_action'    => 'cdek_get_offices',
+					'offices_raw'   => array(),
+					'offices_count' => 0,
+					'city'          => $city,
+					'postcode'      => $postcode,
+					'fetch_error'   => true,
+					'reason'        => 'cdek_api_unavailable',
+				)
 			);
 		}
 
@@ -455,6 +502,345 @@ final class CheckoutAjaxHooks {
 				500
 			);
 		}
+	}
+
+	/**
+	 * AJAX: все ПВЗ РФ для нативной карты СДЭК (transient + один запрос к /deliverypoints).
+	 *
+	 * Контракт ответа на пустые/ошибочные данные — `success: true, offices_raw: [], fetch_error: bool`,
+	 * чтобы клиент мог уйти в city-based fallback без 500.
+	 */
+	private static function handle_cdek_get_offices_country_mode(): void {
+		if ( ! self::ensure_cdek_classes_loaded() ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'warning',
+				'[pvz] cdek_api_unavailable',
+				array(
+					'source'     => 'ajax',
+					'event_type' => 'cdek_api_unavailable',
+					'mode'       => 'country',
+				)
+			);
+			$stale = self::get_country_offices_backup();
+			if ( count( $stale ) > 0 ) {
+				wp_send_json_success(
+					array(
+						'sub_action'    => 'cdek_get_offices',
+						'mode'          => 'country',
+						'offices_raw'   => $stale,
+						'offices_count' => count( $stale ),
+						'city'          => '',
+						'postcode'      => '',
+						'from_stale'    => true,
+						'fetch_error'   => true,
+						'reason'        => 'cdek_api_unavailable',
+					)
+				);
+			}
+			wp_send_json_success(
+				array(
+					'sub_action'    => 'cdek_get_offices',
+					'mode'          => 'country',
+					'offices_raw'   => array(),
+					'offices_count' => 0,
+					'city'          => '',
+					'postcode'      => '',
+					'fetch_error'   => true,
+					'reason'        => 'cdek_api_unavailable',
+				)
+			);
+		}
+
+		$ttl = (int) apply_filters( 'mp_custom_checkout_cdek_country_offices_ttl', 12 * HOUR_IN_SECONDS );
+		if ( $ttl < 60 ) {
+			$ttl = 12 * HOUR_IN_SECONDS;
+		}
+
+		$cached = get_transient( self::CDEK_COUNTRY_OFFICES_TRANSIENT );
+		if ( is_array( $cached ) && count( $cached ) > 0 ) {
+			wp_send_json_success(
+				array(
+					'sub_action'    => 'cdek_get_offices',
+					'mode'          => 'country',
+					'offices_raw'   => $cached,
+					'offices_count' => count( $cached ),
+					'city'          => '',
+					'postcode'      => '',
+					'from_cache'    => true,
+				)
+			);
+		}
+
+		try {
+			$result = self::fetch_country_offices_from_cdek_api();
+			$all    = $result['offices'];
+			$n      = count( $all );
+
+			do_action(
+				'mp_custom_checkout_log',
+				'info',
+				'[pvz] cdek_get_offices_country_ok',
+				array(
+					'source'      => 'ajax',
+					'event_type'  => 'cdek_get_offices_country_ok',
+					'count'       => $n,
+					'body_bytes'  => $result['body_bytes'],
+				)
+			);
+
+			if ( $n > 0 ) {
+				set_transient( self::CDEK_COUNTRY_OFFICES_TRANSIENT, $all, $ttl );
+				set_transient( self::CDEK_COUNTRY_OFFICES_BACKUP_TRANSIENT, $all, 30 * DAY_IN_SECONDS );
+				if ( false !== get_option( self::CDEK_COUNTRY_OFFICES_BACKUP_OPTION_LEGACY, false ) ) {
+					delete_option( self::CDEK_COUNTRY_OFFICES_BACKUP_OPTION_LEGACY );
+				}
+				wp_send_json_success(
+					array(
+						'sub_action'    => 'cdek_get_offices',
+						'mode'          => 'country',
+						'offices_raw'   => $all,
+						'offices_count' => $n,
+						'city'          => '',
+						'postcode'      => '',
+					)
+				);
+			}
+
+			$stale = self::get_country_offices_backup();
+			if ( count( $stale ) > 0 ) {
+				wp_send_json_success(
+					array(
+						'sub_action'    => 'cdek_get_offices',
+						'mode'          => 'country',
+						'offices_raw'   => $stale,
+						'offices_count' => count( $stale ),
+						'city'          => '',
+						'postcode'      => '',
+						'from_stale'    => true,
+						'fetch_error'   => true,
+					)
+				);
+			}
+
+			wp_send_json_success(
+				array(
+					'sub_action'    => 'cdek_get_offices',
+					'mode'          => 'country',
+					'offices_raw'   => array(),
+					'offices_count' => 0,
+					'city'          => '',
+					'postcode'      => '',
+					'fetch_error'   => true,
+					'reason'        => 'empty_response',
+				)
+			);
+		} catch ( \Throwable $e ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'warning',
+				'[pvz] cdek_get_offices_country_failed',
+				array(
+					'source'          => 'ajax',
+					'event_type'      => 'cdek_get_offices_country_failed',
+					'exception_class' => get_class( $e ),
+					'exception_msg'   => substr( (string) $e->getMessage(), 0, 200 ),
+				)
+			);
+			$stale = self::get_country_offices_backup();
+			if ( count( $stale ) > 0 ) {
+				wp_send_json_success(
+					array(
+						'sub_action'    => 'cdek_get_offices',
+						'mode'          => 'country',
+						'offices_raw'   => $stale,
+						'offices_count' => count( $stale ),
+						'city'          => '',
+						'postcode'      => '',
+						'from_stale'    => true,
+						'fetch_error'   => true,
+					)
+				);
+				return;
+			}
+			wp_send_json_success(
+				array(
+					'sub_action'    => 'cdek_get_offices',
+					'mode'          => 'country',
+					'offices_raw'   => array(),
+					'offices_count' => 0,
+					'city'          => '',
+					'postcode'      => '',
+					'fetch_error'   => true,
+					'reason'        => 'api_exception',
+				)
+			);
+		}
+	}
+
+	/**
+	 * Загружает все ПВЗ РФ из CDEK API v2 (один запрос к `/v2/deliverypoints`).
+	 *
+	 * Параметры подтверждены тремя независимыми SDK (cdek-it/sdk2.0, AntistressStore/cdek-sdk-v2,
+	 * cdek-simple-api): `country_code` — строка ISO 3166-1 alpha-2; пагинация (`size`/`page`)
+	 * у этого эндпоинта не поддерживается (есть только у `/location/cities` и `/location/regions`).
+	 *
+	 * @return array{offices: array<int, mixed>, body_bytes: int}
+	 *
+	 * @throws \Throwable
+	 */
+	private static function fetch_country_offices_from_cdek_api(): array {
+		if ( function_exists( 'wp_raise_memory_limit' ) ) {
+			wp_raise_memory_limit( 'admin' );
+		}
+
+		$shipping = \Cdek\ShippingMethod::factory();
+		if ( ! $shipping->test_mode ) {
+			$api_url = \Cdek\Config::API_URL;
+		} else {
+			/** @noinspection GlobalVariableUsageInspection */
+			$api_url = isset( $_ENV['CDEK_REST_API'] ) ? (string) $_ENV['CDEK_REST_API'] : \Cdek\Config::TEST_API_URL;
+		}
+
+		$token_storage = new \Cdek\Helpers\LegacyTokenStorage();
+		$token         = $token_storage->getToken();
+
+		$response = \Cdek\Transport\HttpClient::sendJsonRequest(
+			"{$api_url}deliverypoints",
+			'GET',
+			$token,
+			array(
+				'country_code' => 'RU',
+				'type'         => 'ALL',
+				'lang'         => 'rus',
+			)
+		);
+
+		$body       = (string) $response->body();
+		$body_bytes = strlen( $body );
+		$offices    = self::decode_cdek_deliverypoints_page( $body );
+
+		return array(
+			'offices'    => $offices,
+			'body_bytes' => $body_bytes,
+		);
+	}
+
+	/**
+	 * Гарантирует, что классы плагина СДЭК (`\Cdek\CdekApi`, `\Cdek\Transport\HttpClient`)
+	 * подключены. Сначала пробует обычный autoload (`class_exists` без второго аргумента),
+	 * затем при необходимости форсирует загрузку через активные плагины WP.
+	 *
+	 * Корень проблемы на проде: `class_exists(..., false)` без autoload возвращает false,
+	 * пока плагин CDEK не подгружен лениво — сервер отдавал 503, фронт уходил в fallback.
+	 */
+	private static function ensure_cdek_classes_loaded(): bool {
+		if ( class_exists( '\\Cdek\\CdekApi' ) && class_exists( '\\Cdek\\Transport\\HttpClient' ) ) {
+			return true;
+		}
+
+		if ( ! function_exists( 'is_plugin_active' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		}
+
+		$candidates = array();
+		if ( function_exists( 'wp_get_active_and_valid_plugins' ) ) {
+			$candidates = wp_get_active_and_valid_plugins();
+		}
+		if ( empty( $candidates ) && defined( 'WP_PLUGIN_DIR' ) ) {
+			foreach ( array( 'cdekdelivery', 'cdek-wordpress-plugin', 'cdek-delivery' ) as $slug ) {
+				$dir = WP_PLUGIN_DIR . '/' . $slug;
+				if ( is_dir( $dir ) ) {
+					$entry = $dir . '/' . $slug . '.php';
+					if ( file_exists( $entry ) ) {
+						$candidates[] = $entry;
+					}
+				}
+			}
+		}
+
+		foreach ( $candidates as $plugin_file ) {
+			if ( ! is_string( $plugin_file ) || '' === $plugin_file ) {
+				continue;
+			}
+			if ( false === stripos( $plugin_file, 'cdek' ) ) {
+				continue;
+			}
+			if ( ! file_exists( $plugin_file ) ) {
+				continue;
+			}
+			try {
+				include_once $plugin_file;
+			} catch ( \Throwable $e ) {
+				do_action(
+					'mp_custom_checkout_log',
+					'warning',
+					'[pvz] cdek_plugin_include_failed',
+					array(
+						'source'          => 'ajax',
+						'event_type'      => 'cdek_plugin_include_failed',
+						'plugin_file'     => $plugin_file,
+						'exception_class' => get_class( $e ),
+						'exception_msg'   => substr( (string) $e->getMessage(), 0, 200 ),
+					)
+				);
+			}
+			if ( class_exists( '\\Cdek\\CdekApi' ) && class_exists( '\\Cdek\\Transport\\HttpClient' ) ) {
+				return true;
+			}
+		}
+
+		return class_exists( '\\Cdek\\CdekApi' ) && class_exists( '\\Cdek\\Transport\\HttpClient' );
+	}
+
+	/**
+	 * Возвращает транзиентный backup; если его нет — пытается мигрировать со старой option и удаляет её.
+	 *
+	 * @return array<int, mixed>
+	 */
+	private static function get_country_offices_backup(): array {
+		$transient_backup = get_transient( self::CDEK_COUNTRY_OFFICES_BACKUP_TRANSIENT );
+		if ( is_array( $transient_backup ) && count( $transient_backup ) > 0 ) {
+			return $transient_backup;
+		}
+
+		$legacy = get_option( self::CDEK_COUNTRY_OFFICES_BACKUP_OPTION_LEGACY, false );
+		if ( is_array( $legacy ) && count( $legacy ) > 0 ) {
+			set_transient( self::CDEK_COUNTRY_OFFICES_BACKUP_TRANSIENT, $legacy, 30 * DAY_IN_SECONDS );
+			delete_option( self::CDEK_COUNTRY_OFFICES_BACKUP_OPTION_LEGACY );
+			return $legacy;
+		}
+
+		return array();
+	}
+
+	/**
+	 * @return array<int, mixed>
+	 */
+	private static function decode_cdek_deliverypoints_page( string $body ): array {
+		$decoded = json_decode( $body, true );
+		if ( ! is_array( $decoded ) ) {
+			return array();
+		}
+		if ( array() === $decoded ) {
+			return array();
+		}
+		$keys = array_keys( $decoded );
+		$is_list = $keys === range( 0, count( $decoded ) - 1 );
+		if ( $is_list ) {
+			return $decoded;
+		}
+		foreach ( array( 'entity', 'deliverypoints', 'items', 'data' ) as $k ) {
+			if ( isset( $decoded[ $k ] ) && is_array( $decoded[ $k ] ) ) {
+				$inner = $decoded[ $k ];
+				$ik    = array_keys( $inner );
+				if ( $ik === range( 0, count( $inner ) - 1 ) ) {
+					return $inner;
+				}
+			}
+		}
+
+		return array();
 	}
 
 	/**

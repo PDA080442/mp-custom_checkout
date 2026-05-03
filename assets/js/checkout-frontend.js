@@ -8768,12 +8768,6 @@
 				mode: 'pvz_map',
 				trigger: this,
 				context_id: state.flowContextId,
-				getCurrentCity: function () {
-					return getBridgeShippingCity();
-				},
-				getCurrentPostcode: function () {
-					return getBridgeShippingPostcode();
-				},
 				logValidationFailure: function (errorsMap) {
 					logValidationFailure(state, 'address_delivery', errorsMap);
 				}

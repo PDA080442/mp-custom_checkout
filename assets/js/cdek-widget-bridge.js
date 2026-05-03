@@ -134,24 +134,29 @@
 
 	/**
 	 * @param {object} opts
+	 * @param {'city'|'country'} [opts.fetchMode]
 	 * @param {function({officesRaw:Array,city:string,postcode:string,fetchError:boolean})} cb
 	 */
 	function fetchOfficesForCurrentCity(opts, cb) {
 		var cfg = getCfg();
 		var localized = window.mpCcCheckout || {};
+		var fetchMode = opts && opts.fetchMode === 'country' ? 'country' : 'city';
 		var city = '';
-		if (opts && typeof opts.getCurrentCity === 'function') {
-			city = String(opts.getCurrentCity() || '').trim();
-		}
-		if (!city) {
-			city = String(cfg.default_city || '').trim();
-		}
 		var postcode = '';
-		if (opts && typeof opts.getCurrentPostcode === 'function') {
-			postcode = String(opts.getCurrentPostcode() || '').trim();
-		}
-		if (!postcode) {
-			postcode = String(cfg.postcode || '').trim();
+
+		if (fetchMode !== 'country') {
+			if (opts && typeof opts.getCurrentCity === 'function') {
+				city = String(opts.getCurrentCity() || '').trim();
+			}
+			if (!city) {
+				city = String(cfg.default_city || '').trim();
+			}
+			if (opts && typeof opts.getCurrentPostcode === 'function') {
+				postcode = String(opts.getCurrentPostcode() || '').trim();
+			}
+			if (!postcode) {
+				postcode = String(cfg.postcode || '').trim();
+			}
 		}
 
 		function finish(payload) {
@@ -160,7 +165,7 @@
 			}
 		}
 
-		if (!city) {
+		if (fetchMode !== 'country' && !city) {
 			finish({
 				officesRaw: [],
 				city: '',
@@ -173,28 +178,33 @@
 		if (!localized.ajaxUrl || !localized.nonce) {
 			finish({
 				officesRaw: fallbackRawFromCfg(cfg),
-				city: city,
-				postcode: postcode,
+				city: fetchMode === 'country' ? '' : city,
+				postcode: fetchMode === 'country' ? '' : postcode,
 				fetchError: true
 			});
 			return;
 		}
 
 		var ctxId = opts && opts.context_id != null ? String(opts.context_id) : '';
+		var ajaxData = {
+			action: 'mp_cc_checkout',
+			nonce: localized.nonce,
+			sub_action: 'cdek_get_offices',
+			context_id: ctxId
+		};
+		if (fetchMode === 'country') {
+			ajaxData.mode = 'country';
+		} else {
+			ajaxData.city = city;
+			ajaxData.postcode = postcode;
+		}
 
 		$.ajax({
 			url: localized.ajaxUrl,
 			method: 'POST',
 			dataType: 'json',
-			timeout: 8000,
-			data: {
-				action: 'mp_cc_checkout',
-				nonce: localized.nonce,
-				sub_action: 'cdek_get_offices',
-				context_id: ctxId,
-				city: city,
-				postcode: postcode
-			}
+			timeout: fetchMode === 'country' ? 90000 : 8000,
+			data: ajaxData
 		})
 			.done(function (response) {
 				var fetchError = false;
@@ -213,6 +223,15 @@
 					response && response.success && response.data && response.data.postcode != null
 						? String(response.data.postcode).trim()
 						: postcode;
+				if (fetchMode === 'country') {
+					finish({
+						officesRaw: officesRaw,
+						city: '',
+						postcode: '',
+						fetchError: fetchError
+					});
+					return;
+				}
 				finish({
 					officesRaw: officesRaw,
 					city: respCity || city,
@@ -221,6 +240,15 @@
 				});
 			})
 			.fail(function () {
+				if (fetchMode === 'country') {
+					finish({
+						officesRaw: fallbackRawFromCfg(cfg),
+						city: '',
+						postcode: '',
+						fetchError: true
+					});
+					return;
+				}
 				finish({
 					officesRaw: fallbackRawFromCfg(cfg),
 					city: city,
@@ -575,21 +603,41 @@
 			return;
 		}
 
-		fetchOfficesForCurrentCity(opts, function (result) {
-			if (result.fetchError && typeof opts.logValidationFailure === 'function') {
-				opts.logValidationFailure({
-					event_type: 'pvz_offices_refresh_failed',
-					reason: String(cfg.reason || ''),
-					subtype: 'pvz_map'
-				});
+		var loadSnap = null;
+		var triggerEl = opts && opts.trigger;
+		if (triggerEl && triggerEl.nodeType === 1) {
+			loadSnap = {
+				el: triggerEl,
+				text: triggerEl.textContent,
+				disabled: Boolean(triggerEl.disabled)
+			};
+			try {
+				triggerEl.disabled = true;
+				triggerEl.setAttribute('aria-busy', 'true');
+				triggerEl.setAttribute('data-loading', '1');
+			} catch (eLoad) {
+				loadSnap = null;
 			}
-			var officesRaw = Array.isArray(result.officesRaw) ? result.officesRaw : [];
-			var defaultLocation = String(result.city || cfg.default_city || 'Москва').trim() || 'Москва';
+		}
 
-			if (result.fetchError && officesRaw.length === 0) {
-				openPvzMapFallback(opts, labels, 'fetch_failed');
+		function restoreMapTriggerLoading() {
+			if (!loadSnap || !loadSnap.el) {
 				return;
 			}
+			try {
+				loadSnap.el.disabled = loadSnap.disabled;
+				loadSnap.el.removeAttribute('aria-busy');
+				loadSnap.el.removeAttribute('data-loading');
+				if (typeof loadSnap.text === 'string') {
+					loadSnap.el.textContent = loadSnap.text;
+				}
+			} catch (eRestore) {
+				// ignore
+			}
+		}
+
+		function continueWithOfficesRaw(officesRaw) {
+			var defaultLocation = String(cfg.default_city || 'Москва').trim() || 'Москва';
 
 			var chosenInFlight = false;
 
@@ -656,6 +704,50 @@
 				nativeCdekWidgetInstance = null;
 				openPvzMapFallback(opts, labels, 'widget_init_failed');
 			}
+		}
+
+		var fetchOpts = $.extend({}, opts, { fetchMode: 'country' });
+		fetchOfficesForCurrentCity(fetchOpts, function (result) {
+			var officesRaw = Array.isArray(result.officesRaw) ? result.officesRaw : [];
+
+			if (result.fetchError && typeof opts.logValidationFailure === 'function') {
+				opts.logValidationFailure({
+					event_type: 'pvz_offices_refresh_failed',
+					reason: String(cfg.reason || ''),
+					subtype: 'pvz_map',
+					mode: 'country'
+				});
+			}
+
+			if (officesRaw.length > 0) {
+				restoreMapTriggerLoading();
+				continueWithOfficesRaw(officesRaw);
+				return;
+			}
+
+			var fallbackCity = String(cfg.default_city || 'Москва').trim() || 'Москва';
+			var cityOpts = $.extend({}, opts, {
+				fetchMode: 'city',
+				getCurrentCity: function () { return fallbackCity; },
+				getCurrentPostcode: function () { return ''; }
+			});
+			fetchOfficesForCurrentCity(cityOpts, function (cityResult) {
+				restoreMapTriggerLoading();
+				var cityRaw = Array.isArray(cityResult.officesRaw) ? cityResult.officesRaw : [];
+				if (cityRaw.length > 0) {
+					if (typeof opts.logValidationFailure === 'function') {
+						opts.logValidationFailure({
+							event_type: 'pvz_map_country_empty_used_city_fallback',
+							reason: String(cfg.reason || ''),
+							subtype: 'pvz_map',
+							city: fallbackCity
+						});
+					}
+					continueWithOfficesRaw(cityRaw);
+					return;
+				}
+				openPvzMapFallback(opts, labels, 'fetch_failed_country_and_city');
+			});
 		});
 	}
 
