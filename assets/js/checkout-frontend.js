@@ -6841,11 +6841,16 @@
 			html += '<span class="mp-cc-address-form__value mp-cc-pvz-card__status">' + escapeHtml(pvzStatusText) + '</span>';
 			html += '</div>';
 			html += '<div class="mp-cc-pvz-card__actions">';
-			html += '<button type="button" class="mp-cc-address-form__edit" data-pvz-open-picker aria-haspopup="dialog"' + pvzInvalidAttr + '>';
-			html += escapeHtml(getStepOneLabel(state, 'address_form.pvz_choose_point_button', '', 'Выбрать пункт')) + '</button>';
 			if (wcfgPvz.map_ready) {
+				// Оставляем только «Выбрать пункт на карте». Кнопка-список ('Выбрать пункт') убрана,
+				// чтобы не плодить дубликат для одного и того же действия.
 				html += '<button type="button" class="mp-cc-address-form__edit mp-cc-pvz-card__map" data-pvz-open-map aria-haspopup="dialog"' + pvzInvalidAttr + '>';
 				html += escapeHtml(getStepOneLabel(state, 'address_form.pvz_open_map_button', '', 'Выбрать пункт на карте')) + '</button>';
+			} else {
+				// Fallback на legacy-список ПВЗ только если нативная карта недоступна, чтобы пользователь
+				// в любом случае мог выбрать пункт.
+				html += '<button type="button" class="mp-cc-address-form__edit" data-pvz-open-picker aria-haspopup="dialog"' + pvzInvalidAttr + '>';
+				html += escapeHtml(getStepOneLabel(state, 'address_form.pvz_choose_point_button', '', 'Выбрать пункт')) + '</button>';
 			}
 			html += '</div>';
 			var pvzShowInlineList = wcfgPvz.fallback === true;
@@ -8043,7 +8048,11 @@
 					answers: state.frontendStore.fulfillment.date || {}
 				});
 			}).then(function () {
-				// Переход на следующий шаг только по кнопке «Далее» / сводке, без автоперехода после выбора метода.
+				// Подтягиваем актуальные WC rates / cart totals после пересчёта на бэке —
+				// иначе цены вариантов остаются стейловыми из bootstrap'а после смены города.
+				if (state && state.currentStepId === 'address_delivery') {
+					syncStoreWithBackend(state, $app, { force: true });
+				}
 			}).fail(function () {
 				notify('Не удалось сохранить шаг доставки.', 'error');
 				// При ошибке восстанавливаем состояние из бэкенда, чтобы UI не остался рассинхронизированным.
@@ -8090,7 +8099,12 @@
 			context_id: state.flowContextId,
 			answers: state.frontendStore.fulfillment.date || {}
 		}).then(function () {
-			// Без автоперехода — пользователь жмёт «Далее».
+			// Подтянуть актуальные WC rates / cart totals после пересчёта на бэке.
+			// Без этого фронт остаётся с ценами из bootstrap'а (для прошлого города), и при смене
+			// «экспресс ↔ стандарт» сводка показывает 0₽ или старую цену прошлого города.
+			if (state && state.currentStepId === 'address_delivery') {
+				syncStoreWithBackend(state, $app, { force: true });
+			}
 		}).fail(function () {
 			notify('Не удалось сохранить тариф доставки.', 'error');
 			syncStoreWithBackend(state, $app, { force: true });
