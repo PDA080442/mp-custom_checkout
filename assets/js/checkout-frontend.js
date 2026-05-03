@@ -2081,7 +2081,8 @@
 		return out.length ? out : rates.slice();
 	}
 
-	function wcAssignRateIdsToTariffs(methodId, methodTitle, tariffs, rates) {
+	function wcAssignRateIdsToTariffs(methodId, methodTitle, tariffs, rates, costById) {
+		costById = costById && typeof costById === 'object' ? costById : {};
 		var pool = wcRatesMatchingMethod(methodId, methodTitle, rates);
 		var used = {};
 		var tid;
@@ -2250,7 +2251,7 @@
 				}
 			}
 			if (Array.isArray(m.tariffs) && m.tariffs.length) {
-				var assign = wcAssignRateIdsToTariffs(m.id, m.title, m.tariffs, rates);
+				var assign = wcAssignRateIdsToTariffs(m.id, m.title, m.tariffs, rates, costById);
 				var t2 = [];
 				var ti;
 				for (ti = 0; ti < m.tariffs.length; ti += 1) {
@@ -6353,6 +6354,23 @@
 		}, 550);
 	}
 
+	/**
+	 * Принудительный пересчёт ставок WC после смены city/region/country на шаге «Адрес и доставка».
+	 *
+	 * Обычный sync на этом шаге не идёт (см. `syncStoreWithBackend` guard), иначе любая правка адреса
+	 * дёргала бы корзину. Но при смене города ранее выбранный ПВЗ/тариф невалиден, и без force=true
+	 * корзина зависает на 0₽ или старых ценах до ручного «Рассчитать доставку».
+	 */
+	function scheduleAddressForcedRatesSync(state, $app) {
+		if (addressRatesSyncTimer) {
+			window.clearTimeout(addressRatesSyncTimer);
+		}
+		addressRatesSyncTimer = window.setTimeout(function () {
+			addressRatesSyncTimer = null;
+			syncStoreWithBackend(state, $app, { force: true });
+		}, 550);
+	}
+
 	function saveDiscountDraft(state) {
 		ensureDiscountDefaults(state);
 		return postCheckout('session_set_answers', {
@@ -7698,17 +7716,31 @@
 					return $.Deferred().reject(response || {}).promise();
 				}
 				var d = response.data;
-				if (d.flow) {
-					syncFromFlow(state, d.flow, d.cart || {}, paymentFieldPayloadFromAjaxData(d));
-				} else {
-					state.frontendStore.fulfillment.date.cdek_office_code = c;
+				try {
+					if (d.flow) {
+						syncFromFlow(state, d.flow, d.cart || {}, paymentFieldPayloadFromAjaxData(d));
+					} else {
+						state.frontendStore.fulfillment.date.cdek_office_code = c;
+					}
+				} catch (syncErr) {
+					// Серверный AJAX уже подтвердил сохранение кода ПВЗ — JS-исключение в локальной
+					// синхронизации flow/cart не должно превращаться в «Не удалось сохранить».
+					try {
+						state.frontendStore.fulfillment.date = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+							? state.frontendStore.fulfillment.date
+							: {};
+						state.frontendStore.fulfillment.date.cdek_office_code = c;
+					} catch (_assignErr) {}
+					if (window.console && typeof window.console.warn === 'function') {
+						window.console.warn('[mp-cc] cdek_set_office sync warning:', syncErr && syncErr.message ? syncErr.message : syncErr);
+					}
 				}
 				var savedOffice = state.frontendStore.fulfillment.date && trimNonEmpty(state.frontendStore.fulfillment.date.cdek_office_code);
 				if (savedOffice) {
 					setStepInvalidState(state, 'address_delivery', false);
 					setV2StepInvalidState(state, 'delivery_screen', false);
 				}
-				render(state, $app);
+				try { render(state, $app); } catch (_renderErr) {}
 				return response;
 			}).fail(function () {
 				notify(getStepOneLabel(state, 'address_form.pvz_save_failed', '', 'Не удалось сохранить пункт ПВЗ. Попробуйте ещё раз.'), 'error');
@@ -8101,28 +8133,39 @@
 
 	function afterDadataContactGeocode(state, $app, touchedKeys) {
 		touchedKeys = Array.isArray(touchedKeys) ? touchedKeys : [];
-		var prevCityNorm = normalizeCityForPvzInvalidation(
-			state.frontendStore && state.frontendStore.form && state.frontendStore.form.contact
-				? state.frontendStore.form.contact.city
-				: ''
-		);
+		var contactBefore = state.frontendStore && state.frontendStore.form && state.frontendStore.form.contact
+			? state.frontendStore.form.contact
+			: {};
+		var prevCityNorm = normalizeCityForPvzInvalidation(contactBefore.city);
+		var prevStateNorm = normalizeCityForPvzInvalidation(contactBefore.state);
+		var prevCountryNorm = normalizeCityForPvzInvalidation(contactBefore.country);
 		flushContactFormFromDom(state, $app);
 		var contactAfter = state.frontendStore && state.frontendStore.form ? (state.frontendStore.form.contact || {}) : {};
 		var nextCityNorm = normalizeCityForPvzInvalidation(contactAfter.city);
+		var nextStateNorm = normalizeCityForPvzInvalidation(contactAfter.state);
+		var nextCountryNorm = normalizeCityForPvzInvalidation(contactAfter.country);
 		var cityTouched = false;
+		var stateTouched = false;
+		var countryTouched = false;
 		var ci;
 		for (ci = 0; ci < touchedKeys.length; ci += 1) {
-			if (touchedKeys[ci] === 'city') {
-				cityTouched = true;
-				break;
-			}
+			if (touchedKeys[ci] === 'city') { cityTouched = true; }
+			if (touchedKeys[ci] === 'state') { stateTouched = true; }
+			if (touchedKeys[ci] === 'country') { countryTouched = true; }
 		}
-		if (cityTouched && prevCityNorm && nextCityNorm && prevCityNorm !== nextCityNorm) {
+		var locationChanged = (
+			(cityTouched && prevCityNorm && nextCityNorm && prevCityNorm !== nextCityNorm) ||
+			(stateTouched && (prevStateNorm || nextStateNorm) && prevStateNorm !== nextStateNorm) ||
+			(countryTouched && (prevCountryNorm || nextCountryNorm) && prevCountryNorm !== nextCountryNorm)
+		);
+		if (locationChanged) {
 			state.frontendStore.fulfillment = state.frontendStore.fulfillment || {};
 			state.frontendStore.fulfillment.date = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
 				? state.frontendStore.fulfillment.date
 				: {};
-			delete state.frontendStore.fulfillment.date.cdek_office_code;
+			// Явная пустая строка, не delete: на бэке `set_step_answers` делает array_replace,
+			// и при отсутствии ключа в payload остался бы старый код от прошлого города.
+			state.frontendStore.fulfillment.date.cdek_office_code = '';
 			var summaryDd = state.frontendStore.cart && state.frontendStore.cart.summary && typeof state.frontendStore.cart.summary === 'object'
 				? state.frontendStore.cart.summary
 				: {};
@@ -8146,11 +8189,15 @@
 				break;
 			}
 		}
-		if (needSync) {
-			scheduleAddressRatesBackendSync(state, $app);
-		}
 		if (state.currentStepId === 'address_delivery') {
 			invalidateShippingIfNotInCatalog(state);
+		}
+		if (needSync) {
+			if (locationChanged && state && state.currentStepId === 'address_delivery') {
+				scheduleAddressForcedRatesSync(state, $app);
+			} else {
+				scheduleAddressRatesBackendSync(state, $app);
+			}
 		}
 	}
 
@@ -8654,7 +8701,9 @@
 				state.frontendStore.fulfillment.date = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
 					? state.frontendStore.fulfillment.date
 					: {};
-				delete state.frontendStore.fulfillment.date.cdek_office_code;
+				// Явная пустая строка (см. afterDadataContactGeocode) — иначе array_replace
+				// в session_set_answers оставит старый код от прошлого города.
+				state.frontendStore.fulfillment.date.cdek_office_code = '';
 				invalidateV2DownstreamFrom(state, 0);
 				var summaryCity = state.frontendStore.cart && state.frontendStore.cart.summary && typeof state.frontendStore.cart.summary === 'object'
 					? state.frontendStore.cart.summary
@@ -8692,11 +8741,29 @@
 				}).fail(function () {
 					notify('Не удалось сохранить город пункта выдачи.', 'error');
 				});
+				// Без этого бэкенд продолжает хранить старый cdek_office_code/тариф от прошлого города,
+				// и WC при пересчёте корзины оставляет 0₽/чужой ПВЗ. Шлём актуальное step_one =
+				// fulfillment.date, в котором cdek_office_code и shipping_method уже инвалидированы выше.
+				var stepOnePayload = state.frontendStore.fulfillment && state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+					? $.extend(true, {}, state.frontendStore.fulfillment.date)
+					: {};
+				var reqStepOne = postCheckout('session_set_answers', {
+					step_id: 'address_delivery',
+					context_id: state.flowContextId,
+					answers: stepOnePayload
+				}).fail(function () {
+					// soft-fail: не показываем ошибку, синхронизация повторится через scheduleAddressForcedRatesSync.
+				});
 				function releaseCityMutations() {
 					shippingMutationInFlight = false;
 					flushPendingShippingMutation(state, $app, '');
+					// На шаге 1 после смены города принудительно пересчитываем ставки и cart, иначе цены
+					// не обновляются до клика «Рассчитать доставку». Для address_delivery нужен force=true.
+					if (state && state.currentStepId === 'address_delivery') {
+						scheduleAddressForcedRatesSync(state, $app);
+					}
 				}
-				$.when(reqContact, reqScenario).always(releaseCityMutations);
+				$.when(reqContact, reqScenario, reqStepOne).always(releaseCityMutations);
 			}
 			if (shippingMutationInFlight || pendingCdekOfficeCode !== null) {
 				awaitShippingMutationFlush({ timeoutMs: 8000 }).always(function () {

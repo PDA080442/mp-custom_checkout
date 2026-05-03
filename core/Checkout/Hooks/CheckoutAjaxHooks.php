@@ -901,40 +901,81 @@ final class CheckoutAjaxHooks {
 				'office_fp'           => $office_fp,
 			)
 		);
+		$wc_sync_warning = '';
 		try {
 			WcCustomerShippingSync::after_session_set_answers( ScenarioStepRegistry::STEP_ADDRESS_DELIVERY );
 		} catch ( \Throwable $e ) {
-			CheckoutSessionService::set_step_answers( ScenarioStepRegistry::STEP_ADDRESS_DELIVERY, $step_one_before );
-			$flow_after = CheckoutSessionService::get_flow();
+			// Код ПВЗ уже сохранён в session/flow — это главный side-effect этого AJAX.
+			// Падение WC-sync (recalculate_totals, shipping-плагины, customer->save) логируем как warning,
+			// но НЕ откатываем сохранение и НЕ возвращаем 500: иначе пользователь получит "не удалось сохранить"
+			// при том, что код фактически записан и при следующем шаге будет подхвачен.
+			$flow_after      = CheckoutSessionService::get_flow();
+			$wc_sync_warning = (string) $e->getMessage();
 			do_action(
 				'mp_custom_checkout_log',
-				'error',
-				'[pvz] office_save_wc_sync_failed',
+				'warning',
+				'[pvz] office_save_wc_sync_failed_soft',
 				array(
-					'exception_class'   => get_class( $e ),
-					'office_fp'         => $office_fp,
-					'context_id_flow'   => is_array( $flow_after ) && isset( $flow_after['context_id'] ) ? (string) $flow_after['context_id'] : '',
+					'source'           => 'ajax',
+					'event_type'       => 'pvz_office_wc_sync_soft_fail',
+					'exception_class'  => get_class( $e ),
+					'exception_msg'    => substr( $wc_sync_warning, 0, 300 ),
+					'office_fp'        => $office_fp,
+					'context_id_flow'  => is_array( $flow_after ) && isset( $flow_after['context_id'] ) ? (string) $flow_after['context_id'] : '',
 				)
 			);
-			wp_send_json_error(
+		}
+
+		// build_flow_payload / get_cart_data берут актуальное состояние session — даже если sync упал,
+		// они отдадут корректный flow с уже сохранённым cdek_office_code; их собственное падение
+		// (например, из-за внешнего плагина в фильтрах) ловим тут, чтобы не возвращать 500 на
+		// уже фактически выполненное сохранение кода ПВЗ. На фронте `if (d.flow)` тогда упадёт
+		// в ветку, где код просто записывается локально (`state.frontendStore.fulfillment.date.cdek_office_code = c`).
+		$response = array(
+			'sub_action' => 'cdek_set_office',
+		);
+		try {
+			$response['flow'] = self::build_flow_payload();
+		} catch ( \Throwable $flow_e ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'warning',
+				'[pvz] office_save_flow_payload_failed',
 				array(
-					'code'    => 'wc_sync_failed',
-					'message' => __( 'Не удалось синхронизировать доставку с корзиной. Попробуйте ещё раз.', 'mp-custom-checkout' ),
-				),
-				500
+					'source'          => 'ajax',
+					'event_type'      => 'pvz_office_flow_payload_failed',
+					'exception_class' => get_class( $flow_e ),
+					'exception_msg'   => substr( (string) $flow_e->getMessage(), 0, 300 ),
+				)
 			);
 		}
-		wp_send_json_success(
-			array(
-				'sub_action' => 'cdek_set_office',
-				'flow'       => self::build_flow_payload(),
-				'cart'       => CheckoutRouteContext::get_cart_data(),
-			)
-		);
+		try {
+			$response['cart'] = CheckoutRouteContext::get_cart_data();
+		} catch ( \Throwable $cart_e ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'warning',
+				'[pvz] office_save_cart_payload_failed',
+				array(
+					'source'          => 'ajax',
+					'event_type'      => 'pvz_office_cart_payload_failed',
+					'exception_class' => get_class( $cart_e ),
+					'exception_msg'   => substr( (string) $cart_e->getMessage(), 0, 300 ),
+				)
+			);
+		}
+		if ( '' !== $wc_sync_warning ) {
+			$response['wc_sync_soft_fail'] = true;
+		}
+		wp_send_json_success( $response );
 	}
 
 	/**
 	 * Мягкая проверка формата кода ПВЗ СДЭК (§29.3): длина 1–32, безопасный charset.
+	 *
+	 * Реальные коды СДЭК встречаются в формате `MSK1234`, `KRR12.A1`, `kras-321` —
+	 * допускаем буквы (любого регистра), цифры, `_`, `-`, `.`, чтобы не блокировать
+	 * валидный код от свежей версии CDEKWidget на 400.
 	 */
 	private static function is_valid_cdek_office_code_format( string $code ): bool {
 		$len = strlen( $code );
@@ -942,7 +983,7 @@ final class CheckoutAjaxHooks {
 			return false;
 		}
 
-		return (bool) preg_match( '/^[A-Za-z0-9_-]+$/', $code );
+		return (bool) preg_match( '/^[A-Za-z0-9_.\-]+$/', $code );
 	}
 
 	/**
