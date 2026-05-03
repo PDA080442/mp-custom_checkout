@@ -282,6 +282,9 @@ final class CheckoutAjaxHooks {
 		if ( 'remove_gift_card' === $sub_action ) {
 			self::handle_remove_gift_card();
 		}
+		if ( 'cdek_get_offices' === $sub_action ) {
+			self::handle_cdek_get_offices();
+		}
 		if ( 'cdek_set_office' === $sub_action ) {
 			self::handle_cdek_set_office();
 		}
@@ -293,7 +296,7 @@ final class CheckoutAjaxHooks {
 	}
 
 	private static function is_session_sub_action( string $sub_action ): bool {
-		return in_array( $sub_action, array( 'session_set_step', 'session_set_answers', 'session_set_scenario', 'session_get_state', 'session_abandon', 'update_quantity', 'remove_item', 'validation_log', 'apply_coupon', 'remove_coupon', 'apply_gift_card', 'remove_gift_card', 'cdek_set_office', 'set_payment_gateway', 'gateway_render_diagnostics', 'submit_payment', 'client_error_log', 'ajax_error_log' ), true );
+		return in_array( $sub_action, array( 'session_set_step', 'session_set_answers', 'session_set_scenario', 'session_get_state', 'session_abandon', 'update_quantity', 'remove_item', 'validation_log', 'apply_coupon', 'remove_coupon', 'apply_gift_card', 'remove_gift_card', 'cdek_get_offices', 'cdek_set_office', 'set_payment_gateway', 'gateway_render_diagnostics', 'submit_payment', 'client_error_log', 'ajax_error_log' ), true );
 	}
 
 	/**
@@ -380,6 +383,78 @@ final class CheckoutAjaxHooks {
 				$fields_payload
 			)
 		);
+	}
+
+	/**
+	 * Возвращает список офисов СДЭК для города (JSON-массив для `officesRaw` виджета).
+	 * Не меняет flow; синхронизация с эталонным `update_checkout` официального плагина.
+	 */
+	private static function handle_cdek_get_offices(): void {
+		$city     = isset( $_POST['city'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['city'] ) ) : '';
+		$postcode = isset( $_POST['postcode'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['postcode'] ) ) : '';
+
+		if ( '' === $city ) {
+			wp_send_json_success(
+				array(
+					'sub_action'      => 'cdek_get_offices',
+					'offices_raw'     => array(),
+					'offices_count'   => 0,
+					'city'            => '',
+					'postcode'        => $postcode,
+				)
+			);
+		}
+
+		if ( ! class_exists( '\Cdek\CdekApi', false ) ) {
+			wp_send_json_error(
+				array(
+					'code'    => 'cdek_api_unavailable',
+					'message' => __( 'Сервис ПВЗ временно недоступен.', 'mp-custom-checkout' ),
+				),
+				503
+			);
+		}
+
+		try {
+			$api    = new \Cdek\CdekApi();
+			$parsed = array();
+			$code   = $api->cityCodeGet( $city, '' !== $postcode ? $postcode : null );
+			if ( null !== $code ) {
+				$raw = $api->officeListRaw( $code );
+				if ( is_string( $raw ) && '' !== $raw ) {
+					$decoded = json_decode( $raw, true );
+					$parsed  = is_array( $decoded ) ? $decoded : array();
+				}
+			}
+			wp_send_json_success(
+				array(
+					'sub_action'    => 'cdek_get_offices',
+					'offices_raw'   => $parsed,
+					'offices_count' => count( $parsed ),
+					'city'          => $city,
+					'postcode'      => $postcode,
+				)
+			);
+		} catch ( \Throwable $e ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'warning',
+				'[pvz] cdek_get_offices_failed',
+				array(
+					'source'          => 'ajax',
+					'event_type'      => 'cdek_get_offices_failed',
+					'exception_class' => get_class( $e ),
+					'city_fp'         => substr( $city, 0, 40 ),
+				)
+			);
+			wp_send_json_error(
+				array(
+					'code'    => 'cdek_offices_failed',
+					'message' => __( 'Не удалось загрузить список пунктов СДЭК.', 'mp-custom-checkout' ),
+				),
+				500
+			);
+		}
 	}
 
 	/**

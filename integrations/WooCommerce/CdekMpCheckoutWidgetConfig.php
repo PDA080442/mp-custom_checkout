@@ -81,6 +81,15 @@ final class CdekMpCheckoutWidgetConfig {
 			$postcode = trim( (string) ( $s1['postcode'] ?? $s1['shipping_postcode'] ?? $contact['postcode'] ?? $contact['shipping_postcode'] ?? '' ) );
 		}
 
+		if ( '' === $city && function_exists( 'WC' ) && WC()->customer ) {
+			$cust = WC()->customer;
+			$city = trim( (string) ( $cust->get_shipping_city() ?: $cust->get_billing_city() ) );
+		}
+		if ( '' === $postcode && function_exists( 'WC' ) && WC()->customer ) {
+			$cust = WC()->customer;
+			$postcode = trim( (string) ( $cust->get_shipping_postcode() ?: $cust->get_billing_postcode() ) );
+		}
+
 		$offices_json = '[]';
 		if ( class_exists( '\Cdek\CdekApi', false ) && '' !== $city ) {
 			try {
@@ -154,6 +163,9 @@ final class CdekMpCheckoutWidgetConfig {
 			'loading_map'            => __( 'Загружаем карту…', 'mp-custom-checkout' ),
 			'map_unavailable'        => __( 'Карта временно недоступна, выберите пункт из списка ниже.', 'mp-custom-checkout' ),
 			'map_unavailable_title'  => __( 'Список ПВЗ СДЭК (карта недоступна)', 'mp-custom-checkout' ),
+			'pvz_list_empty_title'   => __( 'Выбор пункта СДЭК', 'mp-custom-checkout' ),
+			'pvz_list_empty_no_city' => __( 'Укажите город получателя в форме — после этого здесь появятся ближайшие ПВЗ СДЭК.', 'mp-custom-checkout' ),
+			'pvz_list_empty_no_offices' => __( 'В выбранном городе нет ПВЗ СДЭК. Выберите другой способ доставки.', 'mp-custom-checkout' ),
 			'pvz_no_offices'         => __( 'Карта ПВЗ временно недоступна. Выберите другой способ доставки.', 'mp-custom-checkout' ),
 			'map_config_error'       => __( 'Карта недоступна: проверьте ключ API Яндекс.Карт в настройках доставки СДЭК.', 'mp-custom-checkout' ),
 			'map_init_failed'        => __( 'Не удалось открыть карту.', 'mp-custom-checkout' ),

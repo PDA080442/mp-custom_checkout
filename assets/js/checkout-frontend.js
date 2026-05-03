@@ -8718,6 +8718,47 @@
 			render(state, $app);
 		});
 
+		function getBridgeShippingCity() {
+			var contact = state.frontendStore && state.frontendStore.form ? (state.frontendStore.form.contact || {}) : {};
+			var cityInput = trimNonEmpty($app.find('[data-city-input]').val());
+			if (cityInput) {
+				return cityInput;
+			}
+			var legacy = trimNonEmpty($app.find('#mp-cc-address-city').val());
+			if (legacy) {
+				return legacy;
+			}
+			var fromContact = trimNonEmpty(contact.city || contact.shipping_city);
+			if (fromContact) {
+				return fromContact;
+			}
+			var $val = $app.find('[data-row="city"] .mp-cc-address-form__value').not('.mp-cc-address-form__value--placeholder').first();
+			var displayed = trimNonEmpty($val.text());
+			if (displayed) {
+				return displayed;
+			}
+			var wcfg = typeof window.mpCcCdekWidget !== 'undefined' && window.mpCcCdekWidget ? window.mpCcCdekWidget : {};
+			return trimNonEmpty(wcfg.default_city) || '';
+		}
+
+		function getBridgeShippingPostcode() {
+			var contact = state.frontendStore && state.frontendStore.form ? (state.frontendStore.form.contact || {}) : {};
+			var pc = trimNonEmpty($app.find('[data-contact-field="postcode"]').val());
+			if (pc) {
+				return pc;
+			}
+			pc = trimNonEmpty($app.find('#mp-cc-address-postcode').val());
+			if (pc) {
+				return pc;
+			}
+			pc = trimNonEmpty(contact.postcode || contact.shipping_postcode);
+			if (pc) {
+				return pc;
+			}
+			var wcfg = typeof window.mpCcCdekWidget !== 'undefined' && window.mpCcCdekWidget ? window.mpCcCdekWidget : {};
+			return trimNonEmpty(wcfg.postcode) || '';
+		}
+
 		$app.find('[data-pvz-open-map]').off('click.mpCcPvzMap').on('click.mpCcPvzMap', function () {
 			if (!window.MPCC_CDEKWidgetBridge || typeof window.MPCC_CDEKWidgetBridge.open !== 'function') {
 				notify(getStepOneLabel(state, 'address_form.pvz_map_bridge_missing', '', 'Не удалось открыть выбор пункта. Обновите страницу.'), 'error');
@@ -8726,6 +8767,13 @@
 			window.MPCC_CDEKWidgetBridge.open({
 				mode: 'pvz_map',
 				trigger: this,
+				context_id: state.flowContextId,
+				getCurrentCity: function () {
+					return getBridgeShippingCity();
+				},
+				getCurrentPostcode: function () {
+					return getBridgeShippingPostcode();
+				},
 				logValidationFailure: function (errorsMap) {
 					logValidationFailure(state, 'address_delivery', errorsMap);
 				}
@@ -8740,6 +8788,13 @@
 			window.MPCC_CDEKWidgetBridge.open({
 				mode: 'pvz_list',
 				trigger: this,
+				context_id: state.flowContextId,
+				getCurrentCity: function () {
+					return getBridgeShippingCity();
+				},
+				getCurrentPostcode: function () {
+					return getBridgeShippingPostcode();
+				},
 				logValidationFailure: function (errorsMap) {
 					logValidationFailure(state, 'address_delivery', errorsMap);
 				}

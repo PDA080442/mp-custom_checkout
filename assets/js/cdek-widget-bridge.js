@@ -101,6 +101,135 @@
 		return out;
 	}
 
+	function fallbackRawFromCfg(cfg) {
+		cfg = cfg && typeof cfg === 'object' ? cfg : {};
+		try {
+			var raw = JSON.parse(cfg.offices_json || '[]');
+			return Array.isArray(raw) ? raw : [];
+		} catch (e0) {
+			return [];
+		}
+	}
+
+	/**
+	 * @param {Array<*>} rows
+	 * @returns {Array<{id:string,address:string}>}
+	 */
+	function rawOfficesToPicklist(rows) {
+		if (!Array.isArray(rows)) {
+			return [];
+		}
+		var out = [];
+		for (var i = 0; i < rows.length; i += 1) {
+			var row = rows[i];
+			var code = officeCodeFromRaw(row);
+			if (!code) {
+				continue;
+			}
+			var addr = officeAddressFromRaw(row);
+			out.push({ id: code, address: addr || code });
+		}
+		return out;
+	}
+
+	/**
+	 * @param {object} opts
+	 * @param {function({officesRaw:Array,city:string,postcode:string,fetchError:boolean})} cb
+	 */
+	function fetchOfficesForCurrentCity(opts, cb) {
+		var cfg = getCfg();
+		var localized = window.mpCcCheckout || {};
+		var city = '';
+		if (opts && typeof opts.getCurrentCity === 'function') {
+			city = String(opts.getCurrentCity() || '').trim();
+		}
+		if (!city) {
+			city = String(cfg.default_city || '').trim();
+		}
+		var postcode = '';
+		if (opts && typeof opts.getCurrentPostcode === 'function') {
+			postcode = String(opts.getCurrentPostcode() || '').trim();
+		}
+		if (!postcode) {
+			postcode = String(cfg.postcode || '').trim();
+		}
+
+		function finish(payload) {
+			if (typeof cb === 'function') {
+				cb(payload);
+			}
+		}
+
+		if (!city) {
+			finish({
+				officesRaw: [],
+				city: '',
+				postcode: postcode,
+				fetchError: false
+			});
+			return;
+		}
+
+		if (!localized.ajaxUrl || !localized.nonce) {
+			finish({
+				officesRaw: fallbackRawFromCfg(cfg),
+				city: city,
+				postcode: postcode,
+				fetchError: true
+			});
+			return;
+		}
+
+		var ctxId = opts && opts.context_id != null ? String(opts.context_id) : '';
+
+		$.ajax({
+			url: localized.ajaxUrl,
+			method: 'POST',
+			dataType: 'json',
+			timeout: 8000,
+			data: {
+				action: 'mp_cc_checkout',
+				nonce: localized.nonce,
+				sub_action: 'cdek_get_offices',
+				context_id: ctxId,
+				city: city,
+				postcode: postcode
+			}
+		})
+			.done(function (response) {
+				var fetchError = false;
+				var officesRaw = [];
+				if (response && response.success && response.data && Array.isArray(response.data.offices_raw)) {
+					officesRaw = response.data.offices_raw;
+				} else {
+					fetchError = true;
+					officesRaw = fallbackRawFromCfg(cfg);
+				}
+				var respCity =
+					response && response.success && response.data && response.data.city != null
+						? String(response.data.city).trim()
+						: city;
+				var respPc =
+					response && response.success && response.data && response.data.postcode != null
+						? String(response.data.postcode).trim()
+						: postcode;
+				finish({
+					officesRaw: officesRaw,
+					city: respCity || city,
+					postcode: respPc || postcode,
+					fetchError: fetchError
+				});
+			})
+			.fail(function () {
+				finish({
+					officesRaw: fallbackRawFromCfg(cfg),
+					city: city,
+					postcode: postcode,
+					fetchError: true
+				});
+			});
+	}
+
 	function removeModal() {
 		if (activeModal && activeModal.$overlay) {
 			activeModal.$overlay.remove();
@@ -295,9 +424,15 @@
 		}, 0);
 	}
 
-	function showPvzEmptyModal(opts, labels) {
+	/**
+	 * @param {'pvz_map'|'pvz_list'} [emptyMode]
+	 * @param {boolean} [hasCity] — для `pvz_list`: есть ли город в конфиге для загрузки офисов
+	 */
+	function showPvzEmptyModal(opts, labels, emptyMode, hasCity) {
 		var cfg = getCfg();
 		var hint = String(cfg.reason_hint || labels.reason_hint || '').trim();
+		emptyMode = emptyMode === 'pvz_list' ? 'pvz_list' : 'pvz_map';
+		hasCity = Boolean(hasCity);
 		var ctx = {
 			chosenThisOpen: false,
 			widgetInstance: null,
@@ -307,14 +442,29 @@
 		};
 		var $overlay = $('<div class="mp-cc-cdek-modal" role="dialog" aria-modal="true" aria-labelledby="mp-cc-cdek-modal-empty-title"></div>');
 		var $panel = $('<div class="mp-cc-cdek-modal__panel"></div>');
-		var baseMsg =
-			labels.pvz_no_offices ||
-			labels.map_unavailable ||
-			'Карта ПВЗ временно недоступна. Выберите другой способ доставки.';
+		var titleText;
+		var baseMsg;
+		if (emptyMode === 'pvz_list') {
+			titleText =
+				labels.pvz_list_empty_title ||
+				labels.list_title ||
+				'Выбор пункта СДЭК';
+			baseMsg = hasCity
+				? labels.pvz_list_empty_no_offices ||
+				  'В выбранном городе нет ПВЗ СДЭК. Выберите другой способ доставки.'
+				: labels.pvz_list_empty_no_city ||
+				  'Укажите город получателя в форме — после этого здесь появятся ближайшие ПВЗ СДЭК.';
+		} else {
+			titleText = labels.map_unavailable_title || labels.list_title || 'ПВЗ СДЭК';
+			baseMsg =
+				labels.pvz_no_offices ||
+				labels.map_unavailable ||
+				'Карта ПВЗ временно недоступна. Выберите другой способ доставки.';
+		}
 		var body = hint ? baseMsg + ' ' + hint : baseMsg;
 		$panel.append(
 			'<h2 class="mp-cc-cdek-modal__title" id="mp-cc-cdek-modal-empty-title">' +
-				escHtml(labels.map_unavailable_title || labels.list_title || 'ПВЗ СДЭК') +
+				escHtml(titleText) +
 				'</h2>'
 		);
 		$panel.append(
@@ -377,7 +527,7 @@
 					subtype: logSubtype || ''
 				});
 			}
-			showPvzEmptyModal(opts, labels);
+			showPvzEmptyModal(opts, labels, 'pvz_map');
 			return;
 		}
 		var listLabels = $.extend({}, labels, {
@@ -388,19 +538,28 @@
 
 	function openPvzListModal(opts, labels) {
 		var cfg = getCfg();
-		var offices = parseOfficesFromCfg(cfg);
-		if (!offices.length) {
-			if (typeof opts.logValidationFailure === 'function') {
+		fetchOfficesForCurrentCity(opts, function (result) {
+			if (result.fetchError && typeof opts.logValidationFailure === 'function') {
 				opts.logValidationFailure({
-					event_type: 'pvz_list_empty_offices',
+					event_type: 'pvz_offices_refresh_failed',
 					reason: String(cfg.reason || ''),
 					subtype: 'pvz_list'
 				});
 			}
-			showPvzEmptyModal(opts, labels);
-			return;
-		}
-		showListModal(opts, labels, offices, 'cdek_office', labels.list_title || labels.modal_list_title);
+			var offices = rawOfficesToPicklist(result.officesRaw || []);
+			if (!offices.length) {
+				if (typeof opts.logValidationFailure === 'function') {
+					opts.logValidationFailure({
+						event_type: 'pvz_list_empty_offices',
+						reason: String(cfg.reason || ''),
+						subtype: 'pvz_list'
+					});
+				}
+				showPvzEmptyModal(opts, labels, 'pvz_list', Boolean(String(result.city || '').trim()));
+				return;
+			}
+			showListModal(opts, labels, offices, 'cdek_office', labels.list_title || labels.modal_list_title);
+		});
 	}
 
 	function openNativeCdekPopup(opts, labels) {
@@ -416,84 +575,88 @@
 			return;
 		}
 
-		var officesRaw;
-		try {
-			officesRaw = JSON.parse(cfg.offices_json || '[]');
-		} catch (e1) {
-			officesRaw = [];
-		}
-		var defaultLocation = cfg.default_city || 'Москва';
-		var goods = Array.isArray(cfg.goods) && cfg.goods.length ? cfg.goods : [{ length: 10, width: 10, height: 10, weight: 1000 }];
-		var servicePath = String(cfg.service_path || '').trim();
-		var chosenInFlight = false;
-
-		function maybeCloseWidgetAfterSave() {
-			var inst = nativeCdekWidgetInstance;
-			if (!inst || typeof inst.close !== 'function') {
-				return;
-			}
-			var autoClose = Boolean(inline.close || cfg.map_auto_close);
-			if (!autoClose) {
-				return;
-			}
-			try {
-				inst.close();
-			} catch (eClose) {
-				// ignore
-			}
-		}
-
-		function onChoose(_type, _tariff, address) {
-			if (chosenInFlight) {
-				return;
-			}
-			var code = address && address.code ? String(address.code) : '';
-			if (!code || typeof window.mpCcSetCdekOfficeCode !== 'function') {
-				return;
-			}
-			chosenInFlight = true;
-			window
-				.mpCcSetCdekOfficeCode(code)
-				.always(function () {
-					chosenInFlight = false;
-				})
-				.then(function () {
-					maybeCloseWidgetAfterSave();
+		fetchOfficesForCurrentCity(opts, function (result) {
+			if (result.fetchError && typeof opts.logValidationFailure === 'function') {
+				opts.logValidationFailure({
+					event_type: 'pvz_offices_refresh_failed',
+					reason: String(cfg.reason || ''),
+					subtype: 'pvz_map'
 				});
-		}
+			}
+			var officesRaw = Array.isArray(result.officesRaw) ? result.officesRaw : [];
+			var defaultLocation = String(result.city || cfg.default_city || 'Москва').trim() || 'Москва';
 
-		try {
-			if (nativeCdekWidgetInstance === null) {
-				var wopts = {
-					apiKey: apiKey,
-					popup: true,
-					lang: lang,
-					debug: debugFlag,
-					defaultLocation: defaultLocation,
-					officesRaw: officesRaw,
-					goods: goods,
-					hideDeliveryOptions: { door: true, office: false },
-					onChoose: onChoose
-				};
-				if (servicePath !== '') {
-					wopts.servicePath = servicePath;
+			if (result.fetchError && officesRaw.length === 0) {
+				openPvzMapFallback(opts, labels, 'fetch_failed');
+				return;
+			}
+
+			var chosenInFlight = false;
+
+			function maybeCloseWidgetAfterSave() {
+				var inst = nativeCdekWidgetInstance;
+				if (!inst || typeof inst.close !== 'function') {
+					return;
 				}
-				nativeCdekWidgetInstance = new Widget(wopts);
-			} else {
-				if (typeof nativeCdekWidgetInstance.updateOfficesRaw === 'function') {
-					nativeCdekWidgetInstance.updateOfficesRaw(officesRaw);
+				var autoClose = Boolean(inline.close || cfg.map_auto_close);
+				if (!autoClose) {
+					return;
 				}
-				if (typeof nativeCdekWidgetInstance.updateLocation === 'function') {
-					nativeCdekWidgetInstance.updateLocation(defaultLocation);
+				try {
+					inst.close();
+				} catch (eClose) {
+					// ignore
 				}
 			}
-			if (nativeCdekWidgetInstance && typeof nativeCdekWidgetInstance.open === 'function') {
-				nativeCdekWidgetInstance.open();
+
+			function onChoose(_type, _tariff, address) {
+				if (chosenInFlight) {
+					return;
+				}
+				var code = address && address.code ? String(address.code) : '';
+				if (!code || typeof window.mpCcSetCdekOfficeCode !== 'function') {
+					return;
+				}
+				chosenInFlight = true;
+				window
+					.mpCcSetCdekOfficeCode(code)
+					.always(function () {
+						chosenInFlight = false;
+					})
+					.then(function () {
+						maybeCloseWidgetAfterSave();
+					});
 			}
-		} catch (err) {
-			nativeCdekWidgetInstance = null;
-			openPvzMapFallback(opts, labels, 'widget_init_failed');
-		}
+
+			try {
+				if (nativeCdekWidgetInstance === null) {
+					var wopts = {
+						apiKey: apiKey,
+						popup: true,
+						lang: lang,
+						debug: debugFlag,
+						defaultLocation: defaultLocation,
+						officesRaw: officesRaw,
+						hideDeliveryOptions: { door: true },
+						onChoose: onChoose
+					};
+					nativeCdekWidgetInstance = new Widget(wopts);
+				} else {
+					if (typeof nativeCdekWidgetInstance.updateOfficesRaw === 'function') {
+						nativeCdekWidgetInstance.updateOfficesRaw(officesRaw);
+					}
+					if (typeof nativeCdekWidgetInstance.updateLocation === 'function') {
+						nativeCdekWidgetInstance.updateLocation(defaultLocation);
+					}
+				}
+				if (nativeCdekWidgetInstance && typeof nativeCdekWidgetInstance.open === 'function') {
+					nativeCdekWidgetInstance.open();
+				}
+			} catch (err) {
+				nativeCdekWidgetInstance = null;
+				openPvzMapFallback(opts, labels, 'widget_init_failed');
+			}
+		});
 	}
 
 	function open(opts) {

@@ -40,9 +40,10 @@
 **MP-checkout:**
 
 1. **`map_ready`** в [`CdekMpCheckoutWidgetConfig.php`](../integrations/WooCommerce/CdekMpCheckoutWidgetConfig.php) — при активном способе СДЭК и заполненном **`yandex_map_api_key`** (не зависит от наличия `service.php`).
-2. Опциональный URL прокси: фильтр `mp_custom_checkout_cdek_widget_service_path`, иначе попытка прочитать `build/service.php` / `dist/service.php` у плагина — если файла нет, **`service_path`** остаётся пустым; bridge передаёт **`servicePath`** в конструктор виджета **только при непустом** значении ([`assets/js/cdek-widget-bridge.js`](../assets/js/cdek-widget-bridge.js)).
+2. Опциональный URL прокси: фильтр `mp_custom_checkout_cdek_widget_service_path`, иначе автопоиск `build/service.php` / `dist/service.php` — поле **`service_path`** остаётся в **`mpCcCdekWidget`** для диагностики/будущего использования; в **`openNativeCdekPopup`** в **`CDEKWidget`** **не** передаются ни **`servicePath`**, ни **`goods`** (паритет с эталонным `cdek-checkout-map.js`, иначе маркеры ПВЗ могут не появиться без полного прокси тарифов).
 3. Опционально для отладки консоли виджета: фильтр **`mp_custom_checkout_cdek_widget_debug`** (по умолчанию `false`) → поле **`debug`** в `mpCcCdekWidget`.
 4. Если нет ключа Яндекс.Карт или не загрузился UMD — **fallback**: список офисов из **`offices_json`** (не точки самовывоза магазина).
+5. Актуальный список офисов для карты и модала списка: перед открытием виджета клиент вызывает **`admin-ajax.php`** с **`action=mp_cc_checkout`**, **`sub_action=cdek_get_offices`**, **`city`**, **`postcode`**, **`context_id`** — сервер через `\Cdek\CdekApi::cityCodeGet` / **`officeListRaw`** возвращает массив **`offices_raw`** (паритет с подстановкой точек после **`update_checkout`** в эталонном checkout СДЭК). Статический **`mpCcCdekWidget.offices_json`** остаётся как начальный кэш и fallback при ошибке запроса.
 
 ## 5. Опции PHP, которые читает MP (без дублирования в своих option)
 
@@ -51,7 +52,7 @@
 - `yandex_map_api_key` — без ключа карта не включается.
 - `map_auto_close` — пробрасывается в `cdek.close` и в `mpCcCdekWidget.map_auto_close`.
 
-Список офисов для старта виджета: `CdekApi::cityCodeGet($city, $postcode)` → `officeListRaw($cityCode)` → JSON в `mpCcCdekWidget.offices_json`.
+Список офисов для **начального** payload страницы: `CdekApi::cityCodeGet($city, $postcode)` → `officeListRaw($cityCode)` → JSON в `mpCcCdekWidget.offices_json` (город из flow и при необходимости из **`WC_Customer`**). После загрузки страницы список подтягивается клиентом через **`cdek_get_offices`** (см. §4 п.5).
 
 ## 6. Blockers
 
