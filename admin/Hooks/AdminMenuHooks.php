@@ -1039,6 +1039,14 @@ final class AdminMenuHooks {
 	 * @param mixed $value
 	 */
 	private static function render_leaf_input( string $name, $value, string $path ): void {
+		// Поля price у методов с тарифами (post_russia/pvz/courier) — служебные fallback для режима «catalog»;
+		// в режиме «woocommerce» они не используются и в UI лишние. Скрываем их в админке, но сохраняем значение
+		// через hidden input, чтобы случайно не обнулить уже настроенный fallback при сабмите формы.
+		if ( self::is_admin_field_hidden( $path ) ) {
+			$hidden_value = is_scalar( $value ) ? (string) $value : '';
+			echo '<input type="hidden" name="' . esc_attr( $name ) . '" value="' . esc_attr( $hidden_value ) . '" />';
+			return;
+		}
 		$label = self::localized_label_for_path( $path );
 		$filters = self::build_filters_for_path( $path );
 		$risky = self::is_risky_path( $path );
@@ -1422,6 +1430,38 @@ final class AdminMenuHooks {
 			|| false !== strpos( $p, 'step_order' )
 			|| false !== strpos( $p, 'step_definitions' )
 			|| false !== strpos( $p, 'checkout_testing_mode' );
+	}
+
+	/**
+	 * Поля настроек, которые сохраняем (значение пишется в hidden), но не показываем в UI админки.
+	 *
+	 * Сейчас сюда попадают `delivery.shipping_catalog.methods.{X}.price` для всех методов кроме
+	 * `pickup` и `krasnoyarsk_delivery` (у них цена реально берётся из админки), а также
+	 * `delivery.shipping_catalog.methods.{X}.tariffs.{Y}.price` — у тарифов цена всегда приходит
+	 * из WC rates через overlay, а это поле — просто источник «нулевой» подписи в UI checkout.
+	 */
+	private static function is_admin_field_hidden( string $path ): bool {
+		$p = (string) $path;
+		if ( false === strpos( $p, 'delivery.shipping_catalog.methods.' ) ) {
+			return false;
+		}
+		$is_price_leaf = ( '.price' === substr( $p, -6 ) );
+		if ( ! $is_price_leaf ) {
+			return false;
+		}
+		// Цены тарифов (path содержит .tariffs.) — всегда скрываем.
+		if ( false !== strpos( $p, '.tariffs.' ) ) {
+			return true;
+		}
+		// Цена самого метода: оставляем для pickup и krasnoyarsk_delivery, скрываем остальное.
+		if ( preg_match( '/delivery\.shipping_catalog\.methods\.([a-z0-9_\-]+)\.price$/i', $p, $matches ) ) {
+			$method_id = strtolower( (string) $matches[1] );
+			if ( 'pickup' === $method_id || 'krasnoyarsk_delivery' === $method_id ) {
+				return false;
+			}
+			return true;
+		}
+		return false;
 	}
 
 	private static function detect_group_type( string $key, string $path ): string {

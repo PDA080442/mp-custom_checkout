@@ -6804,12 +6804,13 @@
 					var tariff = tariffs[t] || {};
 					var tariffId = String(tariff.id || '');
 					var tariffChecked = selectedTariffId === tariffId;
-					var tariffPriceText = String(Math.round(Number(tariff.price || 0))) + ' ₽';
+					// Цена тарифа на карточке намеренно не выводится: реальную сумму (с учётом WC zones)
+					// показываем только в сводке заказа, чтобы не было «0 ₽» там, где WC ещё не отдал rate.
 					var tariffEtaSuffix = tariff.eta ? ' (' + String(tariff.eta) + ')' : '';
-					var tariffLabel = String(tariff.title || tariffId) + tariffEtaSuffix + ': ';
+					var tariffLabel = String(tariff.title || tariffId) + tariffEtaSuffix;
 					html += '<label class="mp-cc-ship-option__tariff-item">';
 					html += '<input type="radio" name="mp-cc-ship-tariff-' + escapeHtml(methodId) + '" data-ship-tariff="' + escapeHtml(tariffId) + '" data-ship-tariff-method="' + escapeHtml(methodId) + '"' + (tariffChecked ? ' checked' : '') + '>';
-					html += '<span>' + escapeHtml(tariffLabel) + '<strong>' + escapeHtml(tariffPriceText) + '</strong></span>';
+					html += '<span>' + escapeHtml(tariffLabel) + '</span>';
 					html += '</label>';
 				}
 				html += '</div>';
@@ -6916,14 +6917,26 @@
 			var selected = resolveShippingSelection(methods, methodId, selectedMethodId === methodId ? selectedTariffId : '');
 			var isActive = selectedMethodId === methodId;
 			var title = selected && selected.tariff_title ? selected.tariff_title : String(method.title || methodId);
+			// Цена показывается на карточке только у фиксированных методов (самовывоз / доставка по Красноярску),
+			// где она задаётся в админке. У остальных (post_russia / pvz / courier) реальная сумма берётся из WC
+			// и видна только в сводке заказа — иначе на карточке часто красовалось «0 ₽» до подтягивания rates.
+			var fixedPriceMethod = (methodId === 'pickup' || methodId === 'krasnoyarsk_delivery');
 			var methodPrice = selected ? Number(selected.price || 0) : Number(method.price || 0);
-			var priceText = String(Math.round(methodPrice)) + ' ₽';
 			var etaText = selected && selected.eta ? String(selected.eta) : String(method.eta || '');
+			var metaParts = [];
+			if (fixedPriceMethod) {
+				metaParts.push(String(Math.round(methodPrice)) + ' ₽');
+			}
+			if (etaText) {
+				metaParts.push(etaText);
+			}
 			html += '<button type="button" class="mp-cc-shipping-card' + (isActive ? ' is-active' : '') + '" role="radio"';
 			html += ' aria-checked="' + (isActive ? 'true' : 'false') + '"';
 			html += ' data-shipping-method="' + escapeHtml(methodId) + '">';
 			html += '<span class="mp-cc-shipping-card__title">' + escapeHtml(String(method.title || methodId)) + '</span>';
-			html += '<span class="mp-cc-shipping-card__meta">' + escapeHtml(priceText + (etaText ? ' · ' + etaText : '')) + '</span>';
+			if (metaParts.length) {
+				html += '<span class="mp-cc-shipping-card__meta">' + escapeHtml(metaParts.join(' · ')) + '</span>';
+			}
 			html += '</button>';
 			if (isActive && hasTariffs) {
 				var tariffs = method.tariffs || [];
@@ -6932,14 +6945,15 @@
 					var tariff = tariffs[t] || {};
 					var tariffId = String(tariff.id || '');
 					var isTariffActive = selectedTariffId === tariffId || (!selectedTariffId && t === 0);
-					var tariffPrice = String(Math.round(Number(tariff.price || 0))) + ' ₽';
 					var tariffEta = String(tariff.eta || '');
 					html += '<button type="button" class="mp-cc-shipping-tariff' + (isTariffActive ? ' is-active' : '') + '" role="radio"';
 					html += ' aria-checked="' + (isTariffActive ? 'true' : 'false') + '"';
 					html += ' data-shipping-tariff="' + escapeHtml(tariffId) + '"';
 					html += ' data-shipping-method-owner="' + escapeHtml(methodId) + '">';
 					html += '<span class="mp-cc-shipping-tariff__title">' + escapeHtml(String(tariff.title || tariffId || title)) + '</span>';
-					html += '<span class="mp-cc-shipping-tariff__meta">' + escapeHtml(tariffPrice + (tariffEta ? ' · ' + tariffEta : '')) + '</span>';
+					if (tariffEta) {
+						html += '<span class="mp-cc-shipping-tariff__meta">' + escapeHtml(tariffEta) + '</span>';
+					}
 					html += '</button>';
 				}
 				html += '</div>';
@@ -7139,11 +7153,13 @@
 		if (state.currentStepId !== 'address_delivery' && !shippingRecalcPending) {
 			return false;
 		}
-		var rawScenario = String(state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenario || '') : '');
 		var dateBox = state.frontendStore.fulfillment && state.frontendStore.fulfillment.date ? state.frontendStore.fulfillment.date : {};
 		var shipMethod = String(dateBox.shipping_method_id || '');
-		// Сценарий в сессии часто остаётся pickup до session_set_scenario; выбор «Почта России» живёт в step_one.
-		if (rawScenario === 'pickup' && (!shipMethod || shipMethod === 'pickup')) {
+		// Кнопку «Рассчитать доставку» показываем только для «Почта России»: для остальных методов
+		// (pvz / courier / pickup / krasnoyarsk_delivery) бэк автоматически пересчитывает rates после
+		// смены метода/тарифа/города (см. force-sync в applyShipping*UserChoice). У почты исторически
+		// расчёт может зависеть от ручной кнопки + reload, поэтому оставляем её именно для этого метода.
+		if (shipMethod !== 'post_russia') {
 			return false;
 		}
 		return hasCartLinesForShippingRecalc(state);
@@ -7229,7 +7245,7 @@
 				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(subtotalLineLabel) + ': <span class="mp-cc-summary-card__amount--inline" data-summary-amount="1">' + wcPriceHtmlFragment(subtotalText) + '</span></p>';
 			}
 			if (trimNonEmpty(shippingText)) {
-				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(shippingLabel) + ': <span class="mp-cc-summary-card__amount--inline" data-summary-amount="1">' + wcPriceHtmlFragment(shippingText) + '</span></p>';
+				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(shippingLabel) + ': <span class="mp-cc-summary-card__amount--inline" data-summary-amount="1" data-summary-shipping-amount="1">' + wcPriceHtmlFragment(shippingText) + '</span></p>';
 			}
 			for (var fi = 0; fi < feeLines.length; fi += 1) {
 				var feeRow = feeLines[fi] || {};
@@ -7968,6 +7984,57 @@
 		}
 	}
 
+	/**
+	 * Включает/выключает оверлей «идёт пересчёт ставок» на блоке оформления.
+	 * Используется при автоматических пересчётах после смены метода/тарифа доставки —
+	 * визуально совпадает с поведением кнопки «Рассчитать доставку», чтобы пользователь
+	 * понимал, что данные подгружаются (особенно когда обновляются цены вариантов).
+	 */
+	function setShippingRatesLoadingOverlay(on, $app) {
+		var $checkoutRoot = $(selectors.root);
+		if (on) {
+			if ($checkoutRoot.length) {
+				$checkoutRoot.addClass('is-shipping-recalc-loading');
+			}
+			if ($app && $app.length) {
+				$app.addClass('is-shipping-recalc-loading');
+			}
+		} else {
+			if ($checkoutRoot.length) {
+				$checkoutRoot.removeClass('is-shipping-recalc-loading');
+			}
+			if ($app && $app.length) {
+				$app.removeClass('is-shipping-recalc-loading');
+			}
+		}
+	}
+
+	var shippingAmountFlashTimer = null;
+	/**
+	 * После завершения пересчёта подсвечиваем строку «Доставка» в сводке зелёным на 5 сек,
+	 * чтобы пользователь явно увидел, что цена обновилась (особенно после оверлея загрузки).
+	 * Класс `is-just-updated` навешивается на элементы [data-summary-shipping-amount="1"].
+	 */
+	function flashShippingAmountInSummary() {
+		var $targets = $(selectors.summary).find('[data-summary-shipping-amount="1"]');
+		if (!$targets.length) {
+			return;
+		}
+		if (shippingAmountFlashTimer) {
+			window.clearTimeout(shippingAmountFlashTimer);
+			shippingAmountFlashTimer = null;
+		}
+		// Сначала снимаем класс, чтобы рестартовать transition при повторном пересчёте подряд.
+		$targets.removeClass('is-just-updated');
+		// Принудительный reflow, иначе браузер может сразу применить новый класс без анимации.
+		$targets.each(function () { void this.offsetWidth; });
+		$targets.addClass('is-just-updated');
+		shippingAmountFlashTimer = window.setTimeout(function () {
+			shippingAmountFlashTimer = null;
+			$(selectors.summary).find('[data-summary-shipping-amount="1"]').removeClass('is-just-updated');
+		}, 5000);
+	}
+
 	function applyShippingMethodUserChoice(state, $app, methodId) {
 		methodId = String(methodId || '');
 		if (!methodId) {
@@ -8035,6 +8102,7 @@
 		render(state, $app);
 
 		shippingMutationInFlight = true;
+		setShippingRatesLoadingOverlay(true, $app);
 		var release = function () { shippingMutationInFlight = false; };
 		var scenarioRequest = postCheckout('session_set_scenario', {
 			scenario: nextScenario,
@@ -8050,8 +8118,9 @@
 			}).then(function () {
 				// Подтягиваем актуальные WC rates / cart totals после пересчёта на бэке —
 				// иначе цены вариантов остаются стейловыми из bootstrap'а после смены города.
+				// Возвращаем promise, чтобы оверлей загрузки снимался только после полного цикла.
 				if (state && state.currentStepId === 'address_delivery') {
-					syncStoreWithBackend(state, $app, { force: true });
+					return syncStoreWithBackend(state, $app, { force: true });
 				}
 			}).fail(function () {
 				notify('Не удалось сохранить шаг доставки.', 'error');
@@ -8059,6 +8128,8 @@
 				syncStoreWithBackend(state, $app, { force: true });
 			}).always(function () {
 				release();
+				setShippingRatesLoadingOverlay(false, $app);
+				flashShippingAmountInSummary();
 				flushPendingShippingMutation(state, $app, methodId);
 			});
 		} else {
@@ -8068,6 +8139,7 @@
 				syncStoreWithBackend(state, $app, { force: true });
 			}).always(function () {
 				release();
+				setShippingRatesLoadingOverlay(false, $app);
 				flushPendingShippingMutation(state, $app, methodId);
 			});
 		}
@@ -8094,6 +8166,7 @@
 		invalidateV2DownstreamFrom(state, 0);
 		render(state, $app);
 		shippingMutationInFlight = true;
+		setShippingRatesLoadingOverlay(true, $app);
 		postCheckout('session_set_answers', {
 			step_id: 'address_delivery',
 			context_id: state.flowContextId,
@@ -8102,14 +8175,17 @@
 			// Подтянуть актуальные WC rates / cart totals после пересчёта на бэке.
 			// Без этого фронт остаётся с ценами из bootstrap'а (для прошлого города), и при смене
 			// «экспресс ↔ стандарт» сводка показывает 0₽ или старую цену прошлого города.
+			// Возвращаем promise, чтобы оверлей загрузки снимался только после полного цикла.
 			if (state && state.currentStepId === 'address_delivery') {
-				syncStoreWithBackend(state, $app, { force: true });
+				return syncStoreWithBackend(state, $app, { force: true });
 			}
 		}).fail(function () {
 			notify('Не удалось сохранить тариф доставки.', 'error');
 			syncStoreWithBackend(state, $app, { force: true });
 		}).always(function () {
 			shippingMutationInFlight = false;
+			setShippingRatesLoadingOverlay(false, $app);
+			flashShippingAmountInSummary();
 			flushPendingShippingMutation(state, $app, '');
 		});
 	}
