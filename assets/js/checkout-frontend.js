@@ -6804,12 +6804,13 @@
 					var tariff = tariffs[t] || {};
 					var tariffId = String(tariff.id || '');
 					var tariffChecked = selectedTariffId === tariffId;
-					var tariffPriceText = String(Math.round(Number(tariff.price || 0))) + ' ₽';
+					// Цена тарифа на карточке намеренно не выводится: реальную сумму (с учётом WC zones)
+					// показываем только в сводке заказа, чтобы не было «0 ₽» там, где WC ещё не отдал rate.
 					var tariffEtaSuffix = tariff.eta ? ' (' + String(tariff.eta) + ')' : '';
-					var tariffLabel = String(tariff.title || tariffId) + tariffEtaSuffix + ': ';
+					var tariffLabel = String(tariff.title || tariffId) + tariffEtaSuffix;
 					html += '<label class="mp-cc-ship-option__tariff-item">';
 					html += '<input type="radio" name="mp-cc-ship-tariff-' + escapeHtml(methodId) + '" data-ship-tariff="' + escapeHtml(tariffId) + '" data-ship-tariff-method="' + escapeHtml(methodId) + '"' + (tariffChecked ? ' checked' : '') + '>';
-					html += '<span>' + escapeHtml(tariffLabel) + '<strong>' + escapeHtml(tariffPriceText) + '</strong></span>';
+					html += '<span>' + escapeHtml(tariffLabel) + '</span>';
 					html += '</label>';
 				}
 				html += '</div>';
@@ -6916,14 +6917,26 @@
 			var selected = resolveShippingSelection(methods, methodId, selectedMethodId === methodId ? selectedTariffId : '');
 			var isActive = selectedMethodId === methodId;
 			var title = selected && selected.tariff_title ? selected.tariff_title : String(method.title || methodId);
+			// Цена показывается на карточке только у фиксированных методов (самовывоз / доставка по Красноярску),
+			// где она задаётся в админке. У остальных (post_russia / pvz / courier) реальная сумма берётся из WC
+			// и видна только в сводке заказа — иначе на карточке часто красовалось «0 ₽» до подтягивания rates.
+			var fixedPriceMethod = (methodId === 'pickup' || methodId === 'krasnoyarsk_delivery');
 			var methodPrice = selected ? Number(selected.price || 0) : Number(method.price || 0);
-			var priceText = String(Math.round(methodPrice)) + ' ₽';
 			var etaText = selected && selected.eta ? String(selected.eta) : String(method.eta || '');
+			var metaParts = [];
+			if (fixedPriceMethod) {
+				metaParts.push(String(Math.round(methodPrice)) + ' ₽');
+			}
+			if (etaText) {
+				metaParts.push(etaText);
+			}
 			html += '<button type="button" class="mp-cc-shipping-card' + (isActive ? ' is-active' : '') + '" role="radio"';
 			html += ' aria-checked="' + (isActive ? 'true' : 'false') + '"';
 			html += ' data-shipping-method="' + escapeHtml(methodId) + '">';
 			html += '<span class="mp-cc-shipping-card__title">' + escapeHtml(String(method.title || methodId)) + '</span>';
-			html += '<span class="mp-cc-shipping-card__meta">' + escapeHtml(priceText + (etaText ? ' · ' + etaText : '')) + '</span>';
+			if (metaParts.length) {
+				html += '<span class="mp-cc-shipping-card__meta">' + escapeHtml(metaParts.join(' · ')) + '</span>';
+			}
 			html += '</button>';
 			if (isActive && hasTariffs) {
 				var tariffs = method.tariffs || [];
@@ -6932,14 +6945,15 @@
 					var tariff = tariffs[t] || {};
 					var tariffId = String(tariff.id || '');
 					var isTariffActive = selectedTariffId === tariffId || (!selectedTariffId && t === 0);
-					var tariffPrice = String(Math.round(Number(tariff.price || 0))) + ' ₽';
 					var tariffEta = String(tariff.eta || '');
 					html += '<button type="button" class="mp-cc-shipping-tariff' + (isTariffActive ? ' is-active' : '') + '" role="radio"';
 					html += ' aria-checked="' + (isTariffActive ? 'true' : 'false') + '"';
 					html += ' data-shipping-tariff="' + escapeHtml(tariffId) + '"';
 					html += ' data-shipping-method-owner="' + escapeHtml(methodId) + '">';
 					html += '<span class="mp-cc-shipping-tariff__title">' + escapeHtml(String(tariff.title || tariffId || title)) + '</span>';
-					html += '<span class="mp-cc-shipping-tariff__meta">' + escapeHtml(tariffPrice + (tariffEta ? ' · ' + tariffEta : '')) + '</span>';
+					if (tariffEta) {
+						html += '<span class="mp-cc-shipping-tariff__meta">' + escapeHtml(tariffEta) + '</span>';
+					}
 					html += '</button>';
 				}
 				html += '</div>';
