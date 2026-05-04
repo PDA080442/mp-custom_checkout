@@ -878,11 +878,22 @@ final class CheckoutAjaxHooks {
 			);
 		}
 
+		$office_details_post = array();
+		if ( isset( $_POST['office_details'] ) && is_array( $_POST['office_details'] ) ) {
+			$office_details_post = self::sanitize_cdek_office_details_from_post( wp_unslash( $_POST['office_details'] ) );
+		}
+
 		if ( '' === $code ) {
 			// Явная пустая строка — иначе array_replace в set_step_answers оставит старый код (ключ из unset отсутствует в payload).
 			$step_one['cdek_office_code'] = '';
+			$step_one['cdek_office']     = array();
 		} else {
 			$step_one['cdek_office_code'] = $code;
+			if ( ! empty( $office_details_post ) ) {
+				$office_details_post['code'] = $code;
+				$step_one['cdek_office']     = $office_details_post;
+			}
+			// Если office_details не прислали — не трогаем ключ cdek_office: merge сохранит прежнее значение (§29.1).
 		}
 		CheckoutSessionService::set_step_answers( ScenarioStepRegistry::STEP_ADDRESS_DELIVERY, $step_one );
 		$flow_ctx = CheckoutSessionService::get_flow();
@@ -968,6 +979,31 @@ final class CheckoutAjaxHooks {
 			$response['wc_sync_soft_fail'] = true;
 		}
 		wp_send_json_success( $response );
+	}
+
+	/**
+	 * Санитизация деталей ПВЗ из POST для записи в answers.step_one.cdek_office.
+	 *
+	 * @param array<string, mixed> $raw
+	 * @return array<string, string>
+	 */
+	private static function sanitize_cdek_office_details_from_post( array $raw ): array {
+		$allowed = array( 'code', 'name', 'address', 'city', 'postal_code', 'region', 'country_code' );
+		$out     = array();
+		foreach ( $allowed as $key ) {
+			if ( ! array_key_exists( $key, $raw ) ) {
+				continue;
+			}
+			$val = sanitize_text_field( (string) $raw[ $key ] );
+			if ( 'postal_code' === $key ) {
+				$val = substr( $val, 0, 16 );
+			}
+			if ( '' !== $val ) {
+				$out[ $key ] = $val;
+			}
+		}
+
+		return $out;
 	}
 
 	/**

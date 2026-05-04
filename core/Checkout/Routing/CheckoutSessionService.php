@@ -500,7 +500,7 @@ final class CheckoutSessionService {
 			return;
 		}
 		$prev_method = isset( $step_one['shipping_method_id'] ) ? sanitize_key( (string) $step_one['shipping_method_id'] ) : '';
-		unset( $current['step_one']['cdek_office_code'] );
+		unset( $current['step_one']['cdek_office_code'], $current['step_one']['cdek_office'] );
 		do_action(
 			'mp_custom_checkout_log',
 			'info',
@@ -531,7 +531,7 @@ final class CheckoutSessionService {
 			return;
 		}
 		$had_value = '' !== trim( (string) $current[ $storage_key ]['cdek_office_code'] );
-		unset( $current[ $storage_key ]['cdek_office_code'] );
+		unset( $current[ $storage_key ]['cdek_office_code'], $current[ $storage_key ]['cdek_office'] );
 		if ( ! $had_value ) {
 			return;
 		}

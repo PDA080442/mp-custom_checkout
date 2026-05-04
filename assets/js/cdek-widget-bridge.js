@@ -413,9 +413,26 @@
 					$live.text(labels.map_pick_failed || 'Не удалось получить код пункта.');
 					return;
 				}
+				var pickedDetail = null;
+				var pi;
+				for (pi = 0; pi < pickupPoints.length; pi++) {
+					var cand = pickupPoints[pi] || {};
+					if (String(cand.id || '') === String(val)) {
+						pickedDetail = {
+							code: String(cand.id || val || ''),
+							name: cand.title || cand.name || '',
+							address: cand.address || '',
+							city: cand.city || '',
+							postal_code: cand.postal_code || cand.postcode || cand.postalCode || '',
+							region: cand.region || cand.state || cand.region_code || '',
+							country_code: cand.country_code || cand.country || cand.countryCode || ''
+						};
+						break;
+					}
+				}
 				ctx.chosenThisOpen = true;
 				window
-					.mpCcSetCdekOfficeCode(String(val))
+					.mpCcSetCdekOfficeCode(String(val), pickedDetail)
 					.fail(function () {
 						ctx.chosenThisOpen = false;
 					})
@@ -667,7 +684,7 @@
 				}
 				chosenInFlight = true;
 				window
-					.mpCcSetCdekOfficeCode(code)
+					.mpCcSetCdekOfficeCode(code, address && typeof address === 'object' ? address : null)
 					.always(function () {
 						chosenInFlight = false;
 					})

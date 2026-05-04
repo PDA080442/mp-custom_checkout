@@ -51,6 +51,8 @@
 	var pendingShippingMethodChoice = null;
 	/** Отложенный cdek_set_office во время shippingMutationInFlight (§29.3). */
 	var pendingCdekOfficeCode = null;
+	/** Детали ПВЗ для того же отложенного запроса (имя, адрес и т.д.). */
+	var pendingCdekOfficeDetails = null;
 	/** Deferred для очереди office-save: резолвится только после реального AJAX (модал карты не закрывается на «фейковом» resolve). */
 	var pendingCdekOfficeDeferred = null;
 	/** Пока идёт «Рассчитать доставку» — не даём render() убрать кнопку из-за гонки с черновиком / get_state. */
@@ -4367,6 +4369,54 @@
 		return s ? s : '';
 	}
 
+	/**
+	 * Нормализация объекта ПВЗ от виджета СДЭК / модала для AJAX `cdek_set_office` (office_details).
+	 */
+	function normalizeCdekOfficeDetailsForRequest(raw, fallbackCode) {
+		var r = raw && typeof raw === 'object' ? raw : {};
+		function pick() {
+			var keys = Array.prototype.slice.call(arguments, 0);
+			var ki;
+			for (ki = 0; ki < keys.length; ki++) {
+				var k = keys[ki];
+				if (Object.prototype.hasOwnProperty.call(r, k) && r[k] !== undefined && r[k] !== null) {
+					var s = String(r[k]).trim();
+					if (s) {
+						return s;
+					}
+				}
+			}
+			return '';
+		}
+		var fc = fallbackCode === undefined || fallbackCode === null ? '' : String(fallbackCode).trim();
+		var out = {};
+		out.code = pick('code') || fc;
+		out.name = pick('name', 'location_name');
+		out.address = pick('address', 'address_full');
+		out.city = pick('city');
+		out.postal_code = pick('postal_code', 'postalCode', 'postcode');
+		if (out.postal_code.length > 16) {
+			out.postal_code = out.postal_code.slice(0, 16);
+		}
+		out.region = pick('region', 'region_code', 'regionName');
+		out.country_code = pick('country_code', 'countryCode');
+		return out;
+	}
+
+	function cdekOfficeDetailsHasRenderableFields(o) {
+		if (!o || typeof o !== 'object') {
+			return false;
+		}
+		return Boolean(
+			trimNonEmpty(o.name) ||
+				trimNonEmpty(o.address) ||
+				trimNonEmpty(o.city) ||
+				trimNonEmpty(o.postal_code) ||
+				trimNonEmpty(o.region) ||
+				trimNonEmpty(o.country_code)
+		);
+	}
+
 	function getConditionsCopyRoot() {
 		var cfg = getStepThreeConfig();
 		return cfg && cfg.conditions_copy && typeof cfg.conditions_copy === 'object' ? cfg.conditions_copy : {};
@@ -7826,8 +7876,10 @@
 
 	function render(state, $app) {
 		window.__mpCcCheckoutContextId = state && state.flowContextId ? String(state.flowContextId) : '';
-		window.mpCcSetCdekOfficeCode = function (code) {
+		window.mpCcSetCdekOfficeCode = function (code, officeDetails) {
 			var c = code === undefined || code === null ? '' : String(code).trim();
+			var normalizedDetails = normalizeCdekOfficeDetailsForRequest(officeDetails, c);
+			var hasDetailsPayload = cdekOfficeDetailsHasRenderableFields(normalizedDetails);
 			if (!state || !state.flowContextId) {
 				return $.Deferred().reject({ message: 'MP checkout: no context' }).promise();
 			}
@@ -7838,11 +7890,16 @@
 			var dateBoxOffice = state.frontendStore.fulfillment.date;
 			var prevRaw = dateBoxOffice.cdek_office_code;
 			var prevOffice = prevRaw === undefined || prevRaw === null ? '' : String(prevRaw).trim();
+			var prevCdekOfficeSnapshot =
+				dateBoxOffice.cdek_office && typeof dateBoxOffice.cdek_office === 'object'
+					? $.extend(true, {}, dateBoxOffice.cdek_office)
+					: null;
 			if (c === prevOffice) {
 				return $.Deferred().resolve().promise();
 			}
 			if (shippingMutationInFlight) {
 				pendingCdekOfficeCode = c;
+				pendingCdekOfficeDetails = hasDetailsPayload ? $.extend({}, normalizedDetails) : null;
 				if (!pendingCdekOfficeDeferred) {
 					pendingCdekOfficeDeferred = $.Deferred();
 				}
@@ -7851,10 +7908,14 @@
 			shippingMutationInFlight = true;
 			var queuedResultDeferred = pendingCdekOfficeDeferred;
 			pendingCdekOfficeDeferred = null;
-			var pipeline = postCheckout('cdek_set_office', {
+			var ajaxPayload = {
 				context_id: state.flowContextId,
 				office_code: c
-			}).then(function (response) {
+			};
+			if (hasDetailsPayload) {
+				ajaxPayload.office_details = normalizedDetails;
+			}
+			var pipeline = postCheckout('cdek_set_office', ajaxPayload).then(function (response) {
 				if (!response || !response.success || !response.data) {
 					return $.Deferred().reject(response || {}).promise();
 				}
@@ -7864,6 +7925,12 @@
 						syncFromFlow(state, d.flow, d.cart || {}, paymentFieldPayloadFromAjaxData(d));
 					} else {
 						state.frontendStore.fulfillment.date.cdek_office_code = c;
+						if (c === '') {
+							delete state.frontendStore.fulfillment.date.cdek_office;
+						} else if (hasDetailsPayload) {
+							state.frontendStore.fulfillment.date.cdek_office = $.extend({}, normalizedDetails);
+							state.frontendStore.fulfillment.date.cdek_office.code = c;
+						}
 					}
 				} catch (syncErr) {
 					// Серверный AJAX уже подтвердил сохранение кода ПВЗ — JS-исключение в локальной
@@ -7873,6 +7940,12 @@
 							? state.frontendStore.fulfillment.date
 							: {};
 						state.frontendStore.fulfillment.date.cdek_office_code = c;
+						if (c === '') {
+							delete state.frontendStore.fulfillment.date.cdek_office;
+						} else if (hasDetailsPayload) {
+							state.frontendStore.fulfillment.date.cdek_office = $.extend({}, normalizedDetails);
+							state.frontendStore.fulfillment.date.cdek_office.code = c;
+						}
 					} catch (_assignErr) {}
 					if (window.console && typeof window.console.warn === 'function') {
 						window.console.warn('[mp-cc] cdek_set_office sync warning:', syncErr && syncErr.message ? syncErr.message : syncErr);
@@ -7894,6 +7967,11 @@
 					state.frontendStore.fulfillment.date.cdek_office_code = prevOffice;
 				} else {
 					delete state.frontendStore.fulfillment.date.cdek_office_code;
+				}
+				if (prevCdekOfficeSnapshot) {
+					state.frontendStore.fulfillment.date.cdek_office = prevCdekOfficeSnapshot;
+				} else {
+					delete state.frontendStore.fulfillment.date.cdek_office;
 				}
 				syncStoreWithBackend(state, $app, { force: true });
 			}).always(function () {
@@ -8099,9 +8177,11 @@
 		}
 		if (pendingCdekOfficeCode !== null) {
 			var cdekQueued = pendingCdekOfficeCode;
+			var cdekDetailsQueued = pendingCdekOfficeDetails;
 			pendingCdekOfficeCode = null;
+			pendingCdekOfficeDetails = null;
 			if (typeof window.mpCcSetCdekOfficeCode === 'function') {
-				window.mpCcSetCdekOfficeCode(cdekQueued);
+				window.mpCcSetCdekOfficeCode(cdekQueued, cdekDetailsQueued);
 			}
 		}
 	}
@@ -8174,11 +8254,13 @@
 		var prevMethodIdForPvz = String(dateBox.shipping_method_id || '');
 		if (pendingCdekOfficeCode !== null && methodId !== 'pvz') {
 			pendingCdekOfficeCode = null;
+			pendingCdekOfficeDetails = null;
 			rejectPendingCdekOfficeDeferred({ code: 'office_queue_cleared', reason: 'non_pvz_method' });
 		}
 		if (prevMethodIdForPvz === 'pvz' && methodId !== 'pvz') {
 			if (state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object') {
 				delete state.frontendStore.fulfillment.date.cdek_office_code;
+				delete state.frontendStore.fulfillment.date.cdek_office;
 			}
 			setV2StepInvalidState(state, 'delivery_screen', false);
 			setStepInvalidState(state, 'address_delivery', false);

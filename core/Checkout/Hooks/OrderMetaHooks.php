@@ -29,6 +29,7 @@ final class OrderMetaHooks {
 		add_action( 'woocommerce_checkout_order_created', array( __CLASS__, 'apply_contact_fields_to_order' ), 11, 2 );
 		add_action( 'mp_custom_checkout_save_order_meta', array( __CLASS__, 'save_scenario_meta' ), 10, 2 );
 		add_action( 'mp_custom_checkout_save_order_meta', array( __CLASS__, 'save_selected_date_meta' ), 12, 2 );
+		add_action( 'mp_custom_checkout_save_order_meta', array( __CLASS__, 'set_shipping_address_to_pvz' ), 13, 2 );
 		add_action( 'mp_custom_checkout_save_order_meta', array( __CLASS__, 'save_cdek_pvz_meta' ), 14, 2 );
 		add_action( 'mp_custom_checkout_save_order_meta', array( __CLASS__, 'save_conditions_summary_meta' ), 20, 2 );
 		add_action( 'mp_custom_checkout_save_order_meta', array( __CLASS__, 'save_discounts_meta' ), 22, 2 );
@@ -213,6 +214,103 @@ final class OrderMetaHooks {
 	public static function save_selected_date_meta( $order, $data = array() ): void { unset( $data ); if ( ! $order instanceof \WC_Order ) { return; } $flow = CheckoutSessionService::get_flow(); $scenario = isset( $flow['scenario'] ) ? CheckoutScenarioRules::sanitize_scenario( (string) $flow['scenario'] ) : ScenarioStepRegistry::SCENARIO_PICKUP; $answers = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : array(); $date_box = isset( $answers['date_conditions'] ) && is_array( $answers['date_conditions'] ) ? $answers['date_conditions'] : array(); $selected = isset( $date_box['selected_date'] ) ? sanitize_text_field( (string) $date_box['selected_date'] ) : ''; if ( '' === $selected ) { return; } $available = CheckoutDateAvailabilityEngine::build_rules( $scenario ); $allowed = isset( $available['available_dates'] ) && is_array( $available['available_dates'] ) ? $available['available_dates'] : array(); if ( ! in_array( $selected, $allowed, true ) ) { do_action( 'mp_custom_checkout_log', 'error', '[date_sync] order_meta_date_rejected', array( 'order_id' => $order->get_id(), 'selected_date' => $selected, 'scenario' => $scenario ) ); return; } $label = $selected; $dt = \DateTimeImmutable::createFromFormat( 'Y-m-d', $selected, wp_timezone() ); if ( $dt instanceof \DateTimeImmutable ) { $label = $dt->format( 'd.m.Y' ); } $order->update_meta_data( OrderMetaKeys::SELECTED_DATE, $selected ); $order->update_meta_data( OrderMetaKeys::SELECTED_DATE_LABEL, $label ); }
 
 	/**
+	 * Для ПВЗ СДЭК подставляет адрес пункта в shipping_address заказа (после billing/contact,
+	 * чтобы перекрыть копирование адреса клиента — см. apply_contact_fields_to_order priority 11).
+	 */
+	public static function set_shipping_address_to_pvz( $order, $data = array() ): void {
+		unset( $data );
+		if ( ! $order instanceof \WC_Order ) {
+			return;
+		}
+		$flow = CheckoutSessionService::get_flow();
+		if ( empty( $flow ) || ! is_array( $flow ) ) {
+			return;
+		}
+		$delivery = CdekWcSessionBridge::get_merged_delivery_answers( $flow );
+		if ( 'pvz' !== sanitize_key( (string) ( $delivery['shipping_method_id'] ?? '' ) ) ) {
+			return;
+		}
+		$answers  = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : array();
+		$step_one = isset( $answers['step_one'] ) && is_array( $answers['step_one'] ) ? $answers['step_one'] : array();
+		$office   = isset( $step_one['cdek_office'] ) && is_array( $step_one['cdek_office'] ) ? $step_one['cdek_office'] : array();
+		if ( empty( $office ) ) {
+			return;
+		}
+		$country_raw = trim( (string) ( $office['country_code'] ?? '' ) );
+		$country     = self::normalize_billing_country_value( $country_raw );
+		if ( '' === $country ) {
+			$country = (string) $order->get_billing_country();
+		}
+		if ( '' === $country ) {
+			return;
+		}
+		$order->set_shipping_country( $country );
+		$order->set_shipping_state( sanitize_text_field( (string) ( $office['region'] ?? '' ) ) );
+		$order->set_shipping_city( sanitize_text_field( (string) ( $office['city'] ?? '' ) ) );
+		$addr1 = sanitize_text_field( (string) ( $office['address'] ?? '' ) );
+		$name  = sanitize_text_field( (string) ( $office['name'] ?? '' ) );
+		if ( '' !== $addr1 ) {
+			$order->set_shipping_address_1( $addr1 );
+			$order->set_shipping_address_2( '' !== $name ? $name : '' );
+		} elseif ( '' !== $name ) {
+			$order->set_shipping_address_1( $name );
+			$order->set_shipping_address_2( '' );
+		}
+		$order->set_shipping_postcode( substr( sanitize_text_field( (string) ( $office['postal_code'] ?? '' ) ), 0, 16 ) );
+	}
+
+	/** @param array<string, mixed> $flow */
+	private static function delete_cdek_office_extended_meta( \WC_Order $order ): void {
+		foreach (
+			array(
+				OrderMetaKeys::CDEK_OFFICE_NAME,
+				OrderMetaKeys::CDEK_OFFICE_ADDRESS,
+				OrderMetaKeys::CDEK_OFFICE_CITY,
+				OrderMetaKeys::CDEK_OFFICE_POSTAL_CODE,
+				OrderMetaKeys::CDEK_OFFICE_REGION,
+				OrderMetaKeys::CDEK_OFFICE_COUNTRY,
+				OrderMetaKeys::CDEK_OFFICE_PAYLOAD,
+			) as $meta_key
+		) {
+			$order->delete_meta_data( $meta_key );
+		}
+	}
+
+	/**
+	 * Снимок полей ПВЗ из flow → order meta (для админки и отчётов).
+	 *
+	 * @param array<string, mixed> $flow
+	 */
+	private static function persist_cdek_office_snapshot_to_order( \WC_Order $order, array $flow ): void {
+		self::delete_cdek_office_extended_meta( $order );
+		$answers  = isset( $flow['answers'] ) && is_array( $flow['answers'] ) ? $flow['answers'] : array();
+		$step_one = isset( $answers['step_one'] ) && is_array( $answers['step_one'] ) ? $answers['step_one'] : array();
+		$box      = isset( $step_one['cdek_office'] ) && is_array( $step_one['cdek_office'] ) ? $step_one['cdek_office'] : array();
+		if ( empty( $box ) ) {
+			return;
+		}
+		if ( isset( $box['name'] ) && '' !== trim( (string) $box['name'] ) ) {
+			$order->update_meta_data( OrderMetaKeys::CDEK_OFFICE_NAME, sanitize_text_field( (string) $box['name'] ) );
+		}
+		if ( isset( $box['address'] ) && '' !== trim( (string) $box['address'] ) ) {
+			$order->update_meta_data( OrderMetaKeys::CDEK_OFFICE_ADDRESS, sanitize_text_field( (string) $box['address'] ) );
+		}
+		if ( isset( $box['city'] ) && '' !== trim( (string) $box['city'] ) ) {
+			$order->update_meta_data( OrderMetaKeys::CDEK_OFFICE_CITY, sanitize_text_field( (string) $box['city'] ) );
+		}
+		if ( isset( $box['postal_code'] ) && '' !== trim( (string) $box['postal_code'] ) ) {
+			$order->update_meta_data( OrderMetaKeys::CDEK_OFFICE_POSTAL_CODE, substr( sanitize_text_field( (string) $box['postal_code'] ), 0, 16 ) );
+		}
+		if ( isset( $box['region'] ) && '' !== trim( (string) $box['region'] ) ) {
+			$order->update_meta_data( OrderMetaKeys::CDEK_OFFICE_REGION, sanitize_text_field( (string) $box['region'] ) );
+		}
+		if ( isset( $box['country_code'] ) && '' !== trim( (string) $box['country_code'] ) ) {
+			$order->update_meta_data( OrderMetaKeys::CDEK_OFFICE_COUNTRY, sanitize_text_field( (string) $box['country_code'] ) );
+		}
+		$order->update_meta_data( OrderMetaKeys::CDEK_OFFICE_PAYLOAD, wp_json_encode( $box ) );
+	}
+
+	/**
 	 * MP-cc meta для ПВЗ СДЭК (method=pvz): отчёты и QA; при смене метода — ключи удаляются (не «прилипают»).
 	 */
 	public static function save_cdek_pvz_meta( $order, $data = array() ): void {
@@ -226,6 +324,7 @@ final class OrderMetaHooks {
 		if ( 'pvz' !== $method ) {
 			$order->delete_meta_data( OrderMetaKeys::CDEK_OFFICE_CODE );
 			$order->delete_meta_data( OrderMetaKeys::CDEK_RATE_ID );
+			self::delete_cdek_office_extended_meta( $order );
 			return;
 		}
 		$office = trim( (string) ( $delivery['cdek_office_code'] ?? '' ) );
@@ -249,11 +348,13 @@ final class OrderMetaHooks {
 			} else {
 				$order->delete_meta_data( OrderMetaKeys::CDEK_OFFICE_CODE );
 			}
+			self::persist_cdek_office_snapshot_to_order( $order, is_array( $flow ) ? $flow : array() );
 			return;
 		}
 
 		$order->delete_meta_data( OrderMetaKeys::CDEK_OFFICE_CODE );
 		$order->delete_meta_data( OrderMetaKeys::CDEK_RATE_ID );
+		self::delete_cdek_office_extended_meta( $order );
 		do_action(
 			'mp_custom_checkout_log',
 			'info',

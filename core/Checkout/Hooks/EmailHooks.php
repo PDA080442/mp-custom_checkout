@@ -23,6 +23,7 @@ final class EmailHooks {
 		add_action( 'woocommerce_admin_order_data_after_order_details', array( __CLASS__, 'render_custom_data_panel_admin' ), 8, 1 );
 		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'render_scenario_admin' ), 12, 1 );
 		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'render_pickup_point_admin' ), 15, 1 );
+		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'render_pvz_office_admin' ), 16, 1 );
 		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'render_conditions_summary_admin' ), 18, 1 );
 		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'render_contact_admin' ), 20, 1 );
 		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'render_discounts_admin' ), 22, 1 );
@@ -44,11 +45,13 @@ final class EmailHooks {
 		$pickup_title = trim( (string) $order->get_meta( OrderMetaKeys::PICKUP_POINT_TITLE, true ) );
 		$pickup_address = trim( (string) $order->get_meta( OrderMetaKeys::PICKUP_POINT_ADDRESS, true ) );
 		$pickup_value = trim( $pickup_title . ( '' !== $pickup_address ? ' — ' . $pickup_address : '' ) );
+		$cdek_pvz_line = self::build_cdek_pvz_line_for_output( $order );
 
 		$rows = array();
 		if ( '' !== $scenario_label ) { $rows[] = array( 'Способ получения', $scenario_label ); }
 		if ( '' !== $date_label ) { $rows[] = array( 'Дата получения/доставки', $date_label ); }
 		if ( '' !== $pickup_value ) { $rows[] = array( 'Точка самовывоза', $pickup_value ); }
+		if ( '' !== $cdek_pvz_line ) { $rows[] = array( __( 'ПВЗ СДЭК', 'mp-custom-checkout' ), $cdek_pvz_line ); }
 		if ( '' !== $address ) { $rows[] = array( 'Адрес', $address ); }
 		if ( '' !== $conditions ) { $rows[] = array( 'Условия получения', self::truncate_conditions_one_line( $conditions ) ); }
 
@@ -102,8 +105,9 @@ final class EmailHooks {
 		$pickup_title = trim( (string) $order->get_meta( OrderMetaKeys::PICKUP_POINT_TITLE, true ) );
 		$pickup_address = trim( (string) $order->get_meta( OrderMetaKeys::PICKUP_POINT_ADDRESS, true ) );
 		$pickup_value = trim( $pickup_title . ( '' !== $pickup_address ? ' — ' . $pickup_address : '' ) );
+		$cdek_pvz_line = self::build_cdek_pvz_line_for_output( $order );
 		$discounts = self::build_discounts_lines_for_output( $order );
-		$has_any = '' !== $scenario_label || '' !== $date_label || '' !== $conditions || '' !== $address || '' !== $gender || '' !== $birthdate || '' !== $pickup_value || ! empty( $discounts );
+		$has_any = '' !== $scenario_label || '' !== $date_label || '' !== $conditions || '' !== $address || '' !== $gender || '' !== $birthdate || '' !== $pickup_value || '' !== $cdek_pvz_line || ! empty( $discounts );
 		if ( ! $has_any ) { return; }
 		echo '<div class="order_data_column">';
 		echo '<h3>' . esc_html__( 'Custom checkout data', 'mp-custom-checkout' ) . '</h3>';
@@ -111,6 +115,7 @@ final class EmailHooks {
 		if ( '' !== $scenario_label ) { echo '<p><strong>' . esc_html__( 'Способ получения', 'mp-custom-checkout' ) . ':</strong> ' . esc_html( $scenario_label ) . '</p>'; }
 		if ( '' !== $date_label ) { echo '<p><strong>' . esc_html__( 'Дата получения', 'mp-custom-checkout' ) . ':</strong> ' . esc_html( $date_label ) . '</p>'; }
 		if ( '' !== $pickup_value ) { echo '<p><strong>' . esc_html__( 'Точка самовывоза', 'mp-custom-checkout' ) . ':</strong> ' . esc_html( $pickup_value ) . '</p>'; }
+		if ( '' !== $cdek_pvz_line ) { echo '<p><strong>' . esc_html__( 'ПВЗ СДЭК', 'mp-custom-checkout' ) . ':</strong> ' . esc_html( $cdek_pvz_line ) . '</p>'; }
 		if ( '' !== $address ) { echo '<p><strong>' . esc_html__( 'Составной адрес', 'mp-custom-checkout' ) . ':</strong> ' . esc_html( $address ) . '</p>'; }
 		if ( '' !== $birthdate ) { echo '<p><strong>' . esc_html__( 'Дата рождения', 'mp-custom-checkout' ) . ':</strong> ' . esc_html( $birthdate ) . '</p>'; }
 		if ( 'male' === $gender ) { echo '<p><strong>' . esc_html__( 'Пол', 'mp-custom-checkout' ) . ':</strong> ' . esc_html__( 'Мужчина', 'mp-custom-checkout' ) . '</p>'; } elseif ( 'female' === $gender ) { echo '<p><strong>' . esc_html__( 'Пол', 'mp-custom-checkout' ) . ':</strong> ' . esc_html__( 'Женщина', 'mp-custom-checkout' ) . '</p>'; }
@@ -127,6 +132,17 @@ final class EmailHooks {
 	public static function render_conditions_summary_meta( $order, $sent_to_admin, $plain_text, $email = null ): void { unset( $email ); if ( ! $order instanceof \WC_Order ) { return; } $text = self::get_order_conditions_summary( $order ); if ( '' === $text ) { return; } $title = __( 'Условия получения', 'mp-custom-checkout' ); if ( $plain_text ) { $lead = $sent_to_admin ? '[' . __( 'Администратору', 'mp-custom-checkout' ) . '] ' : ''; echo "\n" . $lead . sanitize_text_field( $title ) . ":\n" . self::normalize_plain_block( $text ) . "\n"; return; } $wrap_class = 'mp-cc-email-conditions-summary'; if ( $sent_to_admin ) { $wrap_class .= ' mp-cc-email-conditions-summary--to-admin'; } echo '<div class="' . esc_attr( $wrap_class ) . '"><p><strong>' . esc_html( $title ) . '</strong></p><div class="mp-cc-email-conditions-summary__body">' . self::format_conditions_html( $text ) . '</div></div>'; }
 	public static function render_conditions_summary_admin( $order ): void { if ( ! $order instanceof \WC_Order ) { return; } $text = self::get_order_conditions_summary( $order ); if ( '' === $text ) { return; } echo '<div class="mp-cc-order-conditions-meta"><p><strong>' . esc_html__( 'Условия получения', 'mp-custom-checkout' ) . '</strong></p><div class="mp-cc-order-conditions-meta__body">' . self::format_conditions_html( $text ) . '</div></div>'; }
 	public static function render_pickup_point_admin( $order ): void { if ( ! $order instanceof \WC_Order ) { return; } $title = (string) $order->get_meta( OrderMetaKeys::PICKUP_POINT_TITLE, true ); $address = (string) $order->get_meta( OrderMetaKeys::PICKUP_POINT_ADDRESS, true ); $desc = (string) $order->get_meta( OrderMetaKeys::PICKUP_POINT_DESCRIPTION, true ); if ( '' === $title && '' === $address && '' === $desc ) { return; } echo '<p><strong>' . esc_html__( 'Точка самовывоза', 'mp-custom-checkout' ) . ':</strong><br />' . esc_html( $title ); if ( '' !== $address ) { echo '<br />' . esc_html( $address ); } if ( '' !== $desc ) { echo '<br /><em>' . esc_html( $desc ) . '</em>'; } echo '</p>'; }
+
+	public static function render_pvz_office_admin( $order ): void {
+		if ( ! $order instanceof \WC_Order ) {
+			return;
+		}
+		$line = self::build_cdek_pvz_line_for_output( $order );
+		if ( '' === $line ) {
+			return;
+		}
+		echo '<p><strong>' . esc_html__( 'ПВЗ СДЭК', 'mp-custom-checkout' ) . ':</strong><br />' . esc_html( $line ) . '</p>';
+	}
 	public static function render_contact_meta( $order, $sent_to_admin, $plain_text, $email = null ): void { unset( $sent_to_admin, $email ); if ( ! $order instanceof \WC_Order ) { return; } $lines = self::build_contact_lines_for_output( $order ); if ( empty( $lines ) ) { return; } $title = __( 'Контактные данные', 'mp-custom-checkout' ); if ( $plain_text ) { echo "\n" . sanitize_text_field( $title ) . ":\n"; foreach ( $lines as $line ) { echo '- ' . sanitize_text_field( $line ) . "\n"; } return; } echo '<div class="mp-cc-email-contact-meta"><p><strong>' . esc_html( $title ) . '</strong></p><ul>'; foreach ( $lines as $line ) { echo '<li>' . esc_html( $line ) . '</li>'; } echo '</ul></div>'; }
 	public static function render_contact_admin( $order ): void { if ( ! $order instanceof \WC_Order ) { return; } $lines = self::build_contact_lines_for_output( $order ); $gender = trim( (string) $order->get_meta( OrderMetaKeys::GENDER, true ) ); if ( 'male' === $gender ) { $lines[] = __( 'Пол', 'mp-custom-checkout' ) . ': ' . __( 'Мужчина', 'mp-custom-checkout' ); } elseif ( 'female' === $gender ) { $lines[] = __( 'Пол', 'mp-custom-checkout' ) . ': ' . __( 'Женщина', 'mp-custom-checkout' ); } $order_note = trim( (string) $order->get_meta( OrderMetaKeys::ORDER_NOTES, true ) ); if ( empty( $lines ) && '' === $order_note ) { return; } echo '<div class="mp-cc-order-contact-meta"><p><strong>' . esc_html__( 'Контактные данные', 'mp-custom-checkout' ) . '</strong></p><ul>'; foreach ( $lines as $line ) { echo '<li>' . esc_html( $line ) . '</li>'; } echo '</ul></div>'; if ( '' !== $order_note ) { echo '<div class="mp-cc-order-contact-meta"><p><strong>' . esc_html__( 'Примечание к заказу', 'mp-custom-checkout' ) . '</strong></p><p>' . nl2br( esc_html( $order_note ), false ) . '</p></div>'; } }
 	public static function render_discounts_meta( $order, $sent_to_admin, $plain_text, $email = null ): void { unset( $sent_to_admin, $email ); if ( ! $order instanceof \WC_Order ) { return; } $lines = self::build_discounts_lines_for_output( $order ); if ( empty( $lines ) ) { return; } $title = __( 'Скидки и сертификаты', 'mp-custom-checkout' ); if ( $plain_text ) { echo "\n" . sanitize_text_field( $title ) . ":\n"; foreach ( $lines as $line ) { echo '- ' . sanitize_text_field( $line ) . "\n"; } return; } echo '<div class="mp-cc-email-contact-meta"><p><strong>' . esc_html( $title ) . '</strong></p><ul>'; foreach ( $lines as $line ) { echo '<li>' . esc_html( $line ) . '</li>'; } echo '</ul></div>'; }
@@ -145,5 +161,33 @@ final class EmailHooks {
 	private static function build_contact_lines_for_output( \WC_Order $order ): array { $full_name = trim( $order->get_billing_last_name() . ' ' . $order->get_billing_first_name() ); $patronymic = trim( (string) $order->get_meta( OrderMetaKeys::BILLING_PATRONYMIC, true ) ); if ( '' !== $patronymic ) { $full_name = trim( $full_name . ' ' . $patronymic ); } $email = trim( (string) $order->get_billing_email() ); $phone = trim( (string) $order->get_billing_phone() ); $birthdate_raw = trim( (string) $order->get_meta( OrderMetaKeys::BILLING_BIRTHDATE, true ) ); $birthdate = $birthdate_raw; $birth_dt = \DateTimeImmutable::createFromFormat( 'Y-m-d', $birthdate_raw, wp_timezone() ); if ( $birth_dt instanceof \DateTimeImmutable ) { $birthdate = $birth_dt->format( 'd.m.Y' ); } $address = self::build_structured_address_single_line( $order ); $lines = array(); if ( '' !== $full_name ) { $lines[] = __( 'Получатель', 'mp-custom-checkout' ) . ': ' . $full_name; } if ( '' !== $email ) { $lines[] = __( 'Email', 'mp-custom-checkout' ) . ': ' . $email; } if ( '' !== $phone ) { $lines[] = __( 'Телефон', 'mp-custom-checkout' ) . ': ' . $phone; } if ( '' !== $birthdate ) { $lines[] = __( 'Дата рождения', 'mp-custom-checkout' ) . ': ' . $birthdate; } if ( '' !== $address ) { $lines[] = __( 'Адрес', 'mp-custom-checkout' ) . ': ' . $address; } return $lines; }
 	private static function build_discounts_lines_for_output( \WC_Order $order ): array { $lines = array(); $coupons_raw = (string) $order->get_meta( OrderMetaKeys::APPLIED_COUPONS, true ); $gift_raw = (string) $order->get_meta( OrderMetaKeys::APPLIED_GIFT_CARDS, true ); $coupon_total = (float) $order->get_meta( OrderMetaKeys::COUPON_DISCOUNT_TOTAL, true ); $gift_total = (float) $order->get_meta( OrderMetaKeys::GIFT_CARD_TOTAL, true ); $coupons = json_decode( $coupons_raw, true ); $gift = json_decode( $gift_raw, true ); $coupons = is_array( $coupons ) ? array_values( array_filter( array_map( 'strval', $coupons ) ) ) : array(); $gift = is_array( $gift ) ? array_values( array_filter( array_map( 'strval', $gift ) ) ) : array(); if ( ! empty( $coupons ) ) { $lines[] = __( 'Купоны', 'mp-custom-checkout' ) . ': ' . implode( ', ', $coupons ) . ' (' . wp_strip_all_tags( wc_price( $coupon_total ) ) . ')'; } if ( ! empty( $gift ) ) { $lines[] = __( 'Подарочная карта', 'mp-custom-checkout' ) . ': ' . implode( ', ', $gift ) . ' (' . wp_strip_all_tags( wc_price( $gift_total ) ) . ')'; } return $lines; }
 	private static function build_structured_address_single_line( \WC_Order $order ): string { $parts = array_filter( array( trim( (string) $order->get_meta( OrderMetaKeys::ADDRESS_COUNTRY_CODE, true ) ), trim( (string) $order->get_meta( OrderMetaKeys::ADDRESS_REGION_CODE, true ) ), trim( (string) $order->get_meta( OrderMetaKeys::ADDRESS_CITY, true ) ), trim( (string) $order->get_meta( OrderMetaKeys::ADDRESS_LINE1, true ) ), trim( (string) $order->get_meta( OrderMetaKeys::ADDRESS_LINE2, true ) ), trim( (string) $order->get_meta( OrderMetaKeys::ADDRESS_POSTCODE, true ) ) ), static function ( $value ) { return '' !== $value; } ); if ( empty( $parts ) ) { $parts = array_filter( array( trim( (string) $order->get_billing_country() ), trim( (string) $order->get_billing_state() ), trim( (string) $order->get_billing_city() ), trim( (string) $order->get_billing_address_1() ), trim( (string) $order->get_billing_address_2() ), trim( (string) $order->get_billing_postcode() ) ), static function ( $value ) { return '' !== $value; } ); } return implode( ', ', $parts ); }
-	private static function build_key_meta_list_preview( \WC_Order $order ): string { $pieces = array(); $scenario = self::get_order_scenario_label( $order ); $date = self::get_order_date_label( $order ); $pickup = trim( (string) $order->get_meta( OrderMetaKeys::PICKUP_POINT_TITLE, true ) ); if ( '' !== $scenario ) { $pieces[] = $scenario; } if ( '' !== $date ) { $pieces[] = $date; } if ( '' !== $pickup ) { $pieces[] = __( 'ПВЗ', 'mp-custom-checkout' ) . ': ' . $pickup; } $birth = trim( (string) $order->get_meta( OrderMetaKeys::BILLING_BIRTHDATE, true ) ); if ( '' !== $birth ) { $pieces[] = __( 'ДР', 'mp-custom-checkout' ) . ': ' . $birth; } return implode( ' | ', $pieces ); }
+
+	/** Одна строка для писем и панели админки: название, адрес, город, код ПВЗ. */
+	private static function build_cdek_pvz_line_for_output( \WC_Order $order ): string {
+		$code = trim( (string) $order->get_meta( OrderMetaKeys::CDEK_OFFICE_CODE, true ) );
+		if ( '' === $code ) {
+			return '';
+		}
+		$name = trim( (string) $order->get_meta( OrderMetaKeys::CDEK_OFFICE_NAME, true ) );
+		$addr = trim( (string) $order->get_meta( OrderMetaKeys::CDEK_OFFICE_ADDRESS, true ) );
+		$city = trim( (string) $order->get_meta( OrderMetaKeys::CDEK_OFFICE_CITY, true ) );
+		$post = trim( (string) $order->get_meta( OrderMetaKeys::CDEK_OFFICE_POSTAL_CODE, true ) );
+		$reg  = trim( (string) $order->get_meta( OrderMetaKeys::CDEK_OFFICE_REGION, true ) );
+		$chunks = array();
+		if ( '' !== $name ) {
+			$chunks[] = $name;
+		}
+		$second = $addr;
+		$city_bit = trim( implode( ', ', array_filter( array( $post, $city, $reg ) ) ) );
+		if ( '' !== $city_bit ) {
+			$second = trim( $second . ( '' !== $second ? ' — ' : '' ) . $city_bit );
+		}
+		if ( '' !== $second ) {
+			$chunks[] = $second;
+		}
+		$chunks[] = __( 'код', 'mp-custom-checkout' ) . ' ' . $code;
+		return implode( ' · ', array_filter( $chunks ) );
+	}
+
+	private static function build_key_meta_list_preview( \WC_Order $order ): string { $pieces = array(); $scenario = self::get_order_scenario_label( $order ); $date = self::get_order_date_label( $order ); $pickup = trim( (string) $order->get_meta( OrderMetaKeys::PICKUP_POINT_TITLE, true ) ); if ( '' !== $scenario ) { $pieces[] = $scenario; } if ( '' !== $date ) { $pieces[] = $date; } if ( '' !== $pickup ) { $pieces[] = __( 'ПВЗ', 'mp-custom-checkout' ) . ': ' . $pickup; } $cdek_name = trim( (string) $order->get_meta( OrderMetaKeys::CDEK_OFFICE_NAME, true ) ); $cdek_code = trim( (string) $order->get_meta( OrderMetaKeys::CDEK_OFFICE_CODE, true ) ); if ( '' !== $cdek_code ) { $pieces[] = __( 'ПВЗ СДЭК', 'mp-custom-checkout' ) . ': ' . ( '' !== $cdek_name ? $cdek_name : $cdek_code ); } $birth = trim( (string) $order->get_meta( OrderMetaKeys::BILLING_BIRTHDATE, true ) ); if ( '' !== $birth ) { $pieces[] = __( 'ДР', 'mp-custom-checkout' ) . ': ' . $birth; } return implode( ' | ', $pieces ); }
 }
