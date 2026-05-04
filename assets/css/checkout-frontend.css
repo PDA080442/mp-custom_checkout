@@ -1244,6 +1244,24 @@
 	transform: translateY(-1px);
 }
 
+/*
+ * Подсветка цены доставки в сводке после автоматического пересчёта.
+ * Включается на 5 сек через JS (`flashShippingAmountInSummary`) сразу после снятия оверлея,
+ * чтобы пользователь увидел, что строка «Доставка» обновилась с новым тарифом.
+ * Используем .is-just-updated (отдельный от .is-updated, чтобы не конфликтовать
+ * с существующей точечной подсветкой, которая уже навешивается в других местах).
+ */
+.mp-cc-summary-card__amount--inline.is-just-updated,
+.mp-cc-summary-card__amount.is-just-updated {
+	color: var(--mp-cc-color-success);
+	background-color: rgba(46, 160, 67, 0.16);
+	border-radius: 4px;
+	padding: 0 4px;
+	transition:
+		color 0.4s var(--mp-cc-motion-ease-standard, ease),
+		background-color 0.4s var(--mp-cc-motion-ease-standard, ease);
+}
+
 .mp-cc-summary-card__placeholder {
 	height: 1.1rem;
 	width: 65%;

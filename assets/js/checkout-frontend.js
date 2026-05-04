@@ -7243,7 +7243,7 @@
 				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(subtotalLineLabel) + ': <span class="mp-cc-summary-card__amount--inline" data-summary-amount="1">' + wcPriceHtmlFragment(subtotalText) + '</span></p>';
 			}
 			if (trimNonEmpty(shippingText)) {
-				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(shippingLabel) + ': <span class="mp-cc-summary-card__amount--inline" data-summary-amount="1">' + wcPriceHtmlFragment(shippingText) + '</span></p>';
+				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(shippingLabel) + ': <span class="mp-cc-summary-card__amount--inline" data-summary-amount="1" data-summary-shipping-amount="1">' + wcPriceHtmlFragment(shippingText) + '</span></p>';
 			}
 			for (var fi = 0; fi < feeLines.length; fi += 1) {
 				var feeRow = feeLines[fi] || {};
@@ -8007,6 +8007,32 @@
 		}
 	}
 
+	var shippingAmountFlashTimer = null;
+	/**
+	 * После завершения пересчёта подсвечиваем строку «Доставка» в сводке зелёным на 5 сек,
+	 * чтобы пользователь явно увидел, что цена обновилась (особенно после оверлея загрузки).
+	 * Класс `is-just-updated` навешивается на элементы [data-summary-shipping-amount="1"].
+	 */
+	function flashShippingAmountInSummary() {
+		var $targets = $(selectors.summary).find('[data-summary-shipping-amount="1"]');
+		if (!$targets.length) {
+			return;
+		}
+		if (shippingAmountFlashTimer) {
+			window.clearTimeout(shippingAmountFlashTimer);
+			shippingAmountFlashTimer = null;
+		}
+		// Сначала снимаем класс, чтобы рестартовать transition при повторном пересчёте подряд.
+		$targets.removeClass('is-just-updated');
+		// Принудительный reflow, иначе браузер может сразу применить новый класс без анимации.
+		$targets.each(function () { void this.offsetWidth; });
+		$targets.addClass('is-just-updated');
+		shippingAmountFlashTimer = window.setTimeout(function () {
+			shippingAmountFlashTimer = null;
+			$(selectors.summary).find('[data-summary-shipping-amount="1"]').removeClass('is-just-updated');
+		}, 5000);
+	}
+
 	function applyShippingMethodUserChoice(state, $app, methodId) {
 		methodId = String(methodId || '');
 		if (!methodId) {
@@ -8101,6 +8127,7 @@
 			}).always(function () {
 				release();
 				setShippingRatesLoadingOverlay(false, $app);
+				flashShippingAmountInSummary();
 				flushPendingShippingMutation(state, $app, methodId);
 			});
 		} else {
@@ -8156,6 +8183,7 @@
 		}).always(function () {
 			shippingMutationInFlight = false;
 			setShippingRatesLoadingOverlay(false, $app);
+			flashShippingAmountInSummary();
 			flushPendingShippingMutation(state, $app, '');
 		});
 	}
