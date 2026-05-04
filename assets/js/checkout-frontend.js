@@ -7982,6 +7982,31 @@
 		}
 	}
 
+	/**
+	 * Включает/выключает оверлей «идёт пересчёт ставок» на блоке оформления.
+	 * Используется при автоматических пересчётах после смены метода/тарифа доставки —
+	 * визуально совпадает с поведением кнопки «Рассчитать доставку», чтобы пользователь
+	 * понимал, что данные подгружаются (особенно когда обновляются цены вариантов).
+	 */
+	function setShippingRatesLoadingOverlay(on, $app) {
+		var $checkoutRoot = $(selectors.root);
+		if (on) {
+			if ($checkoutRoot.length) {
+				$checkoutRoot.addClass('is-shipping-recalc-loading');
+			}
+			if ($app && $app.length) {
+				$app.addClass('is-shipping-recalc-loading');
+			}
+		} else {
+			if ($checkoutRoot.length) {
+				$checkoutRoot.removeClass('is-shipping-recalc-loading');
+			}
+			if ($app && $app.length) {
+				$app.removeClass('is-shipping-recalc-loading');
+			}
+		}
+	}
+
 	function applyShippingMethodUserChoice(state, $app, methodId) {
 		methodId = String(methodId || '');
 		if (!methodId) {
@@ -8049,6 +8074,7 @@
 		render(state, $app);
 
 		shippingMutationInFlight = true;
+		setShippingRatesLoadingOverlay(true, $app);
 		var release = function () { shippingMutationInFlight = false; };
 		var scenarioRequest = postCheckout('session_set_scenario', {
 			scenario: nextScenario,
@@ -8064,8 +8090,9 @@
 			}).then(function () {
 				// Подтягиваем актуальные WC rates / cart totals после пересчёта на бэке —
 				// иначе цены вариантов остаются стейловыми из bootstrap'а после смены города.
+				// Возвращаем promise, чтобы оверлей загрузки снимался только после полного цикла.
 				if (state && state.currentStepId === 'address_delivery') {
-					syncStoreWithBackend(state, $app, { force: true });
+					return syncStoreWithBackend(state, $app, { force: true });
 				}
 			}).fail(function () {
 				notify('Не удалось сохранить шаг доставки.', 'error');
@@ -8073,6 +8100,7 @@
 				syncStoreWithBackend(state, $app, { force: true });
 			}).always(function () {
 				release();
+				setShippingRatesLoadingOverlay(false, $app);
 				flushPendingShippingMutation(state, $app, methodId);
 			});
 		} else {
@@ -8082,6 +8110,7 @@
 				syncStoreWithBackend(state, $app, { force: true });
 			}).always(function () {
 				release();
+				setShippingRatesLoadingOverlay(false, $app);
 				flushPendingShippingMutation(state, $app, methodId);
 			});
 		}
@@ -8108,6 +8137,7 @@
 		invalidateV2DownstreamFrom(state, 0);
 		render(state, $app);
 		shippingMutationInFlight = true;
+		setShippingRatesLoadingOverlay(true, $app);
 		postCheckout('session_set_answers', {
 			step_id: 'address_delivery',
 			context_id: state.flowContextId,
@@ -8116,14 +8146,16 @@
 			// Подтянуть актуальные WC rates / cart totals после пересчёта на бэке.
 			// Без этого фронт остаётся с ценами из bootstrap'а (для прошлого города), и при смене
 			// «экспресс ↔ стандарт» сводка показывает 0₽ или старую цену прошлого города.
+			// Возвращаем promise, чтобы оверлей загрузки снимался только после полного цикла.
 			if (state && state.currentStepId === 'address_delivery') {
-				syncStoreWithBackend(state, $app, { force: true });
+				return syncStoreWithBackend(state, $app, { force: true });
 			}
 		}).fail(function () {
 			notify('Не удалось сохранить тариф доставки.', 'error');
 			syncStoreWithBackend(state, $app, { force: true });
 		}).always(function () {
 			shippingMutationInFlight = false;
+			setShippingRatesLoadingOverlay(false, $app);
 			flushPendingShippingMutation(state, $app, '');
 		});
 	}
