@@ -676,6 +676,12 @@
 
 			function onChoose(_type, _tariff, address) {
 				if (chosenInFlight) {
+					if (typeof window.mpCcNotifyCheckout === 'function') {
+						window.mpCcNotifyCheckout(
+							String(labels.wait_pvz_save || 'Подождите, сохраняем выбранный пункт…'),
+							'info'
+						);
+					}
 					return;
 				}
 				var code = address && address.code ? String(address.code) : '';
@@ -683,10 +689,16 @@
 					return;
 				}
 				chosenInFlight = true;
+				if (typeof window.mpCcSetShippingRatesLoadingOverlay === 'function') {
+					window.mpCcSetShippingRatesLoadingOverlay(true);
+				}
 				window
 					.mpCcSetCdekOfficeCode(code, address && typeof address === 'object' ? address : null)
 					.always(function () {
 						chosenInFlight = false;
+						if (typeof window.mpCcSetShippingRatesLoadingOverlay === 'function') {
+							window.mpCcSetShippingRatesLoadingOverlay(false);
+						}
 					})
 					.then(function () {
 						maybeCloseWidgetAfterSave();

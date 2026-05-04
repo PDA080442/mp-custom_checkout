@@ -8,9 +8,14 @@
 
 namespace MP\CustomCheckout\Integrations\WooCommerce;
 
+use MP\CustomCheckout\Settings\DefaultFeatureFlagsRegistry;
+use MP\CustomCheckout\Settings\FeatureFlagResolver;
+
 defined( 'ABSPATH' ) || exit;
 
 final class CdekMpCheckoutWidgetConfig {
+
+	private const WIDGET_CITY_OFFICES_TRANSIENT_PREFIX = 'mp_cc_cdek_widget_city_';
 
 	/**
 	 * @param array<string, mixed>|null $checkout_flow Ключ checkout_flow из контекста маршрута.
@@ -92,17 +97,30 @@ final class CdekMpCheckoutWidgetConfig {
 
 		$offices_json = '[]';
 		if ( class_exists( '\Cdek\CdekApi', false ) && '' !== $city ) {
-			try {
-				$api  = new \Cdek\CdekApi();
-				$code = $api->cityCodeGet( $city, '' !== $postcode ? $postcode : null );
-				if ( null !== $code ) {
-					$raw = $api->officeListRaw( $code );
-					if ( is_string( $raw ) && '' !== $raw ) {
-						$offices_json = $raw;
-					}
+			$ttl       = self::widget_city_offices_cache_ttl_seconds();
+			$cache_key = self::WIDGET_CITY_OFFICES_TRANSIENT_PREFIX . md5( $city . "\n" . $postcode );
+			if ( $ttl > 0 ) {
+				$cached = get_transient( $cache_key );
+				if ( is_string( $cached ) && '' !== $cached ) {
+					$offices_json = $cached;
 				}
-			} catch ( \Throwable $e ) {
-				$offices_json = '[]';
+			}
+			if ( '[]' === $offices_json ) {
+				try {
+					$api  = new \Cdek\CdekApi();
+					$code = $api->cityCodeGet( $city, '' !== $postcode ? $postcode : null );
+					if ( null !== $code ) {
+						$raw = $api->officeListRaw( $code );
+						if ( is_string( $raw ) && '' !== $raw ) {
+							$offices_json = $raw;
+							if ( $ttl > 0 ) {
+								set_transient( $cache_key, $raw, $ttl );
+							}
+						}
+					}
+				} catch ( \Throwable $e ) {
+					$offices_json = '[]';
+				}
 			}
 		}
 
@@ -154,6 +172,14 @@ final class CdekMpCheckoutWidgetConfig {
 	/**
 	 * @return array<string, string>
 	 */
+	private static function widget_city_offices_cache_ttl_seconds(): int {
+		if ( ! FeatureFlagResolver::is_enabled( DefaultFeatureFlagsRegistry::FLAG_CHECKOUT_PERF_V1, true ) ) {
+			return 0;
+		}
+
+		return (int) apply_filters( 'mp_custom_checkout_cdek_widget_city_offices_ttl', 8 * HOUR_IN_SECONDS );
+	}
+
 	private static function modal_labels(): array {
 		return array(
 			'close'                  => __( 'Закрыть', 'mp-custom-checkout' ),
@@ -172,6 +198,7 @@ final class CdekMpCheckoutWidgetConfig {
 			'map_pick_failed'        => __( 'Не удалось получить код пункта.', 'mp-custom-checkout' ),
 			'pick_required'          => __( 'Выберите пункт из списка.', 'mp-custom-checkout' ),
 			'list_empty'             => __( 'Нет доступных точек.', 'mp-custom-checkout' ),
+			'wait_pvz_save'          => __( 'Подождите, сохраняем выбранный пункт…', 'mp-custom-checkout' ),
 		);
 	}
 

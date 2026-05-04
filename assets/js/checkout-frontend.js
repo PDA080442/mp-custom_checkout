@@ -5444,17 +5444,33 @@
 		});
 	}
 
-	function postCheckout(subAction, payload) {
+	var HEAVY_CHECKOUT_AJAX_ACTIONS = {
+		cdek_set_office: true,
+		session_set_answers: true,
+		session_set_step: true,
+		session_set_scenario: true
+	};
+
+	function getCheckoutAjaxTimeoutMs(subAction) {
+		var sa = String(subAction || '');
+		return HEAVY_CHECKOUT_AJAX_ACTIONS[sa] ? 60000 : 30000;
+	}
+
+	function postCheckout(subAction, payload, retryAttempt) {
 		var localized = window.mpCcCheckout || {};
 		if (!localized.ajaxUrl || !localized.nonce) {
 			return $.Deferred().resolve({ success: true }).promise();
 		}
 
-		var request = $.ajax({
+		retryAttempt = retryAttempt || 0;
+		var timeoutMs = getCheckoutAjaxTimeoutMs(subAction);
+		var startedAt = Date.now();
+
+		var promise = $.ajax({
 			url: localized.ajaxUrl,
 			method: 'POST',
 			dataType: 'json',
-			timeout: 30000,
+			timeout: timeoutMs,
 			data: $.extend(
 				{
 					action: 'mp_cc_checkout',
@@ -5464,25 +5480,56 @@
 				},
 				payload || {}
 			)
-		});
-		if (subAction !== 'ajax_error_log' && subAction !== 'client_error_log') {
-			request.fail(function (xhr, statusText, errorThrown) {
-				if (String(statusText || '') === 'timeout') {
-					notify(getUiText('common.ajax_timeout', 'Сервер не ответил вовремя. Попробуйте ещё раз.'), 'error');
+		}).then(
+			function (data, textStatus, jqXHR) {
+				var elapsed = Date.now() - startedAt;
+				if (
+					elapsed > 5000 &&
+					subAction !== 'client_error_log' &&
+					subAction !== 'ajax_error_log'
+				) {
+					reportClientError(
+						'slow_ajax',
+						'slow_ajax sub_action=' + String(subAction || '') + ' ms=' + elapsed,
+						'',
+						''
+					);
 				}
-				var responseSnippet = '';
-				if (xhr && xhr.responseText) {
-					responseSnippet = String(xhr.responseText).slice(0, 300);
+				return data;
+			},
+			function (xhr, statusText, errorThrown) {
+				if (
+					retryAttempt < 1 &&
+					HEAVY_CHECKOUT_AJAX_ACTIONS[String(subAction || '')] &&
+					String(statusText || '') === 'timeout'
+				) {
+					var deferred = $.Deferred();
+					var jitter = 400 + Math.floor(Math.random() * 350);
+					window.setTimeout(function () {
+						postCheckout(subAction, payload, retryAttempt + 1).done(deferred.resolve).fail(deferred.reject);
+					}, jitter);
+					return deferred.promise();
 				}
-				postCheckout('ajax_error_log', {
-					operation: subAction,
-					status: xhr && typeof xhr.status === 'number' ? xhr.status : 0,
-					error: String(errorThrown || statusText || 'ajax_failed'),
-					response_snippet: responseSnippet
-				});
-			});
-		}
-		return request;
+				if (subAction !== 'ajax_error_log' && subAction !== 'client_error_log') {
+					if (String(statusText || '') === 'timeout') {
+						notify(getUiText('common.ajax_timeout', 'Сервер не ответил вовремя. Попробуйте ещё раз.'), 'error');
+					}
+					var responseSnippet = '';
+					if (xhr && xhr.responseText) {
+						responseSnippet = String(xhr.responseText).slice(0, 300);
+					}
+					postCheckout('ajax_error_log', {
+						operation: subAction,
+						status: xhr && typeof xhr.status === 'number' ? xhr.status : 0,
+						error: String(errorThrown || statusText || 'ajax_failed'),
+						response_snippet: responseSnippet
+					});
+				}
+				return $.Deferred().reject(xhr, statusText, errorThrown).promise();
+			}
+		);
+
+		return promise;
 	}
 
 	/**
@@ -8016,6 +8063,12 @@
 			}
 			return pipeline;
 		};
+		window.mpCcNotifyCheckout = function (message, level) {
+			notify(String(message || ''), level || 'info');
+		};
+		window.mpCcSetShippingRatesLoadingOverlay = function (on) {
+			setShippingRatesLoadingOverlay(Boolean(on), $app);
+		};
 		window.mpCcLogValidationFailure = function (stepId, errorsMap) {
 			logValidationFailure(state, stepId, errorsMap);
 		};
@@ -8748,9 +8801,7 @@
 			if (shouldBlockAddressDeliveryForward(state, $app)) {
 				return;
 			}
-			saveCurrentStepDraft(state).always(function () {
-				moveForward(state, $app);
-			});
+			moveForward(state, $app);
 		});
 
 		if (!isFlagEnabled(state, flagNames.multiStepFlow, true)) {
@@ -8761,9 +8812,7 @@
 			if (shouldBlockAddressDeliveryForward(state, $app)) {
 				return;
 			}
-			saveCurrentStepDraft(state).always(function () {
-				moveForward(state, $app);
-			});
+			moveForward(state, $app);
 		});
 		$app.find('.mp-cc-step-card__head[data-step-open]').off('click').on('click', function () {
 			var targetStep = String($(this).attr('data-step-open') || '');
@@ -8785,18 +8834,14 @@
 			if (shouldBlockAddressDeliveryForward(state, $app)) {
 				return;
 			}
-			saveCurrentStepDraft(state).always(function () {
-				moveForward(state, $app);
-			});
+			moveForward(state, $app);
 		});
 
 		$(selectors.summary).find('[data-summary-action="continue"]').off('click').on('click', function () {
 			if (shouldBlockAddressDeliveryForward(state, $app)) {
 				return;
 			}
-			saveCurrentStepDraft(state).always(function () {
-				moveForward(state, $app);
-			});
+			moveForward(state, $app);
 		});
 
 		$(selectors.summary).find('[data-mp-cc-recalc-shipping="1"]').off('click').on('click', function () {
