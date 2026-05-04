@@ -6081,6 +6081,13 @@
 						scrollToFirstInvalidField($app);
 						return;
 					}
+					if (isPostRussiaRecalcRequired(state)) {
+						setV2StepInvalidState(state, currentScreen.id, true);
+						logValidationFailure(state, 'delivery_screen', { post_russia_recalc: 'required' });
+						notify(getPostRussiaRecalcRequiredMessage(), 'error');
+						render(state, $app);
+						return;
+					}
 					setV2StepInvalidState(state, currentScreen.id, false);
 					saveCurrentStepDraft(state);
 					setCurrentV2Screen(state, $app, v2Idx + 1);
@@ -6183,6 +6190,13 @@
 					notify(getStepOneLabel(state, 'pvz_required', 'step_1.errors.pvz_required', 'Выберите пункт выдачи (ПВЗ), чтобы продолжить.'), 'error');
 					render(state, $app);
 					scrollToFirstInvalidField($app);
+					return;
+				}
+				if (isPostRussiaRecalcRequired(state)) {
+					setStepInvalidState(state, 'address_delivery', true);
+					logValidationFailure(state, 'address_delivery', { post_russia_recalc: 'required' });
+					notify(getPostRussiaRecalcRequiredMessage(), 'error');
+					render(state, $app);
 					return;
 				}
 				state.frontendStore.form.errors = state.frontendStore.form.errors || {};
@@ -6671,6 +6685,35 @@
 		}
 		var office = String(dateBox.cdek_office_code || '').trim();
 		return office === '';
+	}
+
+	/**
+	 * Проверяет, что для выбранной «Почты России» обязательное подтверждение через
+	 * «Рассчитать доставку» ещё не выполнено в этой сессии.
+	 *
+	 * Флаг `post_russia_recalc_confirmed` хранится в step_one (`fulfillment.date`) и:
+	 *  - сбрасывается при выборе post_russia после другого метода;
+	 *  - сбрасывается при смене города/региона/страны;
+	 *  - выставляется в true перед reload, который инициирует кнопка «Рассчитать доставку».
+	 *
+	 * Используется как дополнительный gate в moveForward (legacy + V2): пока пользователь
+	 * не нажал «Рассчитать доставку», на следующий шаг checkout не пускаем.
+	 */
+	function isPostRussiaRecalcRequired(state) {
+		var dateBox = state && state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.date || {}) : {};
+		var methodId = String(dateBox.shipping_method_id || '');
+		if (methodId !== 'post_russia') {
+			return false;
+		}
+		var confirmedRaw = dateBox.post_russia_recalc_confirmed;
+		if (confirmedRaw === true || confirmedRaw === 1 || confirmedRaw === '1' || confirmedRaw === 'true') {
+			return false;
+		}
+		return true;
+	}
+
+	function getPostRussiaRecalcRequiredMessage() {
+		return 'Нажмите «Рассчитать доставку», чтобы подтвердить стоимость для «Почты России».';
 	}
 
 	function isAddressDeliveryStepReady(state) {
@@ -8064,6 +8107,15 @@
 				state.frontendStore.form.errors.cdek_office_code = '';
 			}
 		}
+		// Гейт «Рассчитать доставку» работает только для post_russia. При уходе с post_russia
+		// флаг становится неактуален; при свежем выборе post_russia требуем подтверждения заново.
+		if (state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object') {
+			if (methodId !== 'post_russia') {
+				delete state.frontendStore.fulfillment.date.post_russia_recalc_confirmed;
+			} else if (prevMethodIdForPvz !== 'post_russia') {
+				state.frontendStore.fulfillment.date.post_russia_recalc_confirmed = false;
+			}
+		}
 		var selectedMethod = null;
 		for (var mi = 0; mi < methods.length; mi += 1) {
 			if (String(methods[mi].id || '') === methodId) {
@@ -8256,6 +8308,11 @@
 			// Явная пустая строка, не delete: на бэке `set_step_answers` делает array_replace,
 			// и при отсутствии ключа в payload остался бы старый код от прошлого города.
 			state.frontendStore.fulfillment.date.cdek_office_code = '';
+			// Смена города/региона инвалидирует подтверждение «Рассчитать доставку» для post_russia —
+			// тариф почты завязан на регион, поэтому требуем повторного подтверждения.
+			if (String(state.frontendStore.fulfillment.date.shipping_method_id || '') === 'post_russia') {
+				state.frontendStore.fulfillment.date.post_russia_recalc_confirmed = false;
+			}
 			var summaryDd = state.frontendStore.cart && state.frontendStore.cart.summary && typeof state.frontendStore.cart.summary === 'object'
 				? state.frontendStore.cart.summary
 				: {};
@@ -8564,6 +8621,16 @@
 			}
 			var runSave = function () {
 				flushContactFormFromDom(state, $app);
+				// Подтверждаем «Рассчитать доставку» для post_russia: после reload session_get_state
+				// восстановит этот флаг, и moveForward не будет блокировать переход на следующий шаг.
+				state.frontendStore = state.frontendStore || {};
+				state.frontendStore.fulfillment = state.frontendStore.fulfillment || {};
+				state.frontendStore.fulfillment.date = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+					? state.frontendStore.fulfillment.date
+					: {};
+				if (String(state.frontendStore.fulfillment.date.shipping_method_id || '') === 'post_russia') {
+					state.frontendStore.fulfillment.date.post_russia_recalc_confirmed = true;
+				}
 				saveCurrentStepDraft(state).then(function () {
 					shippingRecalcPending = false;
 					window.location.reload();
@@ -8794,6 +8861,10 @@
 				// Явная пустая строка (см. afterDadataContactGeocode) — иначе array_replace
 				// в session_set_answers оставит старый код от прошлого города.
 				state.frontendStore.fulfillment.date.cdek_office_code = '';
+				// Смена города инвалидирует подтверждение «Рассчитать доставку» для post_russia.
+				if (String(state.frontendStore.fulfillment.date.shipping_method_id || '') === 'post_russia') {
+					state.frontendStore.fulfillment.date.post_russia_recalc_confirmed = false;
+				}
 				invalidateV2DownstreamFrom(state, 0);
 				var summaryCity = state.frontendStore.cart && state.frontendStore.cart.summary && typeof state.frontendStore.cart.summary === 'object'
 					? state.frontendStore.cart.summary
