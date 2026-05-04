@@ -2650,63 +2650,12 @@
 			errors.billing_phone_national = 'format';
 			ok = false;
 		}
-		var addrVis = contact.__address_visibility;
-		if (addrVis && !addrVis.hide_address_fields && addrVis.required_address_fields) {
-			var ab = cfg.address_block || {};
-			var order = Array.isArray(ab.subfields_order)
-				? ab.subfields_order
-				: ['country', 'state', 'city', 'address_1', 'address_2', 'postcode'];
-			var maxZip = Number(ab.postcode_max_length);
-			if (!Number.isFinite(maxZip) || maxZip <= 0) {
-				maxZip = 16;
-			}
-			var ki;
-			for (ki = 0; ki < order.length; ki++) {
-				var ak = order[ki];
-				if (!shouldRenderAddressSubfield(ak, contact)) {
-					continue;
-				}
-				if (ak === 'address_2') {
-					continue;
-				}
-				if (ak === 'country') {
-					if (!trimNonEmpty(contact.country)) {
-						errors.country = 'required';
-						ok = false;
-					}
-					continue;
-				}
-				if (ak === 'state') {
-					if (!trimNonEmpty(contact.state)) {
-						errors.state = 'required';
-						ok = false;
-					}
-					continue;
-				}
-				if (ak === 'city') {
-					if (!trimNonEmpty(contact.city)) {
-						errors.city = 'required';
-						ok = false;
-					}
-					continue;
-				}
-				if (ak === 'postcode') {
-					var pc = String(contact.postcode || '').trim();
-					if (!pc) {
-						errors.postcode = 'required';
-						ok = false;
-					} else if (pc.length > maxZip) {
-						errors.postcode = 'postcode';
-						ok = false;
-					}
-					continue;
-				}
-				if (ak === 'address_1' && !trimNonEmpty(contact.address_1)) {
-					errors.address_1 = 'required';
-					ok = false;
-				}
-			}
-		}
+		// Адресные поля валидируются на шаге 1 («Адрес и доставка») через
+		// validateStepOneAddressFields + shouldBlockAddressDeliveryForward. Дублировать проверку
+		// здесь нельзя: на шаге «Получатель» адресный блок больше не рендерится, и пользователь
+		// не сможет очистить ошибку, даже если по какой-то причине state потерял адрес.
+		// На запись в WC это не влияет — данные уже лежат в state.frontendStore.form.contact и
+		// уходят в WC_Customer через WcCustomerShippingSync при saveCurrentStepDraft.
 		var gateways = getAvailablePaymentGateways();
 		var paymentCfg = cfg.payment_block && typeof cfg.payment_block === 'object' ? cfg.payment_block : {};
 		var paymentRequired = paymentCfg.required !== false;
@@ -4086,10 +4035,20 @@
 		if (intro) {
 			html += '<p class="mp-cc-address__intro" id="mp-cc-address-intro">' + escapeHtml(intro) + '</p>';
 		}
-		if (cfg.geo_preview && cfg.geo_preview.enabled) {
+		// Раньше при `cfg.geo_preview.enabled === true` сюда выводилась дев-строка
+		// «Geo debug: country=…, region=…, regions=…, settlements=…», и из-за этого она попадала
+		// прямо на страницу checkout пользователю. Поле `geo_preview` по описанию (docs/nastroyki-po-vkladkam/05-shag-4.md)
+		// предназначено только для admin-превью, поэтому в публичном UI больше ничего не печатаем.
+		// Сами цифры по-прежнему доступны в DevTools через console.debug — для разработчика.
+		if (cfg.geo_preview && cfg.geo_preview.enabled && typeof window !== 'undefined' && window.console && typeof window.console.debug === 'function') {
 			var regionsCount = getRegionsForCountry(geo, String(contact.country || '')).length;
 			var settlementsCount = getSettlementsForRegion(geo, String(contact.country || ''), String(contact.state || '')).length;
-			html += '<p class="mp-cc-address__intro"><strong>Geo debug:</strong> country=' + escapeHtml(String(contact.country || '')) + ', region=' + escapeHtml(String(contact.state || '')) + ', regions=' + escapeHtml(String(regionsCount)) + ', settlements=' + escapeHtml(String(settlementsCount)) + '</p>';
+			window.console.debug('[mp-cc] geo_preview', {
+				country: String(contact.country || ''),
+				region: String(contact.state || ''),
+				regions: regionsCount,
+				settlements: settlementsCount
+			});
 		}
 		html += '</header>';
 		html += '<div class="mp-cc-address__grid">';
@@ -6503,8 +6462,11 @@
 				v2html += buildAddressBlockHtml(state);
 			}
 			if (screen && screen.id === 'recipient_screen') {
+				// Адресный блок здесь намеренно не рендерим: пользователь заполняет адрес
+				// полностью на шаге «Адрес и доставка». Данные уже лежат в state и в session,
+				// и попадают в WC_Customer billing/shipping через WcCustomerShippingSync,
+				// поэтому в заказ WooCommerce они записываются без дублирования полей на этом шаге.
 				v2html += buildContactPaymentHtml(state, { includePayment: false });
-				v2html += buildAddressBlockHtml(state);
 			}
 			if (screen && screen.id === 'payment_screen') {
 				v2html += buildPaymentGatewaysHtml(state);
@@ -6545,8 +6507,10 @@
 					html += buildAddressBlockHtml(state);
 				}
 				if (step.id === 'recipient') {
+					// Адресный блок здесь не рендерим — он живёт только на шаге 1; см. комментарий
+					// в V2-ветке выше. В заказ WC адрес попадает через WcCustomerShippingSync,
+					// поэтому дублировать поля на шаге «Получатель» не нужно.
 					html += buildContactPaymentHtml(state, { includePayment: false });
-					html += buildAddressBlockHtml(state);
 				}
 				if (step.id === 'payment') {
 					html += buildPaymentGatewaysHtml(state);
@@ -6717,6 +6681,51 @@
 	}
 
 	/**
+	 * Проверяет обязательные адресные поля шага «Адрес и доставка».
+	 *
+	 * Раньше адресный блок дублировался на шаге «Получатель», и валидация адреса жила там.
+	 * Сейчас блок убран со второго шага (см. buildStepPanelHtml), поэтому проверку адреса
+	 * нужно проводить уже на шаге 1: иначе пустой адрес «провалится» во второй шаг,
+	 * и пользователь не сможет его исправить, потому что полей в DOM больше нет.
+	 *
+	 * Возвращает map { fieldKey: 'required' } по пустым обязательным полям.
+	 * Поле `address_2` (квартира/корпус) не считаем обязательным — оно в любом случае опционально.
+	 */
+	function validateStepOneAddressFields(state) {
+		var contact = state && state.frontendStore && state.frontendStore.form
+			? (state.frontendStore.form.contact || {})
+			: {};
+		var addrVis = contact.__address_visibility;
+		if (!addrVis || addrVis.hide_address_fields || !addrVis.required_address_fields) {
+			return {};
+		}
+		var cfg = getStepFourConfig();
+		var ab = cfg.address_block || {};
+		var order = Array.isArray(ab.subfields_order)
+			? ab.subfields_order
+			: ['country', 'state', 'city', 'address_1', 'address_2', 'postcode'];
+		var errors = {};
+		var i;
+		for (i = 0; i < order.length; i += 1) {
+			var key = String(order[i] || '');
+			if (!key || key === 'address_2') {
+				continue;
+			}
+			if (!shouldRenderAddressSubfield(key, contact)) {
+				continue;
+			}
+			if (!trimNonEmpty(contact[key])) {
+				errors[key] = 'required';
+			}
+		}
+		return errors;
+	}
+
+	function getStepOneAddressMissingMessage() {
+		return getUiText('step_4.contact_error_all_required', 'Не все обязательные поля заполнены.');
+	}
+
+	/**
 	 * Раннее блокирующее условие на переходах вперёд для шага «Адрес и доставка».
 	 *
 	 * Возвращает true и показывает соответствующий notify, если:
@@ -6751,6 +6760,27 @@
 			setV2StepInvalidState(state, 'delivery_screen', true);
 			notify(getPostRussiaRecalcRequiredMessage(), 'error');
 			render(state, $app);
+			return true;
+		}
+		// Перенесённая со 2-го шага валидация адреса. Адресный блок теперь живёт только на шаге 1,
+		// поэтому пустые обязательные адресные поля должны блокировать переход именно отсюда —
+		// иначе пользователь упадёт на шаге «Получатель» в ошибку «не все обязательные поля заполнены»,
+		// а DOM-полей для исправления у него больше не будет.
+		var addressErrors = validateStepOneAddressFields(state);
+		var addressErrorKeys = Object.keys(addressErrors || {});
+		if (addressErrorKeys.length) {
+			state.frontendStore = state.frontendStore || {};
+			state.frontendStore.form = state.frontendStore.form || {};
+			state.frontendStore.form.errors = state.frontendStore.form.errors || {};
+			var prevContactErrors = state.frontendStore.form.errors.contact && typeof state.frontendStore.form.errors.contact === 'object'
+				? state.frontendStore.form.errors.contact
+				: {};
+			state.frontendStore.form.errors.contact = $.extend({}, prevContactErrors, addressErrors);
+			setStepInvalidState(state, 'address_delivery', true);
+			setV2StepInvalidState(state, 'delivery_screen', true);
+			notify(getStepOneAddressMissingMessage(), 'error');
+			render(state, $app);
+			scrollToFirstInvalidField($app);
 			return true;
 		}
 		return false;
