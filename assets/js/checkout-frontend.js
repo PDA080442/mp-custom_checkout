@@ -7153,11 +7153,13 @@
 		if (state.currentStepId !== 'address_delivery' && !shippingRecalcPending) {
 			return false;
 		}
-		var rawScenario = String(state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.scenario || '') : '');
 		var dateBox = state.frontendStore.fulfillment && state.frontendStore.fulfillment.date ? state.frontendStore.fulfillment.date : {};
 		var shipMethod = String(dateBox.shipping_method_id || '');
-		// Сценарий в сессии часто остаётся pickup до session_set_scenario; выбор «Почта России» живёт в step_one.
-		if (rawScenario === 'pickup' && (!shipMethod || shipMethod === 'pickup')) {
+		// Кнопку «Рассчитать доставку» показываем только для «Почта России»: для остальных методов
+		// (pvz / courier / pickup / krasnoyarsk_delivery) бэк автоматически пересчитывает rates после
+		// смены метода/тарифа/города (см. force-sync в applyShipping*UserChoice). У почты исторически
+		// расчёт может зависеть от ручной кнопки + reload, поэтому оставляем её именно для этого метода.
+		if (shipMethod !== 'post_russia') {
 			return false;
 		}
 		return hasCartLinesForShippingRecalc(state);
