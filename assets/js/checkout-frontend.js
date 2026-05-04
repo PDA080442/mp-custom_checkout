@@ -6063,9 +6063,11 @@
 				return;
 			}
 			if (currentScreen.id === 'delivery_screen') {
+				setShippingRatesLoadingOverlay(true, $app);
 				awaitShippingMutationFlush({ timeoutMs: 8000 }).then(function () {
 					var shipDateBox = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.date || {}) : {};
 					if (!trimNonEmpty(shipDateBox.shipping_method_id)) {
+						setShippingRatesLoadingOverlay(false, $app);
 						setV2StepInvalidState(state, currentScreen.id, true);
 						notify('Выберите способ доставки, чтобы продолжить.', 'error');
 						render(state, $app);
@@ -6076,6 +6078,7 @@
 						? String(state.frontendStore.fulfillment.date.selected_date || '')
 						: '';
 					if (!selectedDateV2 || !parseIsoDate(selectedDateV2)) {
+						setShippingRatesLoadingOverlay(false, $app);
 						setV2StepInvalidState(state, currentScreen.id, true);
 						notify(getStepThreeErrorCopy('empty_date', 'Выберите дату, чтобы продолжить.'), 'error');
 						render(state, $app);
@@ -6083,6 +6086,7 @@
 						return;
 					}
 					if (isPvzMissingOfficeRequired(state)) {
+						setShippingRatesLoadingOverlay(false, $app);
 						setV2StepInvalidState(state, currentScreen.id, true);
 						logValidationFailure(state, 'delivery_screen', { cdek_office_code: 'pvz_required' });
 						notify(getStepOneLabel(state, 'pvz_required', 'step_1.errors.pvz_required', 'Выберите пункт выдачи (ПВЗ), чтобы продолжить.'), 'error');
@@ -6091,6 +6095,7 @@
 						return;
 					}
 					if (isPostRussiaRecalcRequired(state)) {
+						setShippingRatesLoadingOverlay(false, $app);
 						setV2StepInvalidState(state, currentScreen.id, true);
 						logValidationFailure(state, 'delivery_screen', { post_russia_recalc: 'required' });
 						notify(getPostRussiaRecalcRequiredMessage(), 'error');
@@ -6098,9 +6103,13 @@
 						return;
 					}
 					setV2StepInvalidState(state, currentScreen.id, false);
-					saveCurrentStepDraft(state);
-					setCurrentV2Screen(state, $app, v2Idx + 1);
+					saveCurrentStepDraft(state).always(function () {
+						setCurrentV2Screen(state, $app, v2Idx + 1).always(function () {
+							setShippingRatesLoadingOverlay(false, $app);
+						});
+					});
 				}).fail(function () {
+					setShippingRatesLoadingOverlay(false, $app);
 					notify(getUiText('order_review.shipping_still_saving', 'Подождите завершения сохранения доставки и ПВЗ.'), 'error');
 				});
 				return;
@@ -6180,8 +6189,15 @@
 			}
 			var target = state.visibleSteps[currentIndex + 1];
 			var cartSummary = state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart.summary || {} : {};
+			var step1ForwardLoadingOverlay = state.currentStepId === 'address_delivery';
+			if (step1ForwardLoadingOverlay) {
+				setShippingRatesLoadingOverlay(true, $app);
+			}
 			if (state.currentStepId === 'address_delivery') {
 				if (!isAddressDeliveryStepReady(state)) {
+					if (step1ForwardLoadingOverlay) {
+						setShippingRatesLoadingOverlay(false, $app);
+					}
 					state.frontendStore.form.errors = state.frontendStore.form.errors || {};
 					state.frontendStore.form.errors.shipping_method_id = 'required';
 					setStepInvalidState(state, 'address_delivery', true);
@@ -6192,6 +6208,9 @@
 					return;
 				}
 				if (isPvzMissingOfficeRequired(state)) {
+					if (step1ForwardLoadingOverlay) {
+						setShippingRatesLoadingOverlay(false, $app);
+					}
 					state.frontendStore.form.errors = state.frontendStore.form.errors || {};
 					state.frontendStore.form.errors.cdek_office_code = 'pvz_required';
 					setStepInvalidState(state, 'address_delivery', true);
@@ -6202,6 +6221,9 @@
 					return;
 				}
 				if (isPostRussiaRecalcRequired(state)) {
+					if (step1ForwardLoadingOverlay) {
+						setShippingRatesLoadingOverlay(false, $app);
+					}
 					setStepInvalidState(state, 'address_delivery', true);
 					logValidationFailure(state, 'address_delivery', { post_russia_recalc: 'required' });
 					notify(getPostRussiaRecalcRequiredMessage(), 'error');
@@ -6243,6 +6265,9 @@
 			}
 			requestForwardValidation(state.currentStepId).then(function (valid) {
 				if (!valid) {
+					if (step1ForwardLoadingOverlay) {
+						setShippingRatesLoadingOverlay(false, $app);
+					}
 					setRuntimeFlag(state, 'blocked', true);
 					var vm = getStepFourValidationMessages();
 					notify(trimNonEmpty(vm.step_blocked) || getUiText('step_4.contact_error_step_blocked', 'Заполните обязательные поля текущего шага.'), 'error');
@@ -6250,7 +6275,11 @@
 				}
 				setRuntimeFlag(state, 'blocked', false);
 				setStepInvalidState(state, state.currentStepId, false);
-				setCurrentStep(state, $app, target.id);
+				setCurrentStep(state, $app, target.id).always(function () {
+					if (step1ForwardLoadingOverlay) {
+						setShippingRatesLoadingOverlay(false, $app);
+					}
+				});
 			});
 		}).fail(function () {
 			notify(getUiText('order_review.shipping_still_saving', 'Подождите завершения сохранения доставки и ПВЗ.'), 'error');
