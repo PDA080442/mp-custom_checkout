@@ -6716,6 +6716,55 @@
 		return 'Нажмите «Рассчитать доставку», чтобы подтвердить стоимость для «Почты России».';
 	}
 
+	/**
+	 * Раннее блокирующее условие на переходах вперёд для шага «Адрес и доставка».
+	 *
+	 * Возвращает true и показывает соответствующий notify, если:
+	 *  - выбран метод `pvz`, но не выбран ПВЗ на карте (см. isPvzMissingOfficeRequired);
+	 *  - выбран `post_russia`, но «Рассчитать доставку» не нажата (isPostRussiaRecalcRequired).
+	 *
+	 * Используем его до `saveCurrentStepDraft` в обработчиках continue/next/v2-next, чтобы:
+	 *  - не сохранять промежуточный draft с невалидным state;
+	 *  - точно блокировать переход до moveForward (страховка на случай новых вызовов moveForward
+	 *    из других мест без guard'а).
+	 *
+	 * Дополнительно подсвечивает блок ПВЗ — выставляет invalid-флаг шага и скроллит к карточке.
+	 */
+	function shouldBlockAddressDeliveryForward(state, $app) {
+		if (!state || (state.currentStepId !== 'address_delivery' && getCurrentV2ScreenId(state) !== 'delivery_screen')) {
+			return false;
+		}
+		if (isPvzMissingOfficeRequired(state)) {
+			state.frontendStore = state.frontendStore || {};
+			state.frontendStore.form = state.frontendStore.form || {};
+			state.frontendStore.form.errors = state.frontendStore.form.errors || {};
+			state.frontendStore.form.errors.cdek_office_code = 'pvz_required';
+			setStepInvalidState(state, 'address_delivery', true);
+			setV2StepInvalidState(state, 'delivery_screen', true);
+			notify(getStepOneLabel(state, 'pvz_required', 'step_1.errors.pvz_required', 'Выберите пункт выдачи (ПВЗ) на карте, чтобы продолжить.'), 'error');
+			render(state, $app);
+			scrollToFirstInvalidField($app);
+			return true;
+		}
+		if (isPostRussiaRecalcRequired(state)) {
+			setStepInvalidState(state, 'address_delivery', true);
+			setV2StepInvalidState(state, 'delivery_screen', true);
+			notify(getPostRussiaRecalcRequiredMessage(), 'error');
+			render(state, $app);
+			return true;
+		}
+		return false;
+	}
+
+	function getCurrentV2ScreenId(state) {
+		if (!state || !isV2CheckoutUiEnabled(state)) {
+			return '';
+		}
+		ensureV2ScreenState(state);
+		var screen = state.v2Screens && state.v2Screens[state.v2CurrentIndex];
+		return screen && screen.id ? String(screen.id) : '';
+	}
+
 	function isAddressDeliveryStepReady(state) {
 		var methods = getV2ShippingCatalog(state);
 		var dateBox = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.date || {}) : {};
@@ -8555,6 +8604,9 @@
 			if (!isV2CheckoutUiEnabled(state)) {
 				return;
 			}
+			if (shouldBlockAddressDeliveryForward(state, $app)) {
+				return;
+			}
 			saveCurrentStepDraft(state).always(function () {
 				moveForward(state, $app);
 			});
@@ -8565,6 +8617,9 @@
 		}
 
 		$app.find('.mp-cc-step-card__cta').off('click').on('click', function () {
+			if (shouldBlockAddressDeliveryForward(state, $app)) {
+				return;
+			}
 			saveCurrentStepDraft(state).always(function () {
 				moveForward(state, $app);
 			});
@@ -8586,12 +8641,18 @@
 		});
 
 		$actions.find('[data-nav="next"]').off('click').on('click', function () {
+			if (shouldBlockAddressDeliveryForward(state, $app)) {
+				return;
+			}
 			saveCurrentStepDraft(state).always(function () {
 				moveForward(state, $app);
 			});
 		});
 
 		$(selectors.summary).find('[data-summary-action="continue"]').off('click').on('click', function () {
+			if (shouldBlockAddressDeliveryForward(state, $app)) {
+				return;
+			}
 			saveCurrentStepDraft(state).always(function () {
 				moveForward(state, $app);
 			});
