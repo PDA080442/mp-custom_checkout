@@ -591,6 +591,9 @@ final class SafeSettingsResolver {
 							'gift_bar_input_text'  => '#46372a',
 							'gift_bar_button_bg'   => '#121212',
 							'gift_bar_button_text' => '#ffffff',
+							'gift_peer_seal_icon_color'   => '#896a3a',
+							'gift_peer_seal_ring_inner'   => '#caa36d',
+							'gift_peer_seal_ring_outer'   => '#ceb284',
 						),
 						'error_message' => 'Выберите способ оплаты.',
 						'messages' => array(

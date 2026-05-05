@@ -718,7 +718,10 @@
 					gift_bar_input_border: '#d7bb8e',
 					gift_bar_input_text: '#46372a',
 					gift_bar_button_bg: '#121212',
-					gift_bar_button_text: '#ffffff'
+					gift_bar_button_text: '#ffffff',
+					gift_peer_seal_icon_color: '#896a3a',
+					gift_peer_seal_ring_inner: '#caa36d',
+					gift_peer_seal_ring_outer: '#ceb284'
 				},
 				error_message: '',
 				messages: { loading: '', success: '', error: '' },
@@ -3350,7 +3353,28 @@
 		return defaultTrue;
 	}
 
-	function buildPaymentCardStylesAttr(pb, twoUpMode) {
+	function collectGiftSealStyleVars(s) {
+		if (!s || typeof s !== 'object') {
+			return {};
+		}
+		var out = {};
+		var icon = trimNonEmpty(s.gift_peer_seal_icon_color);
+		var rin = trimNonEmpty(s.gift_peer_seal_ring_inner);
+		var rout = trimNonEmpty(s.gift_peer_seal_ring_outer);
+		if (icon) {
+			out['--mp-cc-pay-gift-seal-icon'] = icon;
+		}
+		if (rin) {
+			out['--mp-cc-pay-gift-seal-ring-inner'] = rin;
+		}
+		if (rout) {
+			out['--mp-cc-pay-gift-seal-ring-outer'] = rout;
+		}
+		return out;
+	}
+
+	function buildPaymentCardStylesAttr(pb, twoUpMode, opts) {
+		opts = opts && typeof opts === 'object' ? opts : {};
 		if (!pb || typeof pb !== 'object') {
 			return '';
 		}
@@ -3391,6 +3415,12 @@
 			vars['--mp-cc-pay-gift-bar-input-text'] = trimNonEmpty(s.gift_bar_input_text);
 			vars['--mp-cc-pay-gift-bar-button-bg'] = trimNonEmpty(s.gift_bar_button_bg);
 			vars['--mp-cc-pay-gift-bar-button-text'] = trimNonEmpty(s.gift_bar_button_text);
+		}
+		if (twoUpMode || opts.includeSealVars) {
+			var sealVars = collectGiftSealStyleVars(s);
+			Object.keys(sealVars).forEach(function (sk) {
+				vars[sk] = sealVars[sk];
+			});
 		}
 		var out = [];
 		Object.keys(vars).forEach(function (key) {
@@ -3805,7 +3835,10 @@
 			var emptyTitle = trimNonEmpty(pb.title) || getUiText('step_4.payment_title', 'Способ оплаты');
 			var emptyMsg = getUiText('step_4.payment_gateways_empty', 'Способы оплаты не настроены в WooCommerce или недоступны для этой корзины. Проверьте раздел «Платежи» и условия шлюзов.');
 			var htmlEmpty = '';
-			htmlEmpty += '<section class="mp-cc-payment mp-cc-payment--empty" aria-labelledby="mp-cc-payment-title">';
+			htmlEmpty +=
+				'<section class="mp-cc-payment mp-cc-payment--empty mp-cc-payment--gift-style-seal-inline" aria-labelledby="mp-cc-payment-title"' +
+				buildPaymentCardStylesAttr(pb, false, { includeSealVars: true }) +
+				'>';
 			htmlEmpty += '<header class="mp-cc-payment__header">';
 			htmlEmpty += '<h4 class="mp-cc-payment__title" id="mp-cc-payment-title">' + escapeHtml(emptyTitle) + '</h4>';
 			htmlEmpty += '</header>';

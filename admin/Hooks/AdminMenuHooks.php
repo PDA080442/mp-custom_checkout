@@ -269,6 +269,15 @@ final class AdminMenuHooks {
 				$result[ $key ] = $color ? $color : (string) $default_value;
 				continue;
 			}
+			if ( false !== strpos( $node_path, 'step_4.payment_block.card_styles.gift_peer_seal_' ) ) {
+				$norm = trim( $string_raw );
+				if ( '' !== $norm && '#' !== $norm[0] && ( preg_match( '/^[0-9a-fA-F]{3}$/', $norm ) || preg_match( '/^[0-9a-fA-F]{6}$/', $norm ) ) ) {
+					$norm = '#' . $norm;
+				}
+				$color = sanitize_hex_color( $norm );
+				$result[ $key ] = $color ? $color : (string) $default_value;
+				continue;
+			}
 			if ( false !== strpos( $node_path, 'icon' ) ) {
 				$result[ $key ] = sanitize_html_class( $string_raw );
 				continue;
@@ -1228,6 +1237,9 @@ final class AdminMenuHooks {
 			'step_4.payment_block.card_styles.gift_bar_input_text' => __( 'Подарочная карта (нижний блок): цвет текста поля ввода', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.gift_bar_button_bg' => __( 'Подарочная карта (нижний блок): фон кнопки', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.gift_bar_button_text' => __( 'Подарочная карта (нижний блок): цвет текста кнопки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_peer_seal_icon_color' => __( 'Подарочная карта (печать слева): цвет линий иконки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_peer_seal_ring_inner' => __( 'Подарочная карта (печать слева): цвет внутреннего кольца', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_peer_seal_ring_outer' => __( 'Подарочная карта (печать слева): цвет внешней обводки', 'mp-custom-checkout' ),
 			'step_4.coupon_block.styles.summary_glow_color' => __( 'Промокод: цвет свечения блока', 'mp-custom-checkout' ),
 			'step_4.coupon_block.styles.summary_bg' => __( 'Промокод: фон блока (градиент/цвет)', 'mp-custom-checkout' ),
 			'step_4.coupon_block.styles.summary_border' => __( 'Промокод: цвет рамки блока', 'mp-custom-checkout' ),
@@ -1459,6 +1471,9 @@ final class AdminMenuHooks {
 		}
 		if ( false !== strpos( $p, 'styles.progress_step_index.' ) ) {
 			return __( 'Цвет в формате #rrggbb. Для рамок — цвет обводки кружка в каждом состоянии; для фона и цифры — как раньше.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'payment_block.card_styles.gift_peer_seal_' ) ) {
+			return __( 'Только для раскладки «печать слева» (seal-inline) у блока подарочной карты. Формат #rrggbb или без решётки. Пустое поле при сохранении вернёт значение по умолчанию из схемы.', 'mp-custom-checkout' );
 		}
 		if ( false !== strpos( $p, 'pickup.points' ) && false !== strpos( $p, 'address' ) ) {
 			return __( 'Адрес пункта самовывоза одной строкой. Отображается в карточке метода «Самовывоз».', 'mp-custom-checkout' );
