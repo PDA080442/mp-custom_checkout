@@ -159,6 +159,24 @@ final class AdminMenuHooks {
 	}
 
 	/**
+	 * Толщина рамки кружка шага: как на фронте (px/rem/em/vw/% или число → px).
+	 */
+	private static function sanitize_progress_step_index_border_width( string $raw, string $fallback ): string {
+		$v = trim( wp_strip_all_tags( $raw ) );
+		$v = str_replace( array( ';', '{', '}', "\n", "\r", "\t" ), '', $v );
+		if ( '' === $v ) {
+			return $fallback;
+		}
+		if ( preg_match( '/^\d+(?:\.\d+)?$/', $v ) ) {
+			return $v . 'px';
+		}
+		if ( preg_match( '/^\d+(?:\.\d+)?(px|rem|em|vw|%)$/', $v ) ) {
+			return $v;
+		}
+		return $fallback;
+	}
+
+	/**
 	 * @param array<string, mixed> $incoming
 	 * @param array<string, mixed> $shape
 	 * @return array<string, mixed>
@@ -235,6 +253,19 @@ final class AdminMenuHooks {
 			}
 			if ( false !== strpos( $node_path, 'accent_color' ) || false !== strpos( $node_path, '.ui_tokens.' ) ) {
 				$color = sanitize_hex_color( $string_raw );
+				$result[ $key ] = $color ? $color : (string) $default_value;
+				continue;
+			}
+			if ( false !== strpos( $node_path, 'styles.progress_step_index.border_width' ) ) {
+				$result[ $key ] = self::sanitize_progress_step_index_border_width( $string_raw, (string) $default_value );
+				continue;
+			}
+			if ( false !== strpos( $node_path, 'styles.progress_step_index.' ) ) {
+				$norm  = trim( $string_raw );
+				if ( '' !== $norm && '#' !== $norm[0] && ( preg_match( '/^[0-9a-fA-F]{3}$/', $norm ) || preg_match( '/^[0-9a-fA-F]{6}$/', $norm ) ) ) {
+					$norm = '#' . $norm;
+				}
+				$color = sanitize_hex_color( $norm );
 				$result[ $key ] = $color ? $color : (string) $default_value;
 				continue;
 			}
@@ -1212,6 +1243,16 @@ final class AdminMenuHooks {
 			'step_4.coupon_block.styles.button_border_hover' => __( 'Промокод: рамка кнопки при наведении', 'mp-custom-checkout' ),
 			'delivery.pricing_mode' => __( 'Режим цен доставки', 'mp-custom-checkout' ),
 			'delivery.wc_integration.respect_chosen_shipping_methods' => __( 'WC: сохранять выбранные методы доставки в сессии', 'mp-custom-checkout' ),
+			'styles.progress_step_index.pending_bg'     => __( 'Шаги (кружок): фон — ещё не пройден', 'mp-custom-checkout' ),
+			'styles.progress_step_index.pending_digit'  => __( 'Шаги (кружок): цвет цифры — ещё не пройден', 'mp-custom-checkout' ),
+			'styles.progress_step_index.active_bg'      => __( 'Шаги (кружок): фон — текущий шаг', 'mp-custom-checkout' ),
+			'styles.progress_step_index.active_digit'   => __( 'Шаги (кружок): цвет цифры — текущий шаг', 'mp-custom-checkout' ),
+			'styles.progress_step_index.complete_bg'    => __( 'Шаги (кружок): фон — пройден', 'mp-custom-checkout' ),
+			'styles.progress_step_index.complete_digit' => __( 'Шаги (кружок): цвет цифры — пройден', 'mp-custom-checkout' ),
+			'styles.progress_step_index.pending_border'  => __( 'Шаги (кружок): цвет рамки — ещё не пройден', 'mp-custom-checkout' ),
+			'styles.progress_step_index.active_border'   => __( 'Шаги (кружок): цвет рамки — текущий шаг', 'mp-custom-checkout' ),
+			'styles.progress_step_index.complete_border' => __( 'Шаги (кружок): цвет рамки — пройден', 'mp-custom-checkout' ),
+			'styles.progress_step_index.border_width'    => __( 'Шаги (кружок): толщина рамки (все состояния)', 'mp-custom-checkout' ),
 		);
 		if ( isset( $map[ $path ] ) ) {
 			return (string) $map[ $path ];
@@ -1225,6 +1266,7 @@ final class AdminMenuHooks {
 	private static function localized_group_label_for_path( string $path, string $fallback_key ): string {
 		$map = array(
 			'general.checkout_layout'                    => __( 'Макет страницы checkout', 'mp-custom-checkout' ),
+			'styles.progress_step_index'                 => __( 'Кружки номеров шагов (вертикальный таймлайн)', 'mp-custom-checkout' ),
 			'step_1.address_form_styles'                 => __( 'Стили формы адреса и доставки (шаг 1)', 'mp-custom-checkout' ),
 			'step_1.step_panel_screen_styles'            => __( 'Рамка экрана шага (.mp-cc-step-panel.mp-cc-step-screen)', 'mp-custom-checkout' ),
 			'step_4.contact_block'                       => __( 'Контактные данные (шаг 4)', 'mp-custom-checkout' ),
@@ -1411,6 +1453,12 @@ final class AdminMenuHooks {
 		}
 		if ( false !== strpos( $p, 'delivery.wc_integration.respect_chosen_shipping_methods' ) ) {
 			return __( 'Если в сессии WooCommerce уже выбран rate (method_id:instance_id), WC старается не сбрасывать его при пересчёте, пока он доступен. Для диагностики см. логи плагина при расхождении выбранного метода и списка rate’ов.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'styles.progress_step_index.border_width' ) ) {
+			return __( 'Толщина рамки кружка: например 2px, 1px, 0.15rem. Допустимы px, rem, em, vw, % или число без единицы (тогда px).', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'styles.progress_step_index.' ) ) {
+			return __( 'Цвет в формате #rrggbb. Для рамок — цвет обводки кружка в каждом состоянии; для фона и цифры — как раньше.', 'mp-custom-checkout' );
 		}
 		if ( false !== strpos( $p, 'pickup.points' ) && false !== strpos( $p, 'address' ) ) {
 			return __( 'Адрес пункта самовывоза одной строкой. Отображается в карточке метода «Самовывоз».', 'mp-custom-checkout' );

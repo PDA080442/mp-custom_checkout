@@ -11,6 +11,16 @@
 	--mp-cc-color-rail: #2563eb;
 	--mp-cc-color-error: #b91c1c;
 	--mp-cc-color-success: #15803d;
+	--mp-cc-progress-index-pending-bg: #ffffff;
+	--mp-cc-progress-index-pending-digit: #666666;
+	--mp-cc-progress-index-active-bg: #2563eb;
+	--mp-cc-progress-index-active-digit: #ffffff;
+	--mp-cc-progress-index-complete-bg: #15803d;
+	--mp-cc-progress-index-complete-digit: #ffffff;
+	--mp-cc-progress-index-pending-border: #e5e5e5;
+	--mp-cc-progress-index-active-border: #2563eb;
+	--mp-cc-progress-index-complete-border: #15803d;
+	--mp-cc-progress-index-border-width: 2px;
 	--mp-cc-font-family-base: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
 	--mp-cc-font-size-base: 16px;
 	--mp-cc-radius-sm: 6px;
@@ -2066,32 +2076,35 @@
 	opacity: 0.72;
 }
 
-.mp-cc-step-card__index {
+/* Те же токены, что и «Кружки шагов» в админке: stacked-timeline рендерит шаги здесь, а не в .mp-cc-progress__index */
+#mp-cc-checkout .mp-cc-step-card__index {
 	width: 1.6rem;
 	height: 1.6rem;
 	border-radius: 999px;
-	border: 2px solid var(--mp-cc-color-border);
+	/* Shorthand + !important: сбросы темы на `button span { border: none }` иначе «съедают» только longhand border-color */
+	border: var(--mp-cc-progress-index-border-width, 2px) solid var(--mp-cc-progress-index-pending-border, var(--mp-cc-color-border, #e5e5e5)) !important;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
 	font-size: 0.72rem;
 	font-weight: 700;
-	background: #fff;
+	background: var(--mp-cc-progress-index-pending-bg, #ffffff) !important;
+	color: var(--mp-cc-progress-index-pending-digit, var(--mp-cc-color-text-muted, #666666)) !important;
 	position: absolute;
 	left: -2.5rem;
 	top: 0.38rem;
 }
 
-.mp-cc-step-card--active .mp-cc-step-card__index {
-	background: var(--mp-cc-color-accent);
-	border-color: var(--mp-cc-color-accent);
-	color: #fff;
+#mp-cc-checkout .mp-cc-step-card--active .mp-cc-step-card__index {
+	background: var(--mp-cc-progress-index-active-bg, var(--mp-cc-color-accent, #111111)) !important;
+	border: var(--mp-cc-progress-index-border-width, 2px) solid var(--mp-cc-progress-index-active-border, var(--mp-cc-progress-index-active-bg, var(--mp-cc-color-accent, #111111))) !important;
+	color: var(--mp-cc-progress-index-active-digit, #ffffff) !important;
 }
 
-.mp-cc-step-card--done .mp-cc-step-card__index {
-	background: var(--mp-cc-color-success);
-	border-color: var(--mp-cc-color-success);
-	color: #fff;
+#mp-cc-checkout .mp-cc-step-card--done .mp-cc-step-card__index {
+	background: var(--mp-cc-progress-index-complete-bg, var(--mp-cc-color-success, #15803d)) !important;
+	border: var(--mp-cc-progress-index-border-width, 2px) solid var(--mp-cc-progress-index-complete-border, var(--mp-cc-progress-index-complete-bg, var(--mp-cc-color-success, #15803d))) !important;
+	color: var(--mp-cc-progress-index-complete-digit, #ffffff) !important;
 }
 
 .mp-cc-step-card__title {
@@ -4090,7 +4103,8 @@ body.mp-custom-checkout form.checkout.woocommerce-checkout {
 	animation: none;
 }
 
-.mp-cc-progress__index {
+/* !important: значения из админки (переменные на #mp-cc-checkout) должны перебивать стили темы на кнопке шага */
+#mp-cc-checkout .mp-cc-progress__index {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -4098,12 +4112,12 @@ body.mp-custom-checkout form.checkout.woocommerce-checkout {
 	height: 1.55rem;
 	min-width: 1.55rem;
 	min-height: 1.55rem;
-	background: #fff;
-	border: 2px solid var(--mp-cc-color-border);
+	background: var(--mp-cc-progress-index-pending-bg, #ffffff) !important;
+	border: var(--mp-cc-progress-index-border-width, 2px) solid var(--mp-cc-progress-index-pending-border, var(--mp-cc-color-border, #e5e5e5)) !important;
 	font-size: 0.62rem;
 	font-weight: 700;
 	line-height: 1;
-	color: var(--mp-cc-color-text-muted);
+	color: var(--mp-cc-progress-index-pending-digit, var(--mp-cc-color-text-muted, #666666)) !important;
 	flex-shrink: 0;
 	border-radius: 50%;
 }
@@ -4135,16 +4149,16 @@ body.mp-custom-checkout form.checkout.woocommerce-checkout {
 	opacity: 0.85;
 }
 
-.mp-cc-progress__item.is-active .mp-cc-progress__index {
-	border-color: var(--mp-cc-color-rail, #2563eb);
-	background: var(--mp-cc-color-rail, #2563eb);
-	color: #fff;
+#mp-cc-checkout .mp-cc-progress__item.is-active .mp-cc-progress__index {
+	border: var(--mp-cc-progress-index-border-width, 2px) solid var(--mp-cc-progress-index-active-border, var(--mp-cc-progress-index-active-bg, var(--mp-cc-color-rail, #2563eb))) !important;
+	background: var(--mp-cc-progress-index-active-bg, var(--mp-cc-color-rail, #2563eb)) !important;
+	color: var(--mp-cc-progress-index-active-digit, #ffffff) !important;
 }
 
-.mp-cc-progress__item.is-complete .mp-cc-progress__index {
-	border-color: var(--mp-cc-color-success);
-	background: var(--mp-cc-color-success);
-	color: #fff;
+#mp-cc-checkout .mp-cc-progress__item.is-complete .mp-cc-progress__index {
+	border: var(--mp-cc-progress-index-border-width, 2px) solid var(--mp-cc-progress-index-complete-border, var(--mp-cc-progress-index-complete-bg, var(--mp-cc-color-success, #15803d))) !important;
+	background: var(--mp-cc-progress-index-complete-bg, var(--mp-cc-color-success, #15803d)) !important;
+	color: var(--mp-cc-progress-index-complete-digit, #ffffff) !important;
 }
 
 .mp-cc-progress__item.is-active .mp-cc-progress__label {
