@@ -11,6 +11,19 @@
 	--mp-cc-color-rail: #2563eb;
 	--mp-cc-color-error: #b91c1c;
 	--mp-cc-color-success: #15803d;
+	--mp-cc-progress-index-pending-bg: #ffffff;
+	--mp-cc-progress-index-pending-digit: #666666;
+	--mp-cc-progress-index-active-bg: #2563eb;
+	--mp-cc-progress-index-active-digit: #ffffff;
+	--mp-cc-progress-index-complete-bg: #15803d;
+	--mp-cc-progress-index-complete-digit: #ffffff;
+	--mp-cc-progress-index-pending-border: #e5e5e5;
+	--mp-cc-progress-index-active-border: #2563eb;
+	--mp-cc-progress-index-complete-border: #15803d;
+	--mp-cc-progress-index-border-width: 2px;
+	--mp-cc-pay-gift-seal-icon: #896a3a;
+	--mp-cc-pay-gift-seal-ring-inner: #caa36d;
+	--mp-cc-pay-gift-seal-ring-outer: #ceb284;
 	--mp-cc-font-family-base: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
 	--mp-cc-font-size-base: 16px;
 	--mp-cc-radius-sm: 6px;
@@ -208,6 +221,16 @@
 .mp-cc-step-panel__content {
 	margin-top: 1rem;
 	min-height: 8rem;
+}
+
+.mp-cc-step-panel__footer--v2-next {
+	margin-top: 1.25rem;
+	padding-top: 1rem;
+	border-top: 1px solid var(--mp-cc-color-border, rgba(15, 23, 42, 0.12));
+	display: flex;
+	justify-content: flex-start;
+	flex-wrap: wrap;
+	gap: 0.75rem;
 }
 
 .mp-cc-fulfillment {
@@ -1234,6 +1257,24 @@
 	transform: translateY(-1px);
 }
 
+/*
+ * Подсветка цены доставки в сводке после автоматического пересчёта.
+ * Включается на 5 сек через JS (`flashShippingAmountInSummary`) сразу после снятия оверлея,
+ * чтобы пользователь увидел, что строка «Доставка» обновилась с новым тарифом.
+ * Используем .is-just-updated (отдельный от .is-updated, чтобы не конфликтовать
+ * с существующей точечной подсветкой, которая уже навешивается в других местах).
+ */
+.mp-cc-summary-card__amount--inline.is-just-updated,
+.mp-cc-summary-card__amount.is-just-updated {
+	color: var(--mp-cc-color-success);
+	background-color: rgba(46, 160, 67, 0.16);
+	border-radius: 4px;
+	padding: 0 4px;
+	transition:
+		color 0.4s var(--mp-cc-motion-ease-standard, ease),
+		background-color 0.4s var(--mp-cc-motion-ease-standard, ease);
+}
+
 .mp-cc-summary-card__placeholder {
 	height: 1.1rem;
 	width: 65%;
@@ -1570,6 +1611,68 @@
 .mp-cc-summary-card__btn--ghost:hover {
 	border-color: var(--mp-cc-color-accent);
 	background: #f7f7f7;
+}
+
+.mp-cc-summary-card__btn[disabled],
+.mp-cc-summary-card__btn[aria-busy='true'] {
+	opacity: 0.65;
+	cursor: wait;
+	pointer-events: none;
+}
+
+.mp-cc-summary-card__btn.is-loading {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.55rem;
+}
+
+.mp-cc-summary-card__btn.is-loading::before {
+	content: '';
+	width: 0.9rem;
+	height: 0.9rem;
+	border-radius: 50%;
+	border: 2px solid currentColor;
+	border-right-color: transparent;
+	animation: mp-cc-spin-rotate 0.8s linear infinite;
+	flex: 0 0 auto;
+}
+
+.mp-cc-summary-card__btn.mp-cc-summary-card__btn--ghost.is-loading::before {
+	border-color: rgba(17, 17, 17, 0.45);
+	border-right-color: transparent;
+}
+
+@keyframes mp-cc-spin-rotate {
+	from { transform: rotate(0deg); }
+	to { transform: rotate(360deg); }
+}
+
+#mp-cc-checkout.is-shipping-recalc-loading .mp-cc-layout__main {
+	position: relative;
+	opacity: 0.52;
+	filter: saturate(0.82);
+	pointer-events: none;
+	transition: opacity var(--mp-cc-transition-duration) ease, filter var(--mp-cc-transition-duration) ease;
+}
+
+#mp-cc-checkout.is-shipping-recalc-loading .mp-cc-layout__main::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	z-index: 3;
+	background: rgba(15, 23, 42, 0.12);
+	pointer-events: none;
+}
+
+.mp-cc-checkout__app.is-shipping-recalc-loading .mp-cc-step-card[data-step-id='address_delivery'],
+.mp-cc-checkout__app.is-shipping-recalc-loading .mp-cc-step-panel[data-step-panel='delivery_screen'],
+.mp-cc-checkout__app.is-shipping-recalc-loading .mp-cc-step-panel[data-step-panel='address_delivery'] {
+	opacity: 0.55;
+	filter: saturate(0.85);
+	pointer-events: none;
+	transition: opacity var(--mp-cc-transition-duration) ease, filter var(--mp-cc-transition-duration) ease;
 }
 
 .mp-cc-notice {
@@ -1976,32 +2079,35 @@
 	opacity: 0.72;
 }
 
-.mp-cc-step-card__index {
+/* Те же токены, что и «Кружки шагов» в админке: stacked-timeline рендерит шаги здесь, а не в .mp-cc-progress__index */
+#mp-cc-checkout .mp-cc-step-card__index {
 	width: 1.6rem;
 	height: 1.6rem;
 	border-radius: 999px;
-	border: 2px solid var(--mp-cc-color-border);
+	/* Shorthand + !important: сбросы темы на `button span { border: none }` иначе «съедают» только longhand border-color */
+	border: var(--mp-cc-progress-index-border-width, 2px) solid var(--mp-cc-progress-index-pending-border, var(--mp-cc-color-border, #e5e5e5)) !important;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
 	font-size: 0.72rem;
 	font-weight: 700;
-	background: #fff;
+	background: var(--mp-cc-progress-index-pending-bg, #ffffff) !important;
+	color: var(--mp-cc-progress-index-pending-digit, var(--mp-cc-color-text-muted, #666666)) !important;
 	position: absolute;
 	left: -2.5rem;
 	top: 0.38rem;
 }
 
-.mp-cc-step-card--active .mp-cc-step-card__index {
-	background: var(--mp-cc-color-accent);
-	border-color: var(--mp-cc-color-accent);
-	color: #fff;
+#mp-cc-checkout .mp-cc-step-card--active .mp-cc-step-card__index {
+	background: var(--mp-cc-progress-index-active-bg, var(--mp-cc-color-accent, #111111)) !important;
+	border: var(--mp-cc-progress-index-border-width, 2px) solid var(--mp-cc-progress-index-active-border, var(--mp-cc-progress-index-active-bg, var(--mp-cc-color-accent, #111111))) !important;
+	color: var(--mp-cc-progress-index-active-digit, #ffffff) !important;
 }
 
-.mp-cc-step-card--done .mp-cc-step-card__index {
-	background: var(--mp-cc-color-success);
-	border-color: var(--mp-cc-color-success);
-	color: #fff;
+#mp-cc-checkout .mp-cc-step-card--done .mp-cc-step-card__index {
+	background: var(--mp-cc-progress-index-complete-bg, var(--mp-cc-color-success, #15803d)) !important;
+	border: var(--mp-cc-progress-index-border-width, 2px) solid var(--mp-cc-progress-index-complete-border, var(--mp-cc-progress-index-complete-bg, var(--mp-cc-color-success, #15803d))) !important;
+	color: var(--mp-cc-progress-index-complete-digit, #ffffff) !important;
 }
 
 .mp-cc-step-card__title {
@@ -3266,6 +3372,7 @@
 }
 
 .mp-cc-payment--gift-style-seal-inline .mp-cc-payment__deck-aside .mp-cc-gift-peer__shell {
+	position: relative;
 	display: grid;
 	grid-template-columns: 82px minmax(0, 1fr);
 	align-items: center;
@@ -3280,16 +3387,56 @@
 
 .mp-cc-payment--gift-style-seal-inline .mp-cc-payment__deck-aside .mp-cc-gift-peer__shell::before {
 	content: '';
+	position: absolute;
+	left: 0.95rem;
+	top: 50%;
 	width: 64px;
 	height: 64px;
+	box-sizing: border-box;
 	border-radius: 50%;
-	margin-left: 0.95rem;
-	border: 1px solid color-mix(in srgb, var(--mp-cc-pay-gift-bar-border, #ceb284) 84%, #a57d46);
-	background: center / 44px 44px no-repeat url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='52' height='52' viewBox='0 0 52 52' fill='none'><circle cx='26' cy='26' r='24.5' stroke='%23caa36d'/><path d='M17 21h18v17H17V21zm3-8h12v8H20v-8zm3.2 11l2.8 3.6 2.8-3.6' stroke='%23896a3a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+	transform: translateY(-50%);
+	pointer-events: none;
+	z-index: 0;
+	grid-column: 1;
+	grid-row: 1;
+	border: 1px solid
+		var(
+			--mp-cc-pay-gift-seal-ring-outer,
+			color-mix(in srgb, var(--mp-cc-pay-gift-bar-border, #ceb284) 84%, #a57d46)
+		);
+	box-shadow: inset 0 0 0 1px var(--mp-cc-pay-gift-seal-ring-inner, #caa36d);
+	background: transparent;
+}
+
+.mp-cc-payment--gift-style-seal-inline .mp-cc-payment__deck-aside .mp-cc-gift-peer__shell::after {
+	content: '';
+	position: absolute;
+	left: calc(0.95rem + 10px);
+	top: 50%;
+	width: 44px;
+	height: 44px;
+	transform: translateY(-50%);
+	pointer-events: none;
+	z-index: 0;
+	grid-column: 1;
+	grid-row: 1;
+	background-color: var(--mp-cc-pay-gift-seal-icon, #896a3a);
+	-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 52 52'%3E%3Cpath d='M17 21h18v17H17V21zm3-8h12v8H20v-8zm3.2 11l2.8 3.6 2.8-3.6' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+	mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 52 52'%3E%3Cpath d='M17 21h18v17H17V21zm3-8h12v8H20v-8zm3.2 11l2.8 3.6 2.8-3.6' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+	-webkit-mask-size: contain;
+	mask-size: contain;
+	-webkit-mask-repeat: no-repeat;
+	mask-repeat: no-repeat;
+	-webkit-mask-position: center;
+	mask-position: center;
 }
 
 .mp-cc-payment--gift-style-seal-inline .mp-cc-payment__deck-aside .mp-cc-gift-peer__shell-body {
+	position: relative;
+	z-index: 2;
 	padding: 0.56rem 0.85rem 0.5rem 0.35rem;
+	grid-column: 2;
+	grid-row: 1;
 }
 
 .mp-cc-payment--gift-style-seal-inline .mp-cc-payment__deck-aside .mp-cc-gift-peer__headline {
@@ -4000,7 +4147,8 @@ body.mp-custom-checkout form.checkout.woocommerce-checkout {
 	animation: none;
 }
 
-.mp-cc-progress__index {
+/* !important: значения из админки (переменные на #mp-cc-checkout) должны перебивать стили темы на кнопке шага */
+#mp-cc-checkout .mp-cc-progress__index {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -4008,12 +4156,12 @@ body.mp-custom-checkout form.checkout.woocommerce-checkout {
 	height: 1.55rem;
 	min-width: 1.55rem;
 	min-height: 1.55rem;
-	background: #fff;
-	border: 2px solid var(--mp-cc-color-border);
+	background: var(--mp-cc-progress-index-pending-bg, #ffffff) !important;
+	border: var(--mp-cc-progress-index-border-width, 2px) solid var(--mp-cc-progress-index-pending-border, var(--mp-cc-color-border, #e5e5e5)) !important;
 	font-size: 0.62rem;
 	font-weight: 700;
 	line-height: 1;
-	color: var(--mp-cc-color-text-muted);
+	color: var(--mp-cc-progress-index-pending-digit, var(--mp-cc-color-text-muted, #666666)) !important;
 	flex-shrink: 0;
 	border-radius: 50%;
 }
@@ -4045,16 +4193,16 @@ body.mp-custom-checkout form.checkout.woocommerce-checkout {
 	opacity: 0.85;
 }
 
-.mp-cc-progress__item.is-active .mp-cc-progress__index {
-	border-color: var(--mp-cc-color-rail, #2563eb);
-	background: var(--mp-cc-color-rail, #2563eb);
-	color: #fff;
+#mp-cc-checkout .mp-cc-progress__item.is-active .mp-cc-progress__index {
+	border: var(--mp-cc-progress-index-border-width, 2px) solid var(--mp-cc-progress-index-active-border, var(--mp-cc-progress-index-active-bg, var(--mp-cc-color-rail, #2563eb))) !important;
+	background: var(--mp-cc-progress-index-active-bg, var(--mp-cc-color-rail, #2563eb)) !important;
+	color: var(--mp-cc-progress-index-active-digit, #ffffff) !important;
 }
 
-.mp-cc-progress__item.is-complete .mp-cc-progress__index {
-	border-color: var(--mp-cc-color-success);
-	background: var(--mp-cc-color-success);
-	color: #fff;
+#mp-cc-checkout .mp-cc-progress__item.is-complete .mp-cc-progress__index {
+	border: var(--mp-cc-progress-index-border-width, 2px) solid var(--mp-cc-progress-index-complete-border, var(--mp-cc-progress-index-complete-bg, var(--mp-cc-color-success, #15803d))) !important;
+	background: var(--mp-cc-progress-index-complete-bg, var(--mp-cc-color-success, #15803d)) !important;
+	color: var(--mp-cc-progress-index-complete-digit, #ffffff) !important;
 }
 
 .mp-cc-progress__item.is-active .mp-cc-progress__label {
@@ -4517,5 +4665,119 @@ body.mp-custom-checkout form.checkout.woocommerce-checkout {
 	.mp-cc-address-form__input {
 		min-width: 0;
 		width: 100%;
+	}
+}
+
+/* §29.2 — CDEK map / PVZ picker modal */
+.mp-cc-pvz-card {
+	margin-bottom: 0.35rem;
+}
+
+.mp-cc-pvz-card__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem 0.75rem;
+	margin-top: 0.45rem;
+}
+
+body.mp-cc-cdek-modal-open {
+	overflow: hidden;
+}
+
+.mp-cc-cdek-modal {
+	position: fixed;
+	inset: 0;
+	z-index: 100050;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 1rem;
+	background: rgba(15, 15, 20, 0.55);
+	box-sizing: border-box;
+}
+
+.mp-cc-cdek-modal__panel {
+	width: min(960px, 100%);
+	max-height: min(90vh, 880px);
+	display: flex;
+	flex-direction: column;
+	background: var(--mp-cc-color-background, #fff);
+	color: var(--mp-cc-color-text, #1a1a1a);
+	border-radius: var(--mp-cc-radius-md, 10px);
+	box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+	overflow: hidden;
+}
+
+.mp-cc-cdek-modal__title {
+	margin: 0;
+	font-size: 1.05rem;
+	font-weight: 600;
+}
+
+.mp-cc-cdek-modal__live {
+	padding: 0.35rem 0.85rem;
+	font-size: 0.92rem;
+	color: var(--mp-cc-color-error, #b91c1c);
+	min-height: 1.25rem;
+}
+
+.mp-cc-cdek-modal__list {
+	padding: 0.75rem 1rem 0.25rem;
+	overflow: auto;
+	max-height: 45vh;
+	display: grid;
+	row-gap: 0.45rem;
+}
+
+.mp-cc-cdek-modal__item {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.55rem;
+	font-size: 0.96rem;
+	cursor: pointer;
+}
+
+.mp-cc-cdek-modal__empty {
+	margin: 0.5rem 1rem;
+	font-size: 0.95rem;
+	color: var(--mp-cc-color-text-muted, #666);
+}
+
+.mp-cc-cdek-modal__actions {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	gap: 0.5rem;
+	padding: 0.75rem 1rem 1rem;
+	border-top: 1px solid var(--mp-cc-color-border, #e5e5e5);
+}
+
+.mp-cc-cdek-modal__btn {
+	min-height: 2.5rem;
+	padding: 0.45rem 1rem;
+	font: inherit;
+	border-radius: var(--mp-cc-radius-sm, 6px);
+	border: 1px solid var(--mp-cc-color-border, #e5e5e5);
+	background: #fff;
+	cursor: pointer;
+}
+
+.mp-cc-cdek-modal__btn--primary {
+	background: var(--mp-cc-color-accent, #111);
+	color: #fff;
+	border-color: var(--mp-cc-color-accent, #111);
+}
+
+@media (max-width: 720px) {
+	.mp-cc-cdek-modal {
+		align-items: stretch;
+		padding: 0;
+	}
+
+	.mp-cc-cdek-modal__panel {
+		width: 100%;
+		max-height: 100vh;
+		height: 100%;
+		border-radius: 0;
 	}
 }

@@ -109,6 +109,9 @@ final class AdminMenuHooks {
 			}
 			$method['price'] = isset( $method['price'] ) ? max( 0, (int) $method['price'] ) : 0;
 			$method['eta']   = isset( $method['eta'] ) ? sanitize_text_field( (string) $method['eta'] ) : '';
+			if ( isset( $method['wc_rate_id'] ) ) {
+				$method['wc_rate_id'] = sanitize_text_field( (string) $method['wc_rate_id'] );
+			}
 			if ( isset( $method['tariffs'] ) && is_array( $method['tariffs'] ) ) {
 				foreach ( $method['tariffs'] as $tariff_id => $tariff ) {
 					if ( ! is_array( $tariff ) ) {
@@ -117,6 +120,9 @@ final class AdminMenuHooks {
 					}
 					$tariff['price'] = isset( $tariff['price'] ) ? max( 0, (int) $tariff['price'] ) : 0;
 					$tariff['eta']   = isset( $tariff['eta'] ) ? sanitize_text_field( (string) $tariff['eta'] ) : '';
+					if ( isset( $tariff['wc_rate_id'] ) ) {
+						$tariff['wc_rate_id'] = sanitize_text_field( (string) $tariff['wc_rate_id'] );
+					}
 					$method['tariffs'][ $tariff_id ] = $tariff;
 				}
 			}
@@ -139,8 +145,35 @@ final class AdminMenuHooks {
 		$catalog['methods'] = $methods;
 		$catalog['sort_order'] = $valid_sort;
 		$delivery['shipping_catalog'] = $catalog;
+
+		$allowed_modes = array( 'catalog', 'woocommerce', 'hybrid' );
+		$pricing_raw   = isset( $delivery['pricing_mode'] ) ? sanitize_key( (string) $delivery['pricing_mode'] ) : 'catalog';
+		$delivery['pricing_mode'] = in_array( $pricing_raw, $allowed_modes, true ) ? $pricing_raw : 'catalog';
+
+		$wc_int = isset( $delivery['wc_integration'] ) && is_array( $delivery['wc_integration'] ) ? $delivery['wc_integration'] : array();
+		$wc_int['respect_chosen_shipping_methods'] = ! empty( $wc_int['respect_chosen_shipping_methods'] );
+		$delivery['wc_integration']                 = $wc_int;
+
 		$settings[ OptionKeys::SECTION_DELIVERY ] = $delivery;
 		return $settings;
+	}
+
+	/**
+	 * Толщина рамки кружка шага: как на фронте (px/rem/em/vw/% или число → px).
+	 */
+	private static function sanitize_progress_step_index_border_width( string $raw, string $fallback ): string {
+		$v = trim( wp_strip_all_tags( $raw ) );
+		$v = str_replace( array( ';', '{', '}', "\n", "\r", "\t" ), '', $v );
+		if ( '' === $v ) {
+			return $fallback;
+		}
+		if ( preg_match( '/^\d+(?:\.\d+)?$/', $v ) ) {
+			return $v . 'px';
+		}
+		if ( preg_match( '/^\d+(?:\.\d+)?(px|rem|em|vw|%)$/', $v ) ) {
+			return $v;
+		}
+		return $fallback;
 	}
 
 	/**
@@ -220,6 +253,28 @@ final class AdminMenuHooks {
 			}
 			if ( false !== strpos( $node_path, 'accent_color' ) || false !== strpos( $node_path, '.ui_tokens.' ) ) {
 				$color = sanitize_hex_color( $string_raw );
+				$result[ $key ] = $color ? $color : (string) $default_value;
+				continue;
+			}
+			if ( false !== strpos( $node_path, 'styles.progress_step_index.border_width' ) ) {
+				$result[ $key ] = self::sanitize_progress_step_index_border_width( $string_raw, (string) $default_value );
+				continue;
+			}
+			if ( false !== strpos( $node_path, 'styles.progress_step_index.' ) ) {
+				$norm  = trim( $string_raw );
+				if ( '' !== $norm && '#' !== $norm[0] && ( preg_match( '/^[0-9a-fA-F]{3}$/', $norm ) || preg_match( '/^[0-9a-fA-F]{6}$/', $norm ) ) ) {
+					$norm = '#' . $norm;
+				}
+				$color = sanitize_hex_color( $norm );
+				$result[ $key ] = $color ? $color : (string) $default_value;
+				continue;
+			}
+			if ( false !== strpos( $node_path, 'step_4.payment_block.card_styles.gift_peer_seal_' ) ) {
+				$norm = trim( $string_raw );
+				if ( '' !== $norm && '#' !== $norm[0] && ( preg_match( '/^[0-9a-fA-F]{3}$/', $norm ) || preg_match( '/^[0-9a-fA-F]{6}$/', $norm ) ) ) {
+					$norm = '#' . $norm;
+				}
+				$color = sanitize_hex_color( $norm );
 				$result[ $key ] = $color ? $color : (string) $default_value;
 				continue;
 			}
@@ -1024,6 +1079,14 @@ final class AdminMenuHooks {
 	 * @param mixed $value
 	 */
 	private static function render_leaf_input( string $name, $value, string $path ): void {
+		// Поля price у методов с тарифами (post_russia/pvz/courier) — служебные fallback для режима «catalog»;
+		// в режиме «woocommerce» они не используются и в UI лишние. Скрываем их в админке, но сохраняем значение
+		// через hidden input, чтобы случайно не обнулить уже настроенный fallback при сабмите формы.
+		if ( self::is_admin_field_hidden( $path ) ) {
+			$hidden_value = is_scalar( $value ) ? (string) $value : '';
+			echo '<input type="hidden" name="' . esc_attr( $name ) . '" value="' . esc_attr( $hidden_value ) . '" />';
+			return;
+		}
 		$label = self::localized_label_for_path( $path );
 		$filters = self::build_filters_for_path( $path );
 		$risky = self::is_risky_path( $path );
@@ -1064,6 +1127,9 @@ final class AdminMenuHooks {
 	 */
 	private static function localized_label_for_path( string $path ): string {
 		$leaf = basename( str_replace( '.', '/', $path ) );
+		if ( 'wc_rate_id' === $leaf && false !== strpos( $path, 'shipping_catalog.methods' ) && false === strpos( $path, '.tariffs.' ) ) {
+			return __( 'WC rate ID (метод без тарифов)', 'mp-custom-checkout' );
+		}
 		$map = array(
 			'general.checkout_layout.max_width'          => __( 'Максимальная ширина страницы checkout', 'mp-custom-checkout' ),
 			'general.checkout_layout.vertical_padding'   => __( 'Вертикальные отступы блока checkout (сверху и снизу)', 'mp-custom-checkout' ),
@@ -1171,6 +1237,9 @@ final class AdminMenuHooks {
 			'step_4.payment_block.card_styles.gift_bar_input_text' => __( 'Подарочная карта (нижний блок): цвет текста поля ввода', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.gift_bar_button_bg' => __( 'Подарочная карта (нижний блок): фон кнопки', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.gift_bar_button_text' => __( 'Подарочная карта (нижний блок): цвет текста кнопки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_peer_seal_icon_color' => __( 'Подарочная карта (печать слева): цвет линий иконки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_peer_seal_ring_inner' => __( 'Подарочная карта (печать слева): цвет внутреннего кольца', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_peer_seal_ring_outer' => __( 'Подарочная карта (печать слева): цвет внешней обводки', 'mp-custom-checkout' ),
 			'step_4.coupon_block.styles.summary_glow_color' => __( 'Промокод: цвет свечения блока', 'mp-custom-checkout' ),
 			'step_4.coupon_block.styles.summary_bg' => __( 'Промокод: фон блока (градиент/цвет)', 'mp-custom-checkout' ),
 			'step_4.coupon_block.styles.summary_border' => __( 'Промокод: цвет рамки блока', 'mp-custom-checkout' ),
@@ -1184,6 +1253,18 @@ final class AdminMenuHooks {
 			'step_4.coupon_block.styles.button_text' => __( 'Промокод: цвет текста кнопки «Применить»', 'mp-custom-checkout' ),
 			'step_4.coupon_block.styles.button_bg_hover' => __( 'Промокод: фон кнопки при наведении', 'mp-custom-checkout' ),
 			'step_4.coupon_block.styles.button_border_hover' => __( 'Промокод: рамка кнопки при наведении', 'mp-custom-checkout' ),
+			'delivery.pricing_mode' => __( 'Режим цен доставки', 'mp-custom-checkout' ),
+			'delivery.wc_integration.respect_chosen_shipping_methods' => __( 'WC: сохранять выбранные методы доставки в сессии', 'mp-custom-checkout' ),
+			'styles.progress_step_index.pending_bg'     => __( 'Шаги (кружок): фон — ещё не пройден', 'mp-custom-checkout' ),
+			'styles.progress_step_index.pending_digit'  => __( 'Шаги (кружок): цвет цифры — ещё не пройден', 'mp-custom-checkout' ),
+			'styles.progress_step_index.active_bg'      => __( 'Шаги (кружок): фон — текущий шаг', 'mp-custom-checkout' ),
+			'styles.progress_step_index.active_digit'   => __( 'Шаги (кружок): цвет цифры — текущий шаг', 'mp-custom-checkout' ),
+			'styles.progress_step_index.complete_bg'    => __( 'Шаги (кружок): фон — пройден', 'mp-custom-checkout' ),
+			'styles.progress_step_index.complete_digit' => __( 'Шаги (кружок): цвет цифры — пройден', 'mp-custom-checkout' ),
+			'styles.progress_step_index.pending_border'  => __( 'Шаги (кружок): цвет рамки — ещё не пройден', 'mp-custom-checkout' ),
+			'styles.progress_step_index.active_border'   => __( 'Шаги (кружок): цвет рамки — текущий шаг', 'mp-custom-checkout' ),
+			'styles.progress_step_index.complete_border' => __( 'Шаги (кружок): цвет рамки — пройден', 'mp-custom-checkout' ),
+			'styles.progress_step_index.border_width'    => __( 'Шаги (кружок): толщина рамки (все состояния)', 'mp-custom-checkout' ),
 		);
 		if ( isset( $map[ $path ] ) ) {
 			return (string) $map[ $path ];
@@ -1197,6 +1278,7 @@ final class AdminMenuHooks {
 	private static function localized_group_label_for_path( string $path, string $fallback_key ): string {
 		$map = array(
 			'general.checkout_layout'                    => __( 'Макет страницы checkout', 'mp-custom-checkout' ),
+			'styles.progress_step_index'                 => __( 'Кружки номеров шагов (вертикальный таймлайн)', 'mp-custom-checkout' ),
 			'step_1.address_form_styles'                 => __( 'Стили формы адреса и доставки (шаг 1)', 'mp-custom-checkout' ),
 			'step_1.step_panel_screen_styles'            => __( 'Рамка экрана шага (.mp-cc-step-panel.mp-cc-step-screen)', 'mp-custom-checkout' ),
 			'step_4.contact_block'                       => __( 'Контактные данные (шаг 4)', 'mp-custom-checkout' ),
@@ -1355,13 +1437,19 @@ final class AdminMenuHooks {
 			return __( 'Ограничение частоты второстепенных анимаций на слабых устройствах / при лавине событий.', 'mp-custom-checkout' );
 		}
 		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, 'tariffs' ) && false !== strpos( $p, '.price' ) ) {
-			return __( 'Цена тарифа в рублях (целое). Показывается покупателю в выборе способа доставки.', 'mp-custom-checkout' );
+			return __( 'Цена тарифа в каталоге (руб., целое). При режиме цен «woocommerce» и заполненном WC rate ID у тарифа сумма на витрине подменяется на расчёт WooCommerce (СДЭК/зоны и т.д.); это поле тогда резерв/подсказка и для подстраховки, если ставка WC не найдена.', 'mp-custom-checkout' );
 		}
 		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, '.price' ) ) {
-			return __( 'Базовая цена метода доставки в рублях (целое). Используется, если у метода нет тарифов.', 'mp-custom-checkout' );
+			return __( 'Цена метода без тарифов (руб., целое). Нужна в режиме «catalog» и как запасная, если в режиме «woocommerce» не удалось сопоставить WC rate. Если везде только тарифы СДЭК через WC — держите «woocommerce», задайте wc_rate_id у тарифов и не опирайтесь на это число.', 'mp-custom-checkout' );
 		}
 		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, '.eta' ) ) {
 			return __( 'Срок доставки (произвольный текст). Например: «2 дней», «в течение дня», пусто — не показывать.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, 'wc_rate_id' ) && false === strpos( $p, '.tariffs.' ) ) {
+			return __( 'Идентификатор ставки WooCommerce для метода без тарифов (как в нативном checkout: method_id:instance_id, например flat_rate:12). Нужен для режима цен «woocommerce» и синхронизации выбранного способа с сессией WC. Поле дублируется в блоке «Каталог доставки» вверху вкладки.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, 'tariffs' ) && false !== strpos( $p, 'wc_rate_id' ) ) {
+			return __( 'Идентификатор ставки WooCommerce (как в нативном checkout: shipping_method:instance). При режиме цен «woocommerce» цена тарифа в каталоге подменяется на расчёт WC по адресу. Пусто — остаётся цена из каталога.', 'mp-custom-checkout' );
 		}
 		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, '.title' ) ) {
 			return __( 'Название метода/тарифа, которое увидит покупатель на шаге «Адрес и доставка».', 'mp-custom-checkout' );
@@ -1371,6 +1459,21 @@ final class AdminMenuHooks {
 		}
 		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, 'visibility_scenarios' ) ) {
 			return __( 'Сценарии, в которых метод доступен: pickup, krasnoyarsk_delivery, other_city_delivery.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'delivery.pricing_mode' ) ) {
+			return __( 'catalog — цены из каталога модуля и shipping_price в сессии. woocommerce — адрес синхронизируется с WC customer, пересчёт доставки как в нативном checkout (СДЭК и зоны); суммы в списке методов подставляются из WC, если у тарифа задан WC rate ID в каталоге. hybrid — зарезервировано.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'delivery.wc_integration.respect_chosen_shipping_methods' ) ) {
+			return __( 'Если в сессии WooCommerce уже выбран rate (method_id:instance_id), WC старается не сбрасывать его при пересчёте, пока он доступен. Для диагностики см. логи плагина при расхождении выбранного метода и списка rate’ов.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'styles.progress_step_index.border_width' ) ) {
+			return __( 'Толщина рамки кружка: например 2px, 1px, 0.15rem. Допустимы px, rem, em, vw, % или число без единицы (тогда px).', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'styles.progress_step_index.' ) ) {
+			return __( 'Цвет в формате #rrggbb. Для рамок — цвет обводки кружка в каждом состоянии; для фона и цифры — как раньше.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'payment_block.card_styles.gift_peer_seal_' ) ) {
+			return __( 'Только для раскладки «печать слева» (seal-inline) у блока подарочной карты. Формат #rrggbb или без решётки. Пустое поле при сохранении вернёт значение по умолчанию из схемы.', 'mp-custom-checkout' );
 		}
 		if ( false !== strpos( $p, 'pickup.points' ) && false !== strpos( $p, 'address' ) ) {
 			return __( 'Адрес пункта самовывоза одной строкой. Отображается в карточке метода «Самовывоз».', 'mp-custom-checkout' );
@@ -1390,6 +1493,38 @@ final class AdminMenuHooks {
 			|| false !== strpos( $p, 'step_order' )
 			|| false !== strpos( $p, 'step_definitions' )
 			|| false !== strpos( $p, 'checkout_testing_mode' );
+	}
+
+	/**
+	 * Поля настроек, которые сохраняем (значение пишется в hidden), но не показываем в UI админки.
+	 *
+	 * Сейчас сюда попадают `delivery.shipping_catalog.methods.{X}.price` для всех методов кроме
+	 * `pickup` и `krasnoyarsk_delivery` (у них цена реально берётся из админки), а также
+	 * `delivery.shipping_catalog.methods.{X}.tariffs.{Y}.price` — у тарифов цена всегда приходит
+	 * из WC rates через overlay, а это поле — просто источник «нулевой» подписи в UI checkout.
+	 */
+	private static function is_admin_field_hidden( string $path ): bool {
+		$p = (string) $path;
+		if ( false === strpos( $p, 'delivery.shipping_catalog.methods.' ) ) {
+			return false;
+		}
+		$is_price_leaf = ( '.price' === substr( $p, -6 ) );
+		if ( ! $is_price_leaf ) {
+			return false;
+		}
+		// Цены тарифов (path содержит .tariffs.) — всегда скрываем.
+		if ( false !== strpos( $p, '.tariffs.' ) ) {
+			return true;
+		}
+		// Цена самого метода: оставляем для pickup и krasnoyarsk_delivery, скрываем остальное.
+		if ( preg_match( '/delivery\.shipping_catalog\.methods\.([a-z0-9_\-]+)\.price$/i', $p, $matches ) ) {
+			$method_id = strtolower( (string) $matches[1] );
+			if ( 'pickup' === $method_id || 'krasnoyarsk_delivery' === $method_id ) {
+				return false;
+			}
+			return true;
+		}
+		return false;
 	}
 
 	private static function detect_group_type( string $key, string $path ): string {

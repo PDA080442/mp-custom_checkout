@@ -11,6 +11,7 @@ use MP\CustomCheckout\Checkout\Routing\CheckoutPermalinkCompatibility;
 use MP\CustomCheckout\Checkout\Hooks\CheckoutAjaxHooks;
 use MP\CustomCheckout\Checkout\Routing\CheckoutSessionService;
 use MP\CustomCheckout\Integrations\WooCommerce\GiftCardIntegration;
+use MP\CustomCheckout\Integrations\WooCommerce\WcCustomerShippingSync;
 use MP\CustomCheckout\Settings\FeatureFlagResolver;
 use MP\CustomCheckout\Settings\ScenarioStepRegistry;
 
@@ -102,8 +103,9 @@ final class CheckoutRouteContext {
 	 */
 	public static function get_cart_data(): array {
 		$result = array(
-			'items'    => array(),
-			'summary'  => array(
+			'items'               => array(),
+			'wc_shipping_rates'   => array(),
+			'summary'             => array(
 				'items_count' => 0,
 				'subtotal'    => '',
 				'shipping'    => '',
@@ -185,19 +187,52 @@ final class CheckoutRouteContext {
 		$current_step_id      = isset( $flow_for_totals['current_step'] ) ? sanitize_key( (string) $flow_for_totals['current_step'] ) : '';
 		$scenario_for_shipping = isset( $flow_for_totals['scenario'] ) ? CheckoutScenarioRules::sanitize_scenario( (string) $flow_for_totals['scenario'] ) : '';
 		$answers_for_totals   = isset( $flow_for_totals['answers'] ) && is_array( $flow_for_totals['answers'] ) ? $flow_for_totals['answers'] : array();
+		$step_one_answers     = isset( $answers_for_totals['step_one'] ) && is_array( $answers_for_totals['step_one'] ) ? $answers_for_totals['step_one'] : array();
 		$date_answers         = isset( $answers_for_totals['date_conditions'] ) && is_array( $answers_for_totals['date_conditions'] ) ? $answers_for_totals['date_conditions'] : array();
-		if ( isset( $date_answers['shipping_price'] ) && is_numeric( $date_answers['shipping_price'] ) ) {
-			$shipping_total = max( 0.0, (float) $date_answers['shipping_price'] );
+		// Как на фронте mergeDateConditionsFromFlowAnswers: база step_one, date_conditions перекрывает.
+		$delivery_answers = array_replace( $step_one_answers, $date_answers );
+		$scenario_for_shipping = CheckoutScenarioRules::elevate_scenario_if_pickup_but_carrier_method_selected( $scenario_for_shipping, $delivery_answers );
+		// Числовой "0" из каталога (ещё без тарифа / без wc_rate_id) не должен затирать фактическую доставку WC.
+		$session_shipping_price_value = null;
+		if ( isset( $delivery_answers['shipping_price'] ) && is_numeric( $delivery_answers['shipping_price'] ) ) {
+			$session_shipping_price_value = max( 0.0, (float) $delivery_answers['shipping_price'] );
 		}
+		$woocommerce_pricing = WcCustomerShippingSync::is_woocommerce_pricing_mode();
+		if ( ! $woocommerce_pricing && null !== $session_shipping_price_value && $session_shipping_price_value > 0.0 ) {
+			$shipping_total = $session_shipping_price_value;
+		}
+		$requires_address_for_shipping = true;
+		if ( array_key_exists( 'shipping_requires_address', $delivery_answers ) ) {
+			$requires_address_for_shipping = filter_var( $delivery_answers['shipping_requires_address'], FILTER_VALIDATE_BOOLEAN );
+		}
+		$shipping_method_chosen = '' !== trim( (string) ( $delivery_answers['shipping_method_id'] ?? '' ) );
+		// Почта/курьер с адресом: в answers часто shipping_price=0 до синка с фронта, но WC уже пересчитал пакеты — показываем сумму из корзины.
+		$wc_address_shipping_ready = $shipping_method_chosen && $requires_address_for_shipping && $cart_shipping_total > 0.0;
+		$session_shipping_price_chosen = ( null !== $session_shipping_price_value && $session_shipping_price_value > 0.0 )
+			|| (
+				null !== $session_shipping_price_value
+				&& 0.0 === $session_shipping_price_value
+				&& $shipping_method_chosen
+				&& ! $requires_address_for_shipping
+			)
+			|| $wc_address_shipping_ready;
+		// Раньше в этот список входил и STEP_RECIPIENT — защита от подмешивания «чужой» WC-доставки,
+		// пока на шаге «Получатель» был адресный блок и адрес мог меняться там. Сейчас адресный блок
+		// со 2-го шага убран (пользователь заполняет адрес только на шаге 1), поэтому на шаге
+		// «Получатель» суппресс уже не имеет смысла: тариф либо выбран и записан в answers.step_one,
+		// либо метод не требует адреса. Если оставить здесь STEP_RECIPIENT, строка «Доставка» в сводке
+		// исчезает на шагах 2/3/4, как только session_shipping_price теряется/обнуляется (например,
+		// при пересчёте корзины WC). Видим только итог, но не саму строку — это сбивает пользователя.
 		$steps_pre_payment     = array(
 			ScenarioStepRegistry::STEP_ADDRESS_DELIVERY,
-			ScenarioStepRegistry::STEP_RECIPIENT,
 		);
 		$suppress_shipping_in_summary = false;
 		if ( $cart->needs_shipping() ) {
 			if ( ScenarioStepRegistry::SCENARIO_PICKUP === $scenario_for_shipping ) {
 				$suppress_shipping_in_summary = true;
-			} elseif ( '' !== $current_step_id && in_array( $current_step_id, $steps_pre_payment, true ) ) {
+			} elseif ( ! $woocommerce_pricing && '' !== $current_step_id && in_array( $current_step_id, $steps_pre_payment, true ) && ! $session_shipping_price_chosen ) {
+				// Пока покупатель на шаге 1 ещё не выбрал тариф (нет shipping_price в answers.step_one
+				// и WC не посчитал rate по адресу), не подмешиваем «чужую» WC-доставку в строки и итог.
 				$suppress_shipping_in_summary = true;
 			}
 		}
@@ -228,7 +263,7 @@ final class CheckoutRouteContext {
 			$ship_amt = (float) $cart->get_shipping_total();
 			$total_tax_display = max( 0.0, $total_tax_display - $ship_tax );
 			$total_edit        = max( 0.0, $total_edit - $ship_tax - $ship_amt );
-		} elseif ( isset( $date_answers['shipping_price'] ) && is_numeric( $date_answers['shipping_price'] ) ) {
+		} elseif ( ! $woocommerce_pricing && null !== $session_shipping_price_value && $session_shipping_price_value > 0.0 ) {
 			$total_edit = max( 0.0, $total_edit - $cart_shipping_total + $shipping_total );
 		}
 		$result['summary']['tax']   = (string) wc_price( $total_tax_display );
@@ -279,7 +314,98 @@ final class CheckoutRouteContext {
 			$result['summary']['applied_gift_cards'] = array_values( array_map( 'strval', $session_discounts['gift_card'] ) );
 		}
 		$result['summary']['catalog_url'] = CheckoutReturnPaths::get_exit_landing_url();
+		$result['wc_shipping_rates']       = self::collect_wc_shipping_rates_snapshot();
 
 		return $result;
+	}
+
+	/**
+	 * Мета ставки доставки WC (часто сюда плагины СДЭК кладут код тарифа из API — см. расчёт в интеграции WC, не дублируем apidoc.cdek.ru).
+	 *
+	 * @return array<string, string>
+	 */
+	private static function wc_shipping_rate_meta_for_snapshot( \WC_Shipping_Rate $rate ): array {
+		$out = array();
+		if ( ! is_callable( array( $rate, 'get_meta_data' ) ) ) {
+			return $out;
+		}
+		foreach ( (array) $rate->get_meta_data() as $meta_row ) {
+			if ( ! $meta_row instanceof \WC_Meta_Data ) {
+				continue;
+			}
+			$data = $meta_row->get_data();
+			$key  = isset( $data['key'] ) ? sanitize_key( (string) $data['key'] ) : '';
+			if ( '' === $key ) {
+				continue;
+			}
+			$val = isset( $data['value'] ) ? $data['value'] : null;
+			if ( is_array( $val ) || is_object( $val ) ) {
+				$val = wp_json_encode( $val, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES );
+			}
+			$val = is_scalar( $val ) ? (string) $val : '';
+			if ( strlen( $val ) > 400 ) {
+				$val = substr( $val, 0, 400 );
+			}
+			$out[ $key ] = $val;
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Плоский список ставок WC для текущего адреса корзины (после calculate_totals / синка сессии).
+	 *
+	 * @return array<int, array{id: string, label: string, cost: float, method_id: string, meta: array<string, string>}>
+	 */
+	private static function collect_wc_shipping_rates_snapshot(): array {
+		if ( ! function_exists( 'WC' ) || ! WC()->cart instanceof \WC_Cart ) {
+			return array();
+		}
+		$cart = WC()->cart;
+		if ( ! $cart->needs_shipping() ) {
+			return array();
+		}
+		$packages = WC()->shipping()->get_packages();
+		$out      = array();
+		foreach ( (array) $packages as $package ) {
+			if ( ! is_array( $package ) ) {
+				continue;
+			}
+			$rates = isset( $package['rates'] ) && is_array( $package['rates'] ) ? $package['rates'] : array();
+			foreach ( $rates as $rate_id => $rate ) {
+				if ( ! $rate instanceof \WC_Shipping_Rate ) {
+					continue;
+				}
+				$id = is_string( $rate_id ) ? $rate_id : (string) $rate->get_id();
+				$cost = (float) $rate->get_cost();
+				foreach ( (array) $rate->get_taxes() as $tax_amt ) {
+					$cost += (float) $tax_amt;
+				}
+				$decimals   = function_exists( 'wc_get_price_decimals' ) ? (int) wc_get_price_decimals() : 2;
+				$method_id  = is_callable( array( $rate, 'get_method_id' ) ) ? (string) $rate->get_method_id() : '';
+				$meta_clean = self::wc_shipping_rate_meta_for_snapshot( $rate );
+				$row        = array(
+					'id'         => $id,
+					'label'      => wp_strip_all_tags( (string) $rate->get_label() ),
+					'cost'       => (float) wc_format_decimal( max( 0.0, $cost ), $decimals ),
+					'method_id'  => $method_id,
+					'meta'       => $meta_clean,
+				);
+				/**
+				 * Одна ставка в снимке (расширение под конкретный плагин СДЭК / другое).
+				 *
+				 * @param array<string, mixed> $row
+				 */
+				$out[] = apply_filters( 'mp_custom_checkout_wc_shipping_rate_snapshot_row', $row, $rate, $package );
+			}
+		}
+
+		/**
+		 * Позволяет теме/плагину отфильтровать или дополнить список ставок для UI checkout.
+		 *
+		 * @param array<int, array<string, mixed>> $out
+		 * @param \WC_Cart                         $cart
+		 */
+		return apply_filters( 'mp_custom_checkout_wc_shipping_rates_snapshot', $out, $cart );
 	}
 }

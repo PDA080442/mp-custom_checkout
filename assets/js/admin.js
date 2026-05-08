@@ -936,6 +936,35 @@
 
 	var DELIVERY_STUDIO_CATALOG = 'mp_custom_checkout_settings[delivery][shipping_catalog]';
 
+	function shippingCatalogMethodHasTariffs(method) {
+		if (!method || !method.tariffs || typeof method.tariffs !== 'object') {
+			return false;
+		}
+		return Object.keys(method.tariffs).length > 0;
+	}
+
+	function methodWcRateFieldName(methodId) {
+		return DELIVERY_STUDIO_CATALOG + '[methods][' + String(methodId || '') + '][wc_rate_id]';
+	}
+
+	function pruneNonStudioMethodWcRateInputs(studioRoot, methodIds) {
+		var root = studioRoot && studioRoot.length ? studioRoot[0] : null;
+		if (!root || !Array.isArray(methodIds)) {
+			return;
+		}
+		var $scope = $('.mp-cc-admin-shell__fields').first();
+		if (!$scope.length) {
+			return;
+		}
+		var mi;
+		for (mi = 0; mi < methodIds.length; mi += 1) {
+			var fullName = methodWcRateFieldName(methodIds[mi]);
+			$scope.find('input').filter(function () {
+				return this.name === fullName && !root.contains(this);
+			}).remove();
+		}
+	}
+
 	function deliveryStudioNotifyForm(name) {
 		var $f = $('[name="' + name + '"]').first();
 		if ($f.length) {
@@ -997,7 +1026,7 @@
 		html += '<div id="mp-cc-delivery-studio" class="mp-cc-delivery-studio">';
 		html += '<header class="mp-cc-delivery-studio__head">';
 		html += '<h3 class="mp-cc-delivery-studio__title">Каталог доставки</h3>';
-		html += '<p class="mp-cc-delivery-studio__lead">Порядок способов синхронизируется с полем <code>sort_order</code>. Тарифы курьера и ПВЗ — с соответствующими полями формы. Дополнительные позиции используют резервные слоты <code>slot_1</code> / <code>slot_2</code> (так сохранение совместимо с деревом настроек).</p>';
+		html += '<p class="mp-cc-delivery-studio__lead">Порядок способов синхронизируется с полем <code>sort_order</code>. Для <strong>Почты России</strong>, самовывоза и локальной доставки задайте <strong>WC rate ID</strong> ниже (как в нативном checkout: <code>flat_rate:12</code>, <code>local_pickup:3</code> и т.д.). Тарифы курьера и ПВЗ — в таблицах ниже. Резервные слоты <code>slot_1</code> / <code>slot_2</code> совместимы с деревом настроек.</p>';
 		html += '</header>';
 		html += '<section class="mp-cc-delivery-studio__block">';
 		html += '<h4>Порядок на витрине</h4>';
@@ -1019,6 +1048,32 @@
 			html += '</span></li>';
 		}
 		html += '</ol></section>';
+		var noTariffMethodIds = [];
+		for (i = 0; i < displaySort.length; i += 1) {
+			var nid = String(displaySort[i] || '');
+			if (!nid || !methods[nid]) {
+				continue;
+			}
+			if (!shippingCatalogMethodHasTariffs(methods[nid])) {
+				noTariffMethodIds.push(nid);
+			}
+		}
+		if (noTariffMethodIds.length) {
+			html += '<section class="mp-cc-delivery-studio__block">';
+			html += '<h4>WC rate ID (методы без тарифов)</h4>';
+			html += '<p class="description">Нужно для режима цен WooCommerce и для записи <code>chosen_shipping_methods</code> в сессии WC при выборе способа на MP checkout. ID смотрите в WooCommerce → Настройки → Доставка → зона → строка способа (в URL или в инспекторе нативного checkout).</p>';
+			html += '<table class="mp-cc-delivery-studio__tariff-table"><thead><tr><th>Метод</th><th>WC rate ID</th></tr></thead><tbody>';
+			var ni;
+			for (ni = 0; ni < noTariffMethodIds.length; ni += 1) {
+				var sid = noTariffMethodIds[ni];
+				var sm = methods[sid] || {};
+				var wcName = methodWcRateFieldName(sid);
+				var wcVal = String(sm.wc_rate_id || '');
+				html += '<tr><td><strong>' + escapeHtml(String(sm.title || sid)) + '</strong> <code>' + escapeHtml(sid) + '</code></td>';
+				html += '<td><input type="text" class="regular-text mp-cc-delivery-studio__input" placeholder="flat_rate:5" data-mp-cc-method-wc-rate="1" name="' + escapeHtml(wcName) + '" value="' + escapeHtml(wcVal) + '" /></td></tr>';
+			}
+			html += '</tbody></table></section>';
+		}
 		var tariffMethods = ['courier', 'pvz'];
 		for (var tm = 0; tm < tariffMethods.length; tm += 1) {
 			var methodId = tariffMethods[tm];
@@ -1028,7 +1083,7 @@
 			}
 			html += '<section class="mp-cc-delivery-studio__block">';
 			html += '<h4>Тарифы: ' + escapeHtml(String(method.title || methodId)) + ' <code>' + escapeHtml(methodId) + '</code></h4>';
-			html += '<table class="mp-cc-delivery-studio__tariff-table"><thead><tr><th>ID</th><th>Название</th><th>Цена</th><th>ETA</th><th>Активен</th><th></th></tr></thead><tbody>';
+			html += '<table class="mp-cc-delivery-studio__tariff-table"><thead><tr><th>ID</th><th>Название</th><th>Цена</th><th>ETA</th><th>WC rate ID</th><th>Активен</th><th></th></tr></thead><tbody>';
 			var tariffIds = Object.keys(method.tariffs);
 			var ti2;
 			for (ti2 = 0; ti2 < tariffIds.length; ti2 += 1) {
@@ -1041,6 +1096,7 @@
 				html += '<td><input type="text" class="regular-text mp-cc-delivery-studio__input" data-mp-cc-tariff-field="title" data-method="' + escapeHtml(methodId) + '" data-tariff="' + escapeHtml(tariffId) + '" value="' + escapeHtml(String(tr.title || '')) + '" /></td>';
 				html += '<td><input type="number" min="0" step="1" class="small-text mp-cc-delivery-studio__input" data-mp-cc-tariff-field="price" data-method="' + escapeHtml(methodId) + '" data-tariff="' + escapeHtml(tariffId) + '" value="' + escapeHtml(String(Math.max(0, Math.round(Number(tr.price || 0))))) + '" /></td>';
 				html += '<td><input type="text" class="regular-text mp-cc-delivery-studio__input" data-mp-cc-tariff-field="eta" data-method="' + escapeHtml(methodId) + '" data-tariff="' + escapeHtml(tariffId) + '" value="' + escapeHtml(String(tr.eta || '')) + '" /></td>';
+				html += '<td><input type="text" class="regular-text mp-cc-delivery-studio__input" placeholder="flat_rate:5" data-mp-cc-tariff-field="wc_rate_id" data-method="' + escapeHtml(methodId) + '" data-tariff="' + escapeHtml(tariffId) + '" value="' + escapeHtml(String(tr.wc_rate_id || '')) + '" /></td>';
 				html += '<td><label class="mp-cc-delivery-studio__check"><input type="checkbox" data-mp-cc-tariff-field="active" data-method="' + escapeHtml(methodId) + '" data-tariff="' + escapeHtml(tariffId) + '"' + (active ? ' checked' : '') + ' /> да</label></td>';
 				html += '<td>';
 				if (isSlot) {
@@ -1062,6 +1118,10 @@
 			$existing.replaceWith(html);
 		} else {
 			$fields.prepend(html);
+		}
+		var $studioRoot = $('#mp-cc-delivery-studio');
+		if ($studioRoot.length && noTariffMethodIds.length) {
+			pruneNonStudioMethodWcRateInputs($studioRoot, noTariffMethodIds);
 		}
 	}
 
@@ -1113,6 +1173,9 @@
 				writeFormValue(name, $el.val());
 			}
 			deliveryStudioNotifyForm(name);
+		});
+		$(document).on('input change', '#mp-cc-delivery-studio [data-mp-cc-method-wc-rate]', function () {
+			deliveryStudioNotifyForm(this.name);
 		});
 		$(document).on('click', '[data-mp-cc-tariff-slot-on]', function () {
 			var methodId = String($(this).attr('data-mp-cc-tariff-slot-on') || '');
@@ -1533,6 +1596,7 @@
 			methods[id].visibility_scenarios = String(readFormValue(mPath + '[visibility_scenarios]', visFallback)).split(',').map(function (s) {
 				return String(s || '').trim();
 			}).filter(Boolean);
+			methods[id].wc_rate_id = String(readFormValue(mPath + '[wc_rate_id]', methods[id].wc_rate_id || '') || '');
 			if (methods[id].tariffs && typeof methods[id].tariffs === 'object') {
 				var tIds = Object.keys(methods[id].tariffs);
 				var ti;
@@ -1544,6 +1608,7 @@
 						title: readFormValue(tPath + '[title]', tBase.title),
 						price: Number(readFormValue(tPath + '[price]', tBase.price)),
 						eta: readFormValue(tPath + '[eta]', tBase.eta),
+						wc_rate_id: readFormValue(tPath + '[wc_rate_id]', tBase.wc_rate_id || ''),
 						active: Boolean(readFormValue(tPath + '[active]', tBase.active))
 					};
 				}
