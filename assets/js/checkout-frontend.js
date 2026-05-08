@@ -51,6 +51,8 @@
 	var pendingShippingMethodChoice = null;
 	/** Отложенный cdek_set_office во время shippingMutationInFlight (§29.3). */
 	var pendingCdekOfficeCode = null;
+	/** Детали ПВЗ для того же отложенного запроса (имя, адрес и т.д.). */
+	var pendingCdekOfficeDetails = null;
 	/** Deferred для очереди office-save: резолвится только после реального AJAX (модал карты не закрывается на «фейковом» resolve). */
 	var pendingCdekOfficeDeferred = null;
 	/** Пока идёт «Рассчитать доставку» — не даём render() убрать кнопку из-за гонки с черновиком / get_state. */
@@ -716,7 +718,10 @@
 					gift_bar_input_border: '#d7bb8e',
 					gift_bar_input_text: '#46372a',
 					gift_bar_button_bg: '#121212',
-					gift_bar_button_text: '#ffffff'
+					gift_bar_button_text: '#ffffff',
+					gift_peer_seal_icon_color: '#896a3a',
+					gift_peer_seal_ring_inner: '#caa36d',
+					gift_peer_seal_ring_outer: '#ceb284'
 				},
 				error_message: '',
 				messages: { loading: '', success: '', error: '' },
@@ -2650,63 +2655,12 @@
 			errors.billing_phone_national = 'format';
 			ok = false;
 		}
-		var addrVis = contact.__address_visibility;
-		if (addrVis && !addrVis.hide_address_fields && addrVis.required_address_fields) {
-			var ab = cfg.address_block || {};
-			var order = Array.isArray(ab.subfields_order)
-				? ab.subfields_order
-				: ['country', 'state', 'city', 'address_1', 'address_2', 'postcode'];
-			var maxZip = Number(ab.postcode_max_length);
-			if (!Number.isFinite(maxZip) || maxZip <= 0) {
-				maxZip = 16;
-			}
-			var ki;
-			for (ki = 0; ki < order.length; ki++) {
-				var ak = order[ki];
-				if (!shouldRenderAddressSubfield(ak, contact)) {
-					continue;
-				}
-				if (ak === 'address_2') {
-					continue;
-				}
-				if (ak === 'country') {
-					if (!trimNonEmpty(contact.country)) {
-						errors.country = 'required';
-						ok = false;
-					}
-					continue;
-				}
-				if (ak === 'state') {
-					if (!trimNonEmpty(contact.state)) {
-						errors.state = 'required';
-						ok = false;
-					}
-					continue;
-				}
-				if (ak === 'city') {
-					if (!trimNonEmpty(contact.city)) {
-						errors.city = 'required';
-						ok = false;
-					}
-					continue;
-				}
-				if (ak === 'postcode') {
-					var pc = String(contact.postcode || '').trim();
-					if (!pc) {
-						errors.postcode = 'required';
-						ok = false;
-					} else if (pc.length > maxZip) {
-						errors.postcode = 'postcode';
-						ok = false;
-					}
-					continue;
-				}
-				if (ak === 'address_1' && !trimNonEmpty(contact.address_1)) {
-					errors.address_1 = 'required';
-					ok = false;
-				}
-			}
-		}
+		// Адресные поля валидируются на шаге 1 («Адрес и доставка») через
+		// validateStepOneAddressFields + shouldBlockAddressDeliveryForward. Дублировать проверку
+		// здесь нельзя: на шаге «Получатель» адресный блок больше не рендерится, и пользователь
+		// не сможет очистить ошибку, даже если по какой-то причине state потерял адрес.
+		// На запись в WC это не влияет — данные уже лежат в state.frontendStore.form.contact и
+		// уходят в WC_Customer через WcCustomerShippingSync при saveCurrentStepDraft.
 		var gateways = getAvailablePaymentGateways();
 		var paymentCfg = cfg.payment_block && typeof cfg.payment_block === 'object' ? cfg.payment_block : {};
 		var paymentRequired = paymentCfg.required !== false;
@@ -3399,7 +3353,28 @@
 		return defaultTrue;
 	}
 
-	function buildPaymentCardStylesAttr(pb, twoUpMode) {
+	function collectGiftSealStyleVars(s) {
+		if (!s || typeof s !== 'object') {
+			return {};
+		}
+		var out = {};
+		var icon = trimNonEmpty(s.gift_peer_seal_icon_color);
+		var rin = trimNonEmpty(s.gift_peer_seal_ring_inner);
+		var rout = trimNonEmpty(s.gift_peer_seal_ring_outer);
+		if (icon) {
+			out['--mp-cc-pay-gift-seal-icon'] = icon;
+		}
+		if (rin) {
+			out['--mp-cc-pay-gift-seal-ring-inner'] = rin;
+		}
+		if (rout) {
+			out['--mp-cc-pay-gift-seal-ring-outer'] = rout;
+		}
+		return out;
+	}
+
+	function buildPaymentCardStylesAttr(pb, twoUpMode, opts) {
+		opts = opts && typeof opts === 'object' ? opts : {};
 		if (!pb || typeof pb !== 'object') {
 			return '';
 		}
@@ -3440,6 +3415,12 @@
 			vars['--mp-cc-pay-gift-bar-input-text'] = trimNonEmpty(s.gift_bar_input_text);
 			vars['--mp-cc-pay-gift-bar-button-bg'] = trimNonEmpty(s.gift_bar_button_bg);
 			vars['--mp-cc-pay-gift-bar-button-text'] = trimNonEmpty(s.gift_bar_button_text);
+		}
+		if (twoUpMode || opts.includeSealVars) {
+			var sealVars = collectGiftSealStyleVars(s);
+			Object.keys(sealVars).forEach(function (sk) {
+				vars[sk] = sealVars[sk];
+			});
 		}
 		var out = [];
 		Object.keys(vars).forEach(function (key) {
@@ -3854,7 +3835,10 @@
 			var emptyTitle = trimNonEmpty(pb.title) || getUiText('step_4.payment_title', 'Способ оплаты');
 			var emptyMsg = getUiText('step_4.payment_gateways_empty', 'Способы оплаты не настроены в WooCommerce или недоступны для этой корзины. Проверьте раздел «Платежи» и условия шлюзов.');
 			var htmlEmpty = '';
-			htmlEmpty += '<section class="mp-cc-payment mp-cc-payment--empty" aria-labelledby="mp-cc-payment-title">';
+			htmlEmpty +=
+				'<section class="mp-cc-payment mp-cc-payment--empty mp-cc-payment--gift-style-seal-inline" aria-labelledby="mp-cc-payment-title"' +
+				buildPaymentCardStylesAttr(pb, false, { includeSealVars: true }) +
+				'>';
 			htmlEmpty += '<header class="mp-cc-payment__header">';
 			htmlEmpty += '<h4 class="mp-cc-payment__title" id="mp-cc-payment-title">' + escapeHtml(emptyTitle) + '</h4>';
 			htmlEmpty += '</header>';
@@ -4086,10 +4070,20 @@
 		if (intro) {
 			html += '<p class="mp-cc-address__intro" id="mp-cc-address-intro">' + escapeHtml(intro) + '</p>';
 		}
-		if (cfg.geo_preview && cfg.geo_preview.enabled) {
+		// Раньше при `cfg.geo_preview.enabled === true` сюда выводилась дев-строка
+		// «Geo debug: country=…, region=…, regions=…, settlements=…», и из-за этого она попадала
+		// прямо на страницу checkout пользователю. Поле `geo_preview` по описанию (docs/nastroyki-po-vkladkam/05-shag-4.md)
+		// предназначено только для admin-превью, поэтому в публичном UI больше ничего не печатаем.
+		// Сами цифры по-прежнему доступны в DevTools через console.debug — для разработчика.
+		if (cfg.geo_preview && cfg.geo_preview.enabled && typeof window !== 'undefined' && window.console && typeof window.console.debug === 'function') {
 			var regionsCount = getRegionsForCountry(geo, String(contact.country || '')).length;
 			var settlementsCount = getSettlementsForRegion(geo, String(contact.country || ''), String(contact.state || '')).length;
-			html += '<p class="mp-cc-address__intro"><strong>Geo debug:</strong> country=' + escapeHtml(String(contact.country || '')) + ', region=' + escapeHtml(String(contact.state || '')) + ', regions=' + escapeHtml(String(regionsCount)) + ', settlements=' + escapeHtml(String(settlementsCount)) + '</p>';
+			window.console.debug('[mp-cc] geo_preview', {
+				country: String(contact.country || ''),
+				region: String(contact.state || ''),
+				regions: regionsCount,
+				settlements: settlementsCount
+			});
 		}
 		html += '</header>';
 		html += '<div class="mp-cc-address__grid">';
@@ -4406,6 +4400,54 @@
 	function trimNonEmpty(value) {
 		var s = String(value || '').trim();
 		return s ? s : '';
+	}
+
+	/**
+	 * Нормализация объекта ПВЗ от виджета СДЭК / модала для AJAX `cdek_set_office` (office_details).
+	 */
+	function normalizeCdekOfficeDetailsForRequest(raw, fallbackCode) {
+		var r = raw && typeof raw === 'object' ? raw : {};
+		function pick() {
+			var keys = Array.prototype.slice.call(arguments, 0);
+			var ki;
+			for (ki = 0; ki < keys.length; ki++) {
+				var k = keys[ki];
+				if (Object.prototype.hasOwnProperty.call(r, k) && r[k] !== undefined && r[k] !== null) {
+					var s = String(r[k]).trim();
+					if (s) {
+						return s;
+					}
+				}
+			}
+			return '';
+		}
+		var fc = fallbackCode === undefined || fallbackCode === null ? '' : String(fallbackCode).trim();
+		var out = {};
+		out.code = pick('code') || fc;
+		out.name = pick('name', 'location_name');
+		out.address = pick('address', 'address_full');
+		out.city = pick('city');
+		out.postal_code = pick('postal_code', 'postalCode', 'postcode');
+		if (out.postal_code.length > 16) {
+			out.postal_code = out.postal_code.slice(0, 16);
+		}
+		out.region = pick('region', 'region_code', 'regionName');
+		out.country_code = pick('country_code', 'countryCode');
+		return out;
+	}
+
+	function cdekOfficeDetailsHasRenderableFields(o) {
+		if (!o || typeof o !== 'object') {
+			return false;
+		}
+		return Boolean(
+			trimNonEmpty(o.name) ||
+				trimNonEmpty(o.address) ||
+				trimNonEmpty(o.city) ||
+				trimNonEmpty(o.postal_code) ||
+				trimNonEmpty(o.region) ||
+				trimNonEmpty(o.country_code)
+		);
 	}
 
 	function getConditionsCopyRoot() {
@@ -5435,17 +5477,33 @@
 		});
 	}
 
-	function postCheckout(subAction, payload) {
+	var HEAVY_CHECKOUT_AJAX_ACTIONS = {
+		cdek_set_office: true,
+		session_set_answers: true,
+		session_set_step: true,
+		session_set_scenario: true
+	};
+
+	function getCheckoutAjaxTimeoutMs(subAction) {
+		var sa = String(subAction || '');
+		return HEAVY_CHECKOUT_AJAX_ACTIONS[sa] ? 60000 : 30000;
+	}
+
+	function postCheckout(subAction, payload, retryAttempt) {
 		var localized = window.mpCcCheckout || {};
 		if (!localized.ajaxUrl || !localized.nonce) {
 			return $.Deferred().resolve({ success: true }).promise();
 		}
 
-		var request = $.ajax({
+		retryAttempt = retryAttempt || 0;
+		var timeoutMs = getCheckoutAjaxTimeoutMs(subAction);
+		var startedAt = Date.now();
+
+		var promise = $.ajax({
 			url: localized.ajaxUrl,
 			method: 'POST',
 			dataType: 'json',
-			timeout: 30000,
+			timeout: timeoutMs,
 			data: $.extend(
 				{
 					action: 'mp_cc_checkout',
@@ -5455,25 +5513,56 @@
 				},
 				payload || {}
 			)
-		});
-		if (subAction !== 'ajax_error_log' && subAction !== 'client_error_log') {
-			request.fail(function (xhr, statusText, errorThrown) {
-				if (String(statusText || '') === 'timeout') {
-					notify(getUiText('common.ajax_timeout', 'Сервер не ответил вовремя. Попробуйте ещё раз.'), 'error');
+		}).then(
+			function (data, textStatus, jqXHR) {
+				var elapsed = Date.now() - startedAt;
+				if (
+					elapsed > 5000 &&
+					subAction !== 'client_error_log' &&
+					subAction !== 'ajax_error_log'
+				) {
+					reportClientError(
+						'slow_ajax',
+						'slow_ajax sub_action=' + String(subAction || '') + ' ms=' + elapsed,
+						'',
+						''
+					);
 				}
-				var responseSnippet = '';
-				if (xhr && xhr.responseText) {
-					responseSnippet = String(xhr.responseText).slice(0, 300);
+				return data;
+			},
+			function (xhr, statusText, errorThrown) {
+				if (
+					retryAttempt < 1 &&
+					HEAVY_CHECKOUT_AJAX_ACTIONS[String(subAction || '')] &&
+					String(statusText || '') === 'timeout'
+				) {
+					var deferred = $.Deferred();
+					var jitter = 400 + Math.floor(Math.random() * 350);
+					window.setTimeout(function () {
+						postCheckout(subAction, payload, retryAttempt + 1).done(deferred.resolve).fail(deferred.reject);
+					}, jitter);
+					return deferred.promise();
 				}
-				postCheckout('ajax_error_log', {
-					operation: subAction,
-					status: xhr && typeof xhr.status === 'number' ? xhr.status : 0,
-					error: String(errorThrown || statusText || 'ajax_failed'),
-					response_snippet: responseSnippet
-				});
-			});
-		}
-		return request;
+				if (subAction !== 'ajax_error_log' && subAction !== 'client_error_log') {
+					if (String(statusText || '') === 'timeout') {
+						notify(getUiText('common.ajax_timeout', 'Сервер не ответил вовремя. Попробуйте ещё раз.'), 'error');
+					}
+					var responseSnippet = '';
+					if (xhr && xhr.responseText) {
+						responseSnippet = String(xhr.responseText).slice(0, 300);
+					}
+					postCheckout('ajax_error_log', {
+						operation: subAction,
+						status: xhr && typeof xhr.status === 'number' ? xhr.status : 0,
+						error: String(errorThrown || statusText || 'ajax_failed'),
+						response_snippet: responseSnippet
+					});
+				}
+				return $.Deferred().reject(xhr, statusText, errorThrown).promise();
+			}
+		);
+
+		return promise;
 	}
 
 	/**
@@ -6054,9 +6143,11 @@
 				return;
 			}
 			if (currentScreen.id === 'delivery_screen') {
+				setShippingRatesLoadingOverlay(true, $app);
 				awaitShippingMutationFlush({ timeoutMs: 8000 }).then(function () {
 					var shipDateBox = state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.date || {}) : {};
 					if (!trimNonEmpty(shipDateBox.shipping_method_id)) {
+						setShippingRatesLoadingOverlay(false, $app);
 						setV2StepInvalidState(state, currentScreen.id, true);
 						notify('Выберите способ доставки, чтобы продолжить.', 'error');
 						render(state, $app);
@@ -6067,6 +6158,7 @@
 						? String(state.frontendStore.fulfillment.date.selected_date || '')
 						: '';
 					if (!selectedDateV2 || !parseIsoDate(selectedDateV2)) {
+						setShippingRatesLoadingOverlay(false, $app);
 						setV2StepInvalidState(state, currentScreen.id, true);
 						notify(getStepThreeErrorCopy('empty_date', 'Выберите дату, чтобы продолжить.'), 'error');
 						render(state, $app);
@@ -6074,6 +6166,7 @@
 						return;
 					}
 					if (isPvzMissingOfficeRequired(state)) {
+						setShippingRatesLoadingOverlay(false, $app);
 						setV2StepInvalidState(state, currentScreen.id, true);
 						logValidationFailure(state, 'delivery_screen', { cdek_office_code: 'pvz_required' });
 						notify(getStepOneLabel(state, 'pvz_required', 'step_1.errors.pvz_required', 'Выберите пункт выдачи (ПВЗ), чтобы продолжить.'), 'error');
@@ -6081,10 +6174,22 @@
 						scrollToFirstInvalidField($app);
 						return;
 					}
+					if (isPostRussiaRecalcRequired(state)) {
+						setShippingRatesLoadingOverlay(false, $app);
+						setV2StepInvalidState(state, currentScreen.id, true);
+						logValidationFailure(state, 'delivery_screen', { post_russia_recalc: 'required' });
+						notify(getPostRussiaRecalcRequiredMessage(), 'error');
+						render(state, $app);
+						return;
+					}
 					setV2StepInvalidState(state, currentScreen.id, false);
-					saveCurrentStepDraft(state);
-					setCurrentV2Screen(state, $app, v2Idx + 1);
+					saveCurrentStepDraft(state).always(function () {
+						setCurrentV2Screen(state, $app, v2Idx + 1).always(function () {
+							setShippingRatesLoadingOverlay(false, $app);
+						});
+					});
 				}).fail(function () {
+					setShippingRatesLoadingOverlay(false, $app);
 					notify(getUiText('order_review.shipping_still_saving', 'Подождите завершения сохранения доставки и ПВЗ.'), 'error');
 				});
 				return;
@@ -6164,8 +6269,15 @@
 			}
 			var target = state.visibleSteps[currentIndex + 1];
 			var cartSummary = state.frontendStore && state.frontendStore.cart ? state.frontendStore.cart.summary || {} : {};
+			var step1ForwardLoadingOverlay = state.currentStepId === 'address_delivery';
+			if (step1ForwardLoadingOverlay) {
+				setShippingRatesLoadingOverlay(true, $app);
+			}
 			if (state.currentStepId === 'address_delivery') {
 				if (!isAddressDeliveryStepReady(state)) {
+					if (step1ForwardLoadingOverlay) {
+						setShippingRatesLoadingOverlay(false, $app);
+					}
 					state.frontendStore.form.errors = state.frontendStore.form.errors || {};
 					state.frontendStore.form.errors.shipping_method_id = 'required';
 					setStepInvalidState(state, 'address_delivery', true);
@@ -6176,6 +6288,9 @@
 					return;
 				}
 				if (isPvzMissingOfficeRequired(state)) {
+					if (step1ForwardLoadingOverlay) {
+						setShippingRatesLoadingOverlay(false, $app);
+					}
 					state.frontendStore.form.errors = state.frontendStore.form.errors || {};
 					state.frontendStore.form.errors.cdek_office_code = 'pvz_required';
 					setStepInvalidState(state, 'address_delivery', true);
@@ -6183,6 +6298,16 @@
 					notify(getStepOneLabel(state, 'pvz_required', 'step_1.errors.pvz_required', 'Выберите пункт выдачи (ПВЗ), чтобы продолжить.'), 'error');
 					render(state, $app);
 					scrollToFirstInvalidField($app);
+					return;
+				}
+				if (isPostRussiaRecalcRequired(state)) {
+					if (step1ForwardLoadingOverlay) {
+						setShippingRatesLoadingOverlay(false, $app);
+					}
+					setStepInvalidState(state, 'address_delivery', true);
+					logValidationFailure(state, 'address_delivery', { post_russia_recalc: 'required' });
+					notify(getPostRussiaRecalcRequiredMessage(), 'error');
+					render(state, $app);
 					return;
 				}
 				state.frontendStore.form.errors = state.frontendStore.form.errors || {};
@@ -6220,6 +6345,9 @@
 			}
 			requestForwardValidation(state.currentStepId).then(function (valid) {
 				if (!valid) {
+					if (step1ForwardLoadingOverlay) {
+						setShippingRatesLoadingOverlay(false, $app);
+					}
 					setRuntimeFlag(state, 'blocked', true);
 					var vm = getStepFourValidationMessages();
 					notify(trimNonEmpty(vm.step_blocked) || getUiText('step_4.contact_error_step_blocked', 'Заполните обязательные поля текущего шага.'), 'error');
@@ -6227,7 +6355,11 @@
 				}
 				setRuntimeFlag(state, 'blocked', false);
 				setStepInvalidState(state, state.currentStepId, false);
-				setCurrentStep(state, $app, target.id);
+				setCurrentStep(state, $app, target.id).always(function () {
+					if (step1ForwardLoadingOverlay) {
+						setShippingRatesLoadingOverlay(false, $app);
+					}
+				});
 			});
 		}).fail(function () {
 			notify(getUiText('order_review.shipping_still_saving', 'Подождите завершения сохранения доставки и ПВЗ.'), 'error');
@@ -6489,8 +6621,11 @@
 				v2html += buildAddressBlockHtml(state);
 			}
 			if (screen && screen.id === 'recipient_screen') {
+				// Адресный блок здесь намеренно не рендерим: пользователь заполняет адрес
+				// полностью на шаге «Адрес и доставка». Данные уже лежат в state и в session,
+				// и попадают в WC_Customer billing/shipping через WcCustomerShippingSync,
+				// поэтому в заказ WooCommerce они записываются без дублирования полей на этом шаге.
 				v2html += buildContactPaymentHtml(state, { includePayment: false });
-				v2html += buildAddressBlockHtml(state);
 			}
 			if (screen && screen.id === 'payment_screen') {
 				v2html += buildPaymentGatewaysHtml(state);
@@ -6531,8 +6666,10 @@
 					html += buildAddressBlockHtml(state);
 				}
 				if (step.id === 'recipient') {
+					// Адресный блок здесь не рендерим — он живёт только на шаге 1; см. комментарий
+					// в V2-ветке выше. В заказ WC адрес попадает через WcCustomerShippingSync,
+					// поэтому дублировать поля на шаге «Получатель» не нужно.
 					html += buildContactPaymentHtml(state, { includePayment: false });
-					html += buildAddressBlockHtml(state);
 				}
 				if (step.id === 'payment') {
 					html += buildPaymentGatewaysHtml(state);
@@ -6671,6 +6808,150 @@
 		}
 		var office = String(dateBox.cdek_office_code || '').trim();
 		return office === '';
+	}
+
+	/**
+	 * Проверяет, что для выбранной «Почты России» обязательное подтверждение через
+	 * «Рассчитать доставку» ещё не выполнено в этой сессии.
+	 *
+	 * Флаг `post_russia_recalc_confirmed` хранится в step_one (`fulfillment.date`) и:
+	 *  - сбрасывается при выборе post_russia после другого метода;
+	 *  - сбрасывается при смене города/региона/страны;
+	 *  - выставляется в true перед reload, который инициирует кнопка «Рассчитать доставку».
+	 *
+	 * Используется как дополнительный gate в moveForward (legacy + V2): пока пользователь
+	 * не нажал «Рассчитать доставку», на следующий шаг checkout не пускаем.
+	 */
+	function isPostRussiaRecalcRequired(state) {
+		var dateBox = state && state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.date || {}) : {};
+		var methodId = String(dateBox.shipping_method_id || '');
+		if (methodId !== 'post_russia') {
+			return false;
+		}
+		var confirmedRaw = dateBox.post_russia_recalc_confirmed;
+		if (confirmedRaw === true || confirmedRaw === 1 || confirmedRaw === '1' || confirmedRaw === 'true') {
+			return false;
+		}
+		return true;
+	}
+
+	function getPostRussiaRecalcRequiredMessage() {
+		return 'Нажмите «Рассчитать доставку», чтобы подтвердить стоимость для «Почты России».';
+	}
+
+	/**
+	 * Проверяет обязательные адресные поля шага «Адрес и доставка».
+	 *
+	 * Раньше адресный блок дублировался на шаге «Получатель», и валидация адреса жила там.
+	 * Сейчас блок убран со второго шага (см. buildStepPanelHtml), поэтому проверку адреса
+	 * нужно проводить уже на шаге 1: иначе пустой адрес «провалится» во второй шаг,
+	 * и пользователь не сможет его исправить, потому что полей в DOM больше нет.
+	 *
+	 * Возвращает map { fieldKey: 'required' } по пустым обязательным полям.
+	 * Поле `address_2` (квартира/корпус) не считаем обязательным — оно в любом случае опционально.
+	 */
+	function validateStepOneAddressFields(state) {
+		var contact = state && state.frontendStore && state.frontendStore.form
+			? (state.frontendStore.form.contact || {})
+			: {};
+		var addrVis = contact.__address_visibility;
+		if (!addrVis || addrVis.hide_address_fields || !addrVis.required_address_fields) {
+			return {};
+		}
+		var cfg = getStepFourConfig();
+		var ab = cfg.address_block || {};
+		var order = Array.isArray(ab.subfields_order)
+			? ab.subfields_order
+			: ['country', 'state', 'city', 'address_1', 'address_2', 'postcode'];
+		var errors = {};
+		var i;
+		for (i = 0; i < order.length; i += 1) {
+			var key = String(order[i] || '');
+			if (!key || key === 'address_2') {
+				continue;
+			}
+			if (!shouldRenderAddressSubfield(key, contact)) {
+				continue;
+			}
+			if (!trimNonEmpty(contact[key])) {
+				errors[key] = 'required';
+			}
+		}
+		return errors;
+	}
+
+	function getStepOneAddressMissingMessage() {
+		return getUiText('step_4.contact_error_all_required', 'Не все обязательные поля заполнены.');
+	}
+
+	/**
+	 * Раннее блокирующее условие на переходах вперёд для шага «Адрес и доставка».
+	 *
+	 * Возвращает true и показывает соответствующий notify, если:
+	 *  - выбран метод `pvz`, но не выбран ПВЗ на карте (см. isPvzMissingOfficeRequired);
+	 *  - выбран `post_russia`, но «Рассчитать доставку» не нажата (isPostRussiaRecalcRequired).
+	 *
+	 * Используем его до `saveCurrentStepDraft` в обработчиках continue/next/v2-next, чтобы:
+	 *  - не сохранять промежуточный draft с невалидным state;
+	 *  - точно блокировать переход до moveForward (страховка на случай новых вызовов moveForward
+	 *    из других мест без guard'а).
+	 *
+	 * Дополнительно подсвечивает блок ПВЗ — выставляет invalid-флаг шага и скроллит к карточке.
+	 */
+	function shouldBlockAddressDeliveryForward(state, $app) {
+		if (!state || (state.currentStepId !== 'address_delivery' && getCurrentV2ScreenId(state) !== 'delivery_screen')) {
+			return false;
+		}
+		if (isPvzMissingOfficeRequired(state)) {
+			state.frontendStore = state.frontendStore || {};
+			state.frontendStore.form = state.frontendStore.form || {};
+			state.frontendStore.form.errors = state.frontendStore.form.errors || {};
+			state.frontendStore.form.errors.cdek_office_code = 'pvz_required';
+			setStepInvalidState(state, 'address_delivery', true);
+			setV2StepInvalidState(state, 'delivery_screen', true);
+			notify(getStepOneLabel(state, 'pvz_required', 'step_1.errors.pvz_required', 'Выберите пункт выдачи (ПВЗ) на карте, чтобы продолжить.'), 'error');
+			render(state, $app);
+			scrollToFirstInvalidField($app);
+			return true;
+		}
+		if (isPostRussiaRecalcRequired(state)) {
+			setStepInvalidState(state, 'address_delivery', true);
+			setV2StepInvalidState(state, 'delivery_screen', true);
+			notify(getPostRussiaRecalcRequiredMessage(), 'error');
+			render(state, $app);
+			return true;
+		}
+		// Перенесённая со 2-го шага валидация адреса. Адресный блок теперь живёт только на шаге 1,
+		// поэтому пустые обязательные адресные поля должны блокировать переход именно отсюда —
+		// иначе пользователь упадёт на шаге «Получатель» в ошибку «не все обязательные поля заполнены»,
+		// а DOM-полей для исправления у него больше не будет.
+		var addressErrors = validateStepOneAddressFields(state);
+		var addressErrorKeys = Object.keys(addressErrors || {});
+		if (addressErrorKeys.length) {
+			state.frontendStore = state.frontendStore || {};
+			state.frontendStore.form = state.frontendStore.form || {};
+			state.frontendStore.form.errors = state.frontendStore.form.errors || {};
+			var prevContactErrors = state.frontendStore.form.errors.contact && typeof state.frontendStore.form.errors.contact === 'object'
+				? state.frontendStore.form.errors.contact
+				: {};
+			state.frontendStore.form.errors.contact = $.extend({}, prevContactErrors, addressErrors);
+			setStepInvalidState(state, 'address_delivery', true);
+			setV2StepInvalidState(state, 'delivery_screen', true);
+			notify(getStepOneAddressMissingMessage(), 'error');
+			render(state, $app);
+			scrollToFirstInvalidField($app);
+			return true;
+		}
+		return false;
+	}
+
+	function getCurrentV2ScreenId(state) {
+		if (!state || !isV2CheckoutUiEnabled(state)) {
+			return '';
+		}
+		ensureV2ScreenState(state);
+		var screen = state.v2Screens && state.v2Screens[state.v2CurrentIndex];
+		return screen && screen.id ? String(screen.id) : '';
 	}
 
 	function isAddressDeliveryStepReady(state) {
@@ -7704,8 +7985,10 @@
 
 	function render(state, $app) {
 		window.__mpCcCheckoutContextId = state && state.flowContextId ? String(state.flowContextId) : '';
-		window.mpCcSetCdekOfficeCode = function (code) {
+		window.mpCcSetCdekOfficeCode = function (code, officeDetails) {
 			var c = code === undefined || code === null ? '' : String(code).trim();
+			var normalizedDetails = normalizeCdekOfficeDetailsForRequest(officeDetails, c);
+			var hasDetailsPayload = cdekOfficeDetailsHasRenderableFields(normalizedDetails);
 			if (!state || !state.flowContextId) {
 				return $.Deferred().reject({ message: 'MP checkout: no context' }).promise();
 			}
@@ -7716,11 +7999,16 @@
 			var dateBoxOffice = state.frontendStore.fulfillment.date;
 			var prevRaw = dateBoxOffice.cdek_office_code;
 			var prevOffice = prevRaw === undefined || prevRaw === null ? '' : String(prevRaw).trim();
+			var prevCdekOfficeSnapshot =
+				dateBoxOffice.cdek_office && typeof dateBoxOffice.cdek_office === 'object'
+					? $.extend(true, {}, dateBoxOffice.cdek_office)
+					: null;
 			if (c === prevOffice) {
 				return $.Deferred().resolve().promise();
 			}
 			if (shippingMutationInFlight) {
 				pendingCdekOfficeCode = c;
+				pendingCdekOfficeDetails = hasDetailsPayload ? $.extend({}, normalizedDetails) : null;
 				if (!pendingCdekOfficeDeferred) {
 					pendingCdekOfficeDeferred = $.Deferred();
 				}
@@ -7729,10 +8017,14 @@
 			shippingMutationInFlight = true;
 			var queuedResultDeferred = pendingCdekOfficeDeferred;
 			pendingCdekOfficeDeferred = null;
-			var pipeline = postCheckout('cdek_set_office', {
+			var ajaxPayload = {
 				context_id: state.flowContextId,
 				office_code: c
-			}).then(function (response) {
+			};
+			if (hasDetailsPayload) {
+				ajaxPayload.office_details = normalizedDetails;
+			}
+			var pipeline = postCheckout('cdek_set_office', ajaxPayload).then(function (response) {
 				if (!response || !response.success || !response.data) {
 					return $.Deferred().reject(response || {}).promise();
 				}
@@ -7742,6 +8034,12 @@
 						syncFromFlow(state, d.flow, d.cart || {}, paymentFieldPayloadFromAjaxData(d));
 					} else {
 						state.frontendStore.fulfillment.date.cdek_office_code = c;
+						if (c === '') {
+							delete state.frontendStore.fulfillment.date.cdek_office;
+						} else if (hasDetailsPayload) {
+							state.frontendStore.fulfillment.date.cdek_office = $.extend({}, normalizedDetails);
+							state.frontendStore.fulfillment.date.cdek_office.code = c;
+						}
 					}
 				} catch (syncErr) {
 					// Серверный AJAX уже подтвердил сохранение кода ПВЗ — JS-исключение в локальной
@@ -7751,6 +8049,12 @@
 							? state.frontendStore.fulfillment.date
 							: {};
 						state.frontendStore.fulfillment.date.cdek_office_code = c;
+						if (c === '') {
+							delete state.frontendStore.fulfillment.date.cdek_office;
+						} else if (hasDetailsPayload) {
+							state.frontendStore.fulfillment.date.cdek_office = $.extend({}, normalizedDetails);
+							state.frontendStore.fulfillment.date.cdek_office.code = c;
+						}
 					} catch (_assignErr) {}
 					if (window.console && typeof window.console.warn === 'function') {
 						window.console.warn('[mp-cc] cdek_set_office sync warning:', syncErr && syncErr.message ? syncErr.message : syncErr);
@@ -7773,6 +8077,11 @@
 				} else {
 					delete state.frontendStore.fulfillment.date.cdek_office_code;
 				}
+				if (prevCdekOfficeSnapshot) {
+					state.frontendStore.fulfillment.date.cdek_office = prevCdekOfficeSnapshot;
+				} else {
+					delete state.frontendStore.fulfillment.date.cdek_office;
+				}
 				syncStoreWithBackend(state, $app, { force: true });
 			}).always(function () {
 				shippingMutationInFlight = false;
@@ -7786,6 +8095,12 @@
 				return queuedResultDeferred.promise();
 			}
 			return pipeline;
+		};
+		window.mpCcNotifyCheckout = function (message, level) {
+			notify(String(message || ''), level || 'info');
+		};
+		window.mpCcSetShippingRatesLoadingOverlay = function (on) {
+			setShippingRatesLoadingOverlay(Boolean(on), $app);
 		};
 		window.mpCcLogValidationFailure = function (stepId, errorsMap) {
 			logValidationFailure(state, stepId, errorsMap);
@@ -7977,9 +8292,11 @@
 		}
 		if (pendingCdekOfficeCode !== null) {
 			var cdekQueued = pendingCdekOfficeCode;
+			var cdekDetailsQueued = pendingCdekOfficeDetails;
 			pendingCdekOfficeCode = null;
+			pendingCdekOfficeDetails = null;
 			if (typeof window.mpCcSetCdekOfficeCode === 'function') {
-				window.mpCcSetCdekOfficeCode(cdekQueued);
+				window.mpCcSetCdekOfficeCode(cdekQueued, cdekDetailsQueued);
 			}
 		}
 	}
@@ -8052,16 +8369,27 @@
 		var prevMethodIdForPvz = String(dateBox.shipping_method_id || '');
 		if (pendingCdekOfficeCode !== null && methodId !== 'pvz') {
 			pendingCdekOfficeCode = null;
+			pendingCdekOfficeDetails = null;
 			rejectPendingCdekOfficeDeferred({ code: 'office_queue_cleared', reason: 'non_pvz_method' });
 		}
 		if (prevMethodIdForPvz === 'pvz' && methodId !== 'pvz') {
 			if (state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object') {
 				delete state.frontendStore.fulfillment.date.cdek_office_code;
+				delete state.frontendStore.fulfillment.date.cdek_office;
 			}
 			setV2StepInvalidState(state, 'delivery_screen', false);
 			setStepInvalidState(state, 'address_delivery', false);
 			if (state.frontendStore.form.errors && state.frontendStore.form.errors.cdek_office_code) {
 				state.frontendStore.form.errors.cdek_office_code = '';
+			}
+		}
+		// Гейт «Рассчитать доставку» работает только для post_russia. При уходе с post_russia
+		// флаг становится неактуален; при свежем выборе post_russia требуем подтверждения заново.
+		if (state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object') {
+			if (methodId !== 'post_russia') {
+				delete state.frontendStore.fulfillment.date.post_russia_recalc_confirmed;
+			} else if (prevMethodIdForPvz !== 'post_russia') {
+				state.frontendStore.fulfillment.date.post_russia_recalc_confirmed = false;
 			}
 		}
 		var selectedMethod = null;
@@ -8256,6 +8584,11 @@
 			// Явная пустая строка, не delete: на бэке `set_step_answers` делает array_replace,
 			// и при отсутствии ключа в payload остался бы старый код от прошлого города.
 			state.frontendStore.fulfillment.date.cdek_office_code = '';
+			// Смена города/региона инвалидирует подтверждение «Рассчитать доставку» для post_russia —
+			// тариф почты завязан на регион, поэтому требуем повторного подтверждения.
+			if (String(state.frontendStore.fulfillment.date.shipping_method_id || '') === 'post_russia') {
+				state.frontendStore.fulfillment.date.post_russia_recalc_confirmed = false;
+			}
 			var summaryDd = state.frontendStore.cart && state.frontendStore.cart.summary && typeof state.frontendStore.cart.summary === 'object'
 				? state.frontendStore.cart.summary
 				: {};
@@ -8498,9 +8831,10 @@
 			if (!isV2CheckoutUiEnabled(state)) {
 				return;
 			}
-			saveCurrentStepDraft(state).always(function () {
-				moveForward(state, $app);
-			});
+			if (shouldBlockAddressDeliveryForward(state, $app)) {
+				return;
+			}
+			moveForward(state, $app);
 		});
 
 		if (!isFlagEnabled(state, flagNames.multiStepFlow, true)) {
@@ -8508,9 +8842,10 @@
 		}
 
 		$app.find('.mp-cc-step-card__cta').off('click').on('click', function () {
-			saveCurrentStepDraft(state).always(function () {
-				moveForward(state, $app);
-			});
+			if (shouldBlockAddressDeliveryForward(state, $app)) {
+				return;
+			}
+			moveForward(state, $app);
 		});
 		$app.find('.mp-cc-step-card__head[data-step-open]').off('click').on('click', function () {
 			var targetStep = String($(this).attr('data-step-open') || '');
@@ -8529,15 +8864,17 @@
 		});
 
 		$actions.find('[data-nav="next"]').off('click').on('click', function () {
-			saveCurrentStepDraft(state).always(function () {
-				moveForward(state, $app);
-			});
+			if (shouldBlockAddressDeliveryForward(state, $app)) {
+				return;
+			}
+			moveForward(state, $app);
 		});
 
 		$(selectors.summary).find('[data-summary-action="continue"]').off('click').on('click', function () {
-			saveCurrentStepDraft(state).always(function () {
-				moveForward(state, $app);
-			});
+			if (shouldBlockAddressDeliveryForward(state, $app)) {
+				return;
+			}
+			moveForward(state, $app);
 		});
 
 		$(selectors.summary).find('[data-mp-cc-recalc-shipping="1"]').off('click').on('click', function () {
@@ -8564,6 +8901,16 @@
 			}
 			var runSave = function () {
 				flushContactFormFromDom(state, $app);
+				// Подтверждаем «Рассчитать доставку» для post_russia: после reload session_get_state
+				// восстановит этот флаг, и moveForward не будет блокировать переход на следующий шаг.
+				state.frontendStore = state.frontendStore || {};
+				state.frontendStore.fulfillment = state.frontendStore.fulfillment || {};
+				state.frontendStore.fulfillment.date = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+					? state.frontendStore.fulfillment.date
+					: {};
+				if (String(state.frontendStore.fulfillment.date.shipping_method_id || '') === 'post_russia') {
+					state.frontendStore.fulfillment.date.post_russia_recalc_confirmed = true;
+				}
 				saveCurrentStepDraft(state).then(function () {
 					shippingRecalcPending = false;
 					window.location.reload();
@@ -8794,6 +9141,10 @@
 				// Явная пустая строка (см. afterDadataContactGeocode) — иначе array_replace
 				// в session_set_answers оставит старый код от прошлого города.
 				state.frontendStore.fulfillment.date.cdek_office_code = '';
+				// Смена города инвалидирует подтверждение «Рассчитать доставку» для post_russia.
+				if (String(state.frontendStore.fulfillment.date.shipping_method_id || '') === 'post_russia') {
+					state.frontendStore.fulfillment.date.post_russia_recalc_confirmed = false;
+				}
 				invalidateV2DownstreamFrom(state, 0);
 				var summaryCity = state.frontendStore.cart && state.frontendStore.cart.summary && typeof state.frontendStore.cart.summary === 'object'
 					? state.frontendStore.cart.summary

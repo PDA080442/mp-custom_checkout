@@ -16,6 +16,7 @@ use MP\CustomCheckout\Routing\CheckoutDateAvailabilityEngine;
 use MP\CustomCheckout\Routing\CheckoutRouteContext;
 use MP\CustomCheckout\Routing\CheckoutScenarioRules;
 use MP\CustomCheckout\Routing\CheckoutSuccessRouteConfig;
+use MP\CustomCheckout\Checkout\Diagnostics\CheckoutAjaxPerf;
 use MP\CustomCheckout\Checkout\Routing\CheckoutSessionService;
 use MP\CustomCheckout\Routing\CheckoutStepManager;
 use MP\CustomCheckout\Settings\DefaultFeatureFlagsRegistry;
@@ -41,6 +42,7 @@ final class CheckoutAjaxHooks {
 	private const CDEK_COUNTRY_OFFICES_BACKUP_OPTION_LEGACY = 'mp_cc_cdek_offices_country_backup';
 
 	public static function register(): void {
+		CheckoutAjaxPerf::register();
 		add_action( 'wp_ajax_' . self::ACTION, array( __CLASS__, 'handle' ) );
 		add_action( 'wp_ajax_nopriv_' . self::ACTION, array( __CLASS__, 'handle' ) );
 	}
@@ -49,7 +51,9 @@ final class CheckoutAjaxHooks {
 		if ( ! DependencyFailureGuard::is_woocommerce_integration_ready() ) {
 			wp_send_json_error( array( 'message' => __( 'WooCommerce недоступен.', 'mp-custom-checkout' ) ), 503 );
 		}
+		CheckoutAjaxPerf::mark_request_start();
 		if ( function_exists( 'wc_load_cart' ) ) {
+			$t_cart_load = microtime( true );
 			try {
 				wc_load_cart();
 			} catch ( \Throwable $cart_load_e ) {
@@ -65,6 +69,7 @@ final class CheckoutAjaxHooks {
 					)
 				);
 			}
+			CheckoutAjaxPerf::add_segment_ms( 'wc_load_cart', microtime( true ) - $t_cart_load );
 		}
 		check_ajax_referer( 'mp_cc_checkout', 'nonce' );
 		$sub_action = isset( $_POST['sub_action'] ) ? sanitize_key( wp_unslash( $_POST['sub_action'] ) ) : '';
@@ -76,6 +81,7 @@ final class CheckoutAjaxHooks {
 			do_action( 'mp_custom_checkout_log', 'warning', '[ajax] unknown_sub_action', array( 'source' => 'ajax', 'event_type' => 'ajax_error', 'sub_action' => $sub_action ) );
 			wp_send_json_error( array( 'code' => 'unknown_sub_action', 'message' => __( 'Неизвестное действие checkout.', 'mp-custom-checkout' ) ), 400 );
 		}
+		CheckoutAjaxPerf::begin_request( $sub_action );
 		try {
 			if ( self::handle_session_sub_action( $sub_action ) ) {
 				return;
@@ -101,7 +107,23 @@ final class CheckoutAjaxHooks {
 
 	private static function handle_session_sub_action( string $sub_action ): bool {
 		if ( self::is_session_sub_action( $sub_action ) && 'session_abandon' !== $sub_action && ! self::validate_context_id() ) {
-			wp_send_json_error( array( 'code' => 'stale_context', 'message' => __( 'Сессия checkout устарела. Обновите страницу.', 'mp-custom-checkout' ) ), 409 );
+			// Read-only session_get_state на первой загрузке (особенно incognito) часто видит несовпадение
+			// localized.context_id и flow в WC-сессии (cookie/sticky-session), что давало 409 + ложное
+			// «Не удалось синхронизировать шаг». Тихо пропускаем — ответ вернёт актуальный flow.context_id,
+			// клиент сам подхватит его через syncFromFlow. Все мутирующие sub_action остаются 409.
+			if ( 'session_get_state' === $sub_action ) {
+				do_action(
+					'mp_custom_checkout_log',
+					'info',
+					'[stale_context] soft_recover_get_state',
+					array(
+						'sub_action' => $sub_action,
+						'posted_ctx' => isset( $_POST['context_id'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['context_id'] ) ) : '',
+					)
+				);
+			} else {
+				wp_send_json_error( array( 'code' => 'stale_context', 'message' => __( 'Сессия checkout устарела. Обновите страницу.', 'mp-custom-checkout' ) ), 409 );
+			}
 		}
 		if ( 'session_set_step' === $sub_action ) {
 			$step_id = isset( $_POST['step_id'] ) ? sanitize_key( wp_unslash( $_POST['step_id'] ) ) : '';
@@ -152,8 +174,16 @@ final class CheckoutAjaxHooks {
 			if ( 'address_delivery' === $step_id && isset( $_POST['merge_contact_billing'] ) && is_array( $_POST['merge_contact_billing'] ) ) {
 				$merge_contact_billing = self::sanitize_payload_shape( wp_unslash( $_POST['merge_contact_billing'] ), 4, 80 );
 			}
+			$perf_v1            = FeatureFlagResolver::is_enabled( DefaultFeatureFlagsRegistry::FLAG_CHECKOUT_PERF_V1, true );
+			$merged_recipient   = false;
+			$persisted_main_step = false;
 			if ( 'address_delivery' === $step_id && ! empty( $merge_contact_billing ) ) {
-				CheckoutSessionService::set_step_answers( 'recipient', $merge_contact_billing );
+				if ( ! $perf_v1 || ! CheckoutSessionService::answers_equal_after_merge( 'recipient', $merge_contact_billing ) ) {
+					$t_rec = microtime( true );
+					CheckoutSessionService::set_step_answers( 'recipient', $merge_contact_billing );
+					CheckoutAjaxPerf::add_segment_ms( 'set_step_answers_recipient', microtime( true ) - $t_rec );
+					$merged_recipient = true;
+				}
 			}
 			if ( in_array( $step_id, array( 'address_delivery', 'date', 'conditions' ), true ) ) {
 				$flow          = CheckoutSessionService::get_flow();
@@ -176,10 +206,12 @@ final class CheckoutAjaxHooks {
 						);
 					}
 				}
+				// До merge: иначе selected_date из date_conditions попадает в merge и ложно триггерит валидацию при смене метода на address_delivery.
+				$client_sent_selected_date = isset( $answers['selected_date'] ) && '' !== trim( (string) $answers['selected_date'] );
 				// Частичный payload (напр. только с шага «условия») дополняем сохранённым date_conditions.
 				$answers = array_replace_recursive( $existing_date, $answers );
-				// Дата выбирается на отдельном шаге (если включён). Для address_delivery валидируем только доставку.
-				if ( in_array( $step_id, array( 'date', 'conditions' ), true ) || ! empty( $answers['selected_date'] ) ) {
+				// На date/conditions дата обязательна; на address_delivery — только если клиент явно прислал selected_date (не подмешанный из сессии).
+				if ( in_array( $step_id, array( 'date', 'conditions' ), true ) || $client_sent_selected_date ) {
 					if ( ! self::validate_date_answers_payload( $answers ) ) {
 						$message = SafeSettingsResolver::get( 'step_3.copy.errors.invalid_date', __( 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.', 'mp-custom-checkout' ) );
 						$message = is_string( $message ) && '' !== trim( $message ) ? $message : __( 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.', 'mp-custom-checkout' );
@@ -196,11 +228,26 @@ final class CheckoutAjaxHooks {
 					);
 				}
 			}
-			CheckoutSessionService::set_step_answers( $step_id, $answers );
-			if ( ! $skip_wc_resync ) {
-				WcCustomerShippingSync::after_session_set_answers( $step_id );
+			$skip_main_persist = $perf_v1 && CheckoutSessionService::answers_equal_after_merge( $step_id, $answers );
+			if ( ! $skip_main_persist ) {
+				$t_set = microtime( true );
+				CheckoutSessionService::set_step_answers( $step_id, $answers );
+				CheckoutAjaxPerf::add_segment_ms( 'set_step_answers_main', microtime( true ) - $t_set );
+				$persisted_main_step = true;
 			}
-			wp_send_json_success( array( 'sub_action' => $sub_action, 'step_id' => $step_id, 'flow' => self::build_flow_payload(), 'cart' => CheckoutRouteContext::get_cart_data() ) );
+			$need_wc_resync = ! $skip_wc_resync && ( ! $perf_v1 || $merged_recipient || $persisted_main_step );
+			if ( $need_wc_resync ) {
+				$t_sync = microtime( true );
+				WcCustomerShippingSync::after_session_set_answers( $step_id );
+				CheckoutAjaxPerf::add_segment_ms( 'wc_after_session_set_answers', microtime( true ) - $t_sync );
+			}
+			$t_flow = microtime( true );
+			$flow_payload = self::build_flow_payload();
+			CheckoutAjaxPerf::add_segment_ms( 'build_flow_payload', microtime( true ) - $t_flow );
+			$t_cart_d = microtime( true );
+			$cart_payload = CheckoutRouteContext::get_cart_data();
+			CheckoutAjaxPerf::add_segment_ms( 'get_cart_data', microtime( true ) - $t_cart_d );
+			wp_send_json_success( array( 'sub_action' => $sub_action, 'step_id' => $step_id, 'flow' => $flow_payload, 'cart' => $cart_payload ) );
 		}
 		if ( 'session_set_scenario' === $sub_action ) {
 			$scenario_raw = isset( $_POST['scenario'] ) ? sanitize_key( wp_unslash( $_POST['scenario'] ) ) : '';
@@ -878,11 +925,61 @@ final class CheckoutAjaxHooks {
 			);
 		}
 
+		$office_details_post = array();
+		if ( isset( $_POST['office_details'] ) && is_array( $_POST['office_details'] ) ) {
+			$office_details_post = self::sanitize_cdek_office_details_from_post( wp_unslash( $_POST['office_details'] ) );
+		}
+
 		if ( '' === $code ) {
 			// Явная пустая строка — иначе array_replace в set_step_answers оставит старый код (ключ из unset отсутствует в payload).
 			$step_one['cdek_office_code'] = '';
+			$step_one['cdek_office']     = array();
 		} else {
 			$step_one['cdek_office_code'] = $code;
+			if ( ! empty( $office_details_post ) ) {
+				$office_details_post['code'] = $code;
+				$step_one['cdek_office']     = $office_details_post;
+			}
+			// Если office_details не прислали — не трогаем ключ cdek_office: merge сохранит прежнее значение (§29.1).
+		}
+		if (
+			FeatureFlagResolver::is_enabled( DefaultFeatureFlagsRegistry::FLAG_CHECKOUT_PERF_V1, true )
+			&& CheckoutSessionService::answers_equal_after_merge( ScenarioStepRegistry::STEP_ADDRESS_DELIVERY, $step_one )
+		) {
+			$response = array(
+				'sub_action' => 'cdek_set_office',
+			);
+			try {
+				$response['flow'] = self::build_flow_payload();
+			} catch ( \Throwable $flow_e ) {
+				do_action(
+					'mp_custom_checkout_log',
+					'warning',
+					'[pvz] office_save_flow_payload_failed',
+					array(
+						'source'          => 'ajax',
+						'event_type'      => 'pvz_office_flow_payload_failed',
+						'exception_class' => get_class( $flow_e ),
+						'exception_msg'   => substr( (string) $flow_e->getMessage(), 0, 300 ),
+					)
+				);
+			}
+			try {
+				$response['cart'] = CheckoutRouteContext::get_cart_data();
+			} catch ( \Throwable $cart_e ) {
+				do_action(
+					'mp_custom_checkout_log',
+					'warning',
+					'[pvz] office_save_cart_payload_failed',
+					array(
+						'source'          => 'ajax',
+						'event_type'      => 'pvz_office_cart_payload_failed',
+						'exception_class' => get_class( $cart_e ),
+						'exception_msg'   => substr( (string) $cart_e->getMessage(), 0, 300 ),
+					)
+				);
+			}
+			wp_send_json_success( $response );
 		}
 		CheckoutSessionService::set_step_answers( ScenarioStepRegistry::STEP_ADDRESS_DELIVERY, $step_one );
 		$flow_ctx = CheckoutSessionService::get_flow();
@@ -968,6 +1065,31 @@ final class CheckoutAjaxHooks {
 			$response['wc_sync_soft_fail'] = true;
 		}
 		wp_send_json_success( $response );
+	}
+
+	/**
+	 * Санитизация деталей ПВЗ из POST для записи в answers.step_one.cdek_office.
+	 *
+	 * @param array<string, mixed> $raw
+	 * @return array<string, string>
+	 */
+	private static function sanitize_cdek_office_details_from_post( array $raw ): array {
+		$allowed = array( 'code', 'name', 'address', 'city', 'postal_code', 'region', 'country_code' );
+		$out     = array();
+		foreach ( $allowed as $key ) {
+			if ( ! array_key_exists( $key, $raw ) ) {
+				continue;
+			}
+			$val = sanitize_text_field( (string) $raw[ $key ] );
+			if ( 'postal_code' === $key ) {
+				$val = substr( $val, 0, 16 );
+			}
+			if ( '' !== $val ) {
+				$out[ $key ] = $val;
+			}
+		}
+
+		return $out;
 	}
 
 	/**

@@ -591,6 +591,9 @@ final class SafeSettingsResolver {
 							'gift_bar_input_text'  => '#46372a',
 							'gift_bar_button_bg'   => '#121212',
 							'gift_bar_button_text' => '#ffffff',
+							'gift_peer_seal_icon_color'   => '#896a3a',
+							'gift_peer_seal_ring_inner'   => '#caa36d',
+							'gift_peer_seal_ring_outer'   => '#ceb284',
 						),
 						'error_message' => 'Выберите способ оплаты.',
 						'messages' => array(
@@ -815,6 +818,18 @@ final class SafeSettingsResolver {
 					'layout' => array(
 						'global_density' => 'comfortable',
 						'sidebar_behavior' => 'sticky',
+					),
+					'progress_step_index' => array(
+						'pending_bg'       => '#ffffff',
+						'pending_digit'    => '#666666',
+						'pending_border'   => '#e5e5e5',
+						'active_bg'        => '#2563eb',
+						'active_digit'     => '#ffffff',
+						'active_border'    => '#2563eb',
+						'complete_bg'      => '#15803d',
+						'complete_digit'   => '#ffffff',
+						'complete_border'  => '#15803d',
+						'border_width'     => '2px',
 					),
 					'note' => __( 'Глобальные CSS-переменные задаются в служебном разделе (design_tokens). Стили шагов — в настройках шагов 1–4.', 'mp-custom-checkout' ),
 				);

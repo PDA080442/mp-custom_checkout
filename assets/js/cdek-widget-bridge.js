@@ -413,9 +413,26 @@
 					$live.text(labels.map_pick_failed || 'Не удалось получить код пункта.');
 					return;
 				}
+				var pickedDetail = null;
+				var pi;
+				for (pi = 0; pi < pickupPoints.length; pi++) {
+					var cand = pickupPoints[pi] || {};
+					if (String(cand.id || '') === String(val)) {
+						pickedDetail = {
+							code: String(cand.id || val || ''),
+							name: cand.title || cand.name || '',
+							address: cand.address || '',
+							city: cand.city || '',
+							postal_code: cand.postal_code || cand.postcode || cand.postalCode || '',
+							region: cand.region || cand.state || cand.region_code || '',
+							country_code: cand.country_code || cand.country || cand.countryCode || ''
+						};
+						break;
+					}
+				}
 				ctx.chosenThisOpen = true;
 				window
-					.mpCcSetCdekOfficeCode(String(val))
+					.mpCcSetCdekOfficeCode(String(val), pickedDetail)
 					.fail(function () {
 						ctx.chosenThisOpen = false;
 					})
@@ -659,6 +676,12 @@
 
 			function onChoose(_type, _tariff, address) {
 				if (chosenInFlight) {
+					if (typeof window.mpCcNotifyCheckout === 'function') {
+						window.mpCcNotifyCheckout(
+							String(labels.wait_pvz_save || 'Подождите, сохраняем выбранный пункт…'),
+							'info'
+						);
+					}
 					return;
 				}
 				var code = address && address.code ? String(address.code) : '';
@@ -666,10 +689,16 @@
 					return;
 				}
 				chosenInFlight = true;
+				if (typeof window.mpCcSetShippingRatesLoadingOverlay === 'function') {
+					window.mpCcSetShippingRatesLoadingOverlay(true);
+				}
 				window
-					.mpCcSetCdekOfficeCode(code)
+					.mpCcSetCdekOfficeCode(code, address && typeof address === 'object' ? address : null)
 					.always(function () {
 						chosenInFlight = false;
+						if (typeof window.mpCcSetShippingRatesLoadingOverlay === 'function') {
+							window.mpCcSetShippingRatesLoadingOverlay(false);
+						}
 					})
 					.then(function () {
 						maybeCloseWidgetAfterSave();

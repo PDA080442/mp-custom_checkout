@@ -56,6 +56,7 @@ final class FeatureFlagResolver {
 			DefaultFeatureFlagsRegistry::FLAG_DISCOUNT_BLOCK_PLACEMENT => $all[ DefaultFeatureFlagsRegistry::FLAG_DISCOUNT_BLOCK_PLACEMENT ],
 			DefaultFeatureFlagsRegistry::FLAG_CHECKOUT_TESTING_MODE    => $all[ DefaultFeatureFlagsRegistry::FLAG_CHECKOUT_TESTING_MODE ],
 			DefaultFeatureFlagsRegistry::FLAG_ADMIN_LIVE_PREVIEW       => $all[ DefaultFeatureFlagsRegistry::FLAG_ADMIN_LIVE_PREVIEW ],
+			DefaultFeatureFlagsRegistry::FLAG_CHECKOUT_PERF_V1         => $all[ DefaultFeatureFlagsRegistry::FLAG_CHECKOUT_PERF_V1 ],
 		);
 	}
 

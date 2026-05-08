@@ -85,10 +85,30 @@ final class WcCustomerShippingSync {
 		$scenario = CheckoutScenarioRules::elevate_scenario_if_pickup_but_carrier_method_selected( $scenario, $merged_delivery );
 
 		OrderMetaHooks::apply_contact_location_to_customer( $wc->customer, $scenario, $contact );
+		$t0       = microtime( true );
 		$wc->customer->save();
+		$ms_save  = ( microtime( true ) - $t0 ) * 1000;
 
+		$t1       = microtime( true );
 		CdekWcSessionBridge::sync_session_before_cart_totals();
+		$ms_bridge = ( microtime( true ) - $t1 ) * 1000;
+
+		$t2       = microtime( true );
 		$wc->cart->calculate_totals();
+		$ms_calc  = ( microtime( true ) - $t2 ) * 1000;
+
+		if ( ( $ms_save + $ms_bridge + $ms_calc ) >= 1000 ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'warning',
+				'[perf] wc_sync_slow_segments',
+				array(
+					'customer_save_ms' => round( $ms_save, 2 ),
+					'cdek_bridge_ms'   => round( $ms_bridge, 2 ),
+					'calculate_totals_ms' => round( $ms_calc, 2 ),
+				)
+			);
+		}
 
 		self::purge_ghost_official_cdek_chosen_rate();
 		self::log_if_chosen_shipping_not_in_packages();

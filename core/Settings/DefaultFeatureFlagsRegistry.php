@@ -33,6 +33,9 @@ final class DefaultFeatureFlagsRegistry {
 
 	public const FLAG_ADMIN_LIVE_PREVIEW = 'admin_live_preview';
 
+	/** Оптимизации производительности checkout (кэш виджета СДЭК, идемпотентность session_set_answers, батчинг логов). Выключить — прежнее поведение. */
+	public const FLAG_CHECKOUT_PERF_V1 = 'checkout_perf_v1';
+
 	/**
 	 * Значения флагов по умолчанию (bool или скаляр).
 	 *
@@ -49,6 +52,7 @@ final class DefaultFeatureFlagsRegistry {
 			self::FLAG_DISCOUNT_BLOCK_PLACEMENT  => true,
 			self::FLAG_CHECKOUT_TESTING_MODE     => false,
 			self::FLAG_ADMIN_LIVE_PREVIEW        => true,
+			self::FLAG_CHECKOUT_PERF_V1          => true,
 		);
 	}
 }

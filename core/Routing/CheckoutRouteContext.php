@@ -216,17 +216,23 @@ final class CheckoutRouteContext {
 				&& ! $requires_address_for_shipping
 			)
 			|| $wc_address_shipping_ready;
+		// Раньше в этот список входил и STEP_RECIPIENT — защита от подмешивания «чужой» WC-доставки,
+		// пока на шаге «Получатель» был адресный блок и адрес мог меняться там. Сейчас адресный блок
+		// со 2-го шага убран (пользователь заполняет адрес только на шаге 1), поэтому на шаге
+		// «Получатель» суппресс уже не имеет смысла: тариф либо выбран и записан в answers.step_one,
+		// либо метод не требует адреса. Если оставить здесь STEP_RECIPIENT, строка «Доставка» в сводке
+		// исчезает на шагах 2/3/4, как только session_shipping_price теряется/обнуляется (например,
+		// при пересчёте корзины WC). Видим только итог, но не саму строку — это сбивает пользователя.
 		$steps_pre_payment     = array(
 			ScenarioStepRegistry::STEP_ADDRESS_DELIVERY,
-			ScenarioStepRegistry::STEP_RECIPIENT,
 		);
 		$suppress_shipping_in_summary = false;
 		if ( $cart->needs_shipping() ) {
 			if ( ScenarioStepRegistry::SCENARIO_PICKUP === $scenario_for_shipping ) {
 				$suppress_shipping_in_summary = true;
 			} elseif ( ! $woocommerce_pricing && '' !== $current_step_id && in_array( $current_step_id, $steps_pre_payment, true ) && ! $session_shipping_price_chosen ) {
-				// Пока покупатель не выбрал тариф на шаге 1, не подмешиваем «чужую» WC-доставку в строки и итог.
-				// После выбора цена лежит в answers.step_one — показываем и включаем в total.
+				// Пока покупатель на шаге 1 ещё не выбрал тариф (нет shipping_price в answers.step_one
+				// и WC не посчитал rate по адресу), не подмешиваем «чужую» WC-доставку в строки и итог.
 				$suppress_shipping_in_summary = true;
 			}
 		}

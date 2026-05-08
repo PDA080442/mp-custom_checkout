@@ -25,6 +25,15 @@ final class OrderMetaKeys {
 	public const CDEK_OFFICE_CODE = '_mp_cc_cdek_office_code';
 	public const CDEK_RATE_ID     = '_mp_cc_cdek_rate_id';
 
+	/** Полный снимок ПВЗ СДЭК с карты (название, адрес, город и т.д.). */
+	public const CDEK_OFFICE_NAME        = '_mp_cc_cdek_office_name';
+	public const CDEK_OFFICE_ADDRESS     = '_mp_cc_cdek_office_address';
+	public const CDEK_OFFICE_CITY        = '_mp_cc_cdek_office_city';
+	public const CDEK_OFFICE_POSTAL_CODE = '_mp_cc_cdek_office_postal_code';
+	public const CDEK_OFFICE_REGION      = '_mp_cc_cdek_office_region';
+	public const CDEK_OFFICE_COUNTRY     = '_mp_cc_cdek_office_country_code';
+	public const CDEK_OFFICE_PAYLOAD     = '_mp_cc_cdek_office_payload';
+
 	// Selected fulfillment date.
 	public const SELECTED_DATE       = '_mp_cc_selected_date';
 	public const SELECTED_DATE_LABEL = '_mp_cc_selected_date_label';
@@ -74,6 +83,13 @@ final class OrderMetaKeys {
 			self::PICKUP_POINT_PAYLOAD,
 			self::CDEK_OFFICE_CODE,
 			self::CDEK_RATE_ID,
+			self::CDEK_OFFICE_NAME,
+			self::CDEK_OFFICE_ADDRESS,
+			self::CDEK_OFFICE_CITY,
+			self::CDEK_OFFICE_POSTAL_CODE,
+			self::CDEK_OFFICE_REGION,
+			self::CDEK_OFFICE_COUNTRY,
+			self::CDEK_OFFICE_PAYLOAD,
 			self::SELECTED_DATE,
 			self::SELECTED_DATE_LABEL,
 			self::CONDITIONS_CONFIRMED,

@@ -70,6 +70,7 @@ final class FrontendAssetsHooks {
 
 		wp_enqueue_style( self::HANDLE_STYLE, MP_CUSTOM_CHECKOUT_URL . 'assets/css/checkout-frontend.css', array(), $version );
 		wp_add_inline_style( self::HANDLE_STYLE, self::build_design_tokens_css() );
+		wp_add_inline_style( self::HANDLE_STYLE, self::build_progress_step_index_css() );
 		wp_add_inline_style( self::HANDLE_STYLE, self::build_checkout_layout_css() );
 		wp_add_inline_style( self::HANDLE_STYLE, self::build_motion_runtime_css() );
 
@@ -493,7 +494,7 @@ final class FrontendAssetsHooks {
 	 * Компактный CSS для первого кадра: токены на #mp-cc-checkout, фон body, stacked-timeline.
 	 */
 	private static function build_critical_checkout_shell_css(): string {
-		$vars = self::merged_shell_design_variables();
+		$vars = array_merge( self::merged_shell_design_variables(), self::progress_step_index_shell_variables() );
 		$decl = array();
 		foreach ( $vars as $name => $value ) {
 			$decl[] = '--mp-cc-' . $name . ':' . $value . ';';
@@ -531,6 +532,66 @@ final class FrontendAssetsHooks {
 	}
 
 	/**
+	 * CSS custom properties для кружков с номером шага (вертикальный таймлайн), из раздела styles.
+	 *
+	 * @return array<string, string> имя без префикса --mp-cc- (с дефисами) => значение
+	 */
+	private static function progress_step_index_shell_variables(): array {
+		$defaults = array(
+			'pending_bg'       => '#ffffff',
+			'pending_digit'    => '#666666',
+			'pending_border'   => '#e5e5e5',
+			'active_bg'        => '#2563eb',
+			'active_digit'     => '#ffffff',
+			'active_border'    => '#2563eb',
+			'complete_bg'      => '#15803d',
+			'complete_digit'   => '#ffffff',
+			'complete_border'  => '#15803d',
+			'border_width'     => '2px',
+		);
+		$styles = SafeSettingsResolver::get_section( OptionKeys::SECTION_STYLES );
+		$cfg    = isset( $styles['progress_step_index'] ) && is_array( $styles['progress_step_index'] ) ? $styles['progress_step_index'] : array();
+		$merged = array_replace_recursive( $defaults, array_intersect_key( $cfg, $defaults ) );
+		$key_to_var = array(
+			'pending_bg'       => 'progress-index-pending-bg',
+			'pending_digit'    => 'progress-index-pending-digit',
+			'pending_border'   => 'progress-index-pending-border',
+			'active_bg'        => 'progress-index-active-bg',
+			'active_digit'     => 'progress-index-active-digit',
+			'active_border'    => 'progress-index-active-border',
+			'complete_bg'      => 'progress-index-complete-bg',
+			'complete_digit'   => 'progress-index-complete-digit',
+			'complete_border'  => 'progress-index-complete-border',
+		);
+		$out = array();
+		foreach ( $key_to_var as $cfg_key => $css_name ) {
+			$raw = isset( $merged[ $cfg_key ] ) ? (string) $merged[ $cfg_key ] : $defaults[ $cfg_key ];
+			$norm = self::normalize_admin_hex_color( $raw );
+			$hex  = function_exists( 'sanitize_hex_color' ) ? sanitize_hex_color( $norm ) : '';
+			$out[ $css_name ] = $hex ? self::sanitize_css_token_value( $hex ) : self::sanitize_css_token_value( (string) $defaults[ $cfg_key ] );
+		}
+		$bw_raw = isset( $merged['border_width'] ) ? (string) $merged['border_width'] : $defaults['border_width'];
+		$bw     = self::sanitize_css_size_value( $bw_raw );
+		$out['progress-index-border-width'] = '' !== $bw ? $bw : self::sanitize_css_token_value( (string) $defaults['border_width'] );
+		return $out;
+	}
+
+	private static function build_progress_step_index_css(): string {
+		$props = self::progress_step_index_shell_variables();
+		if ( empty( $props ) ) {
+			return '';
+		}
+		$decl = array();
+		foreach ( $props as $name => $value ) {
+			if ( '' === $value ) {
+				continue;
+			}
+			$decl[] = '--mp-cc-' . $name . ':' . $value . ';';
+		}
+		return '#mp-cc-checkout{' . implode( '', $decl ) . '}';
+	}
+
+	/**
 	 * CSS-свойства для ширины контента и вертикальных отступов всего checkout (переменные на #mp-cc-checkout).
 	 */
 	private static function checkout_shell_layout_inline_properties(): string {
@@ -555,6 +616,23 @@ final class FrontendAssetsHooks {
 		$value = trim( wp_strip_all_tags( $value ) );
 		$value = str_replace( array( ';', '{', '}', "\n", "\r", "\t" ), '', $value );
 		return $value;
+	}
+
+	/**
+	 * Подготовка цвета для sanitize_hex_color: допускает ввод без «#» (fff / 2a1f28).
+	 */
+	private static function normalize_admin_hex_color( string $raw ): string {
+		$raw = trim( $raw );
+		if ( '' === $raw ) {
+			return '';
+		}
+		if ( '#' === $raw[0] ) {
+			return $raw;
+		}
+		if ( preg_match( '/^[0-9a-fA-F]{3}$/', $raw ) || preg_match( '/^[0-9a-fA-F]{6}$/', $raw ) ) {
+			return '#' . $raw;
+		}
+		return $raw;
 	}
 
 	private static function sanitize_css_size_value( string $value ): string {
