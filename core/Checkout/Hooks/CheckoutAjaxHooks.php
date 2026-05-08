@@ -132,13 +132,49 @@ final class CheckoutAjaxHooks {
 			}
 			$flow    = CheckoutSessionService::get_flow();
 			$manager = new CheckoutStepManager( is_array( $flow ) ? $flow : null );
-			if ( ! $manager->can_navigate_to( $step_id ) ) {
-				wp_send_json_error( array( 'code' => 'invalid_step_navigation', 'message' => __( 'Переход на указанный шаг недоступен.', 'mp-custom-checkout' ) ), 400 );
-			}
-			$current_step_id = $manager->get_current_step_id();
 			$visible         = $manager->get_visible_step_ids();
 			$target_idx      = array_search( $step_id, $visible, true );
+			$current_step_id = $manager->get_current_step_id();
 			$current_idx     = null !== $current_step_id ? array_search( $current_step_id, $visible, true ) : false;
+			if ( false === $target_idx ) {
+				wp_send_json_error( array( 'code' => 'invalid_step_navigation', 'message' => __( 'Переход на указанный шаг недоступен.', 'mp-custom-checkout' ) ), 400 );
+			}
+			// can_navigate_to разрешает только current..current+1. Если client прыгнул дальше
+			// (типичный случай — гонка: предыдущий session_set_step не записался из-за исключения
+			// в WC sync, а пользователь уже перешёл на следующий экран), мы не отдаём 400 и тем
+			// самым не откатываем юзера. Вместо этого «догоняем» серверный current_step до
+			// target-1 (если это легальная visible-цепочка), затем продолжаем как обычно.
+			if ( ! $manager->can_navigate_to( $step_id ) ) {
+				if ( false !== $current_idx && (int) $target_idx > (int) $current_idx + 1 ) {
+					do_action(
+						'mp_custom_checkout_log',
+						'warning',
+						'[step_nav] catchup_intermediate_steps',
+						array(
+							'from'      => (string) $current_step_id,
+							'to'        => $step_id,
+							'gap'       => (int) $target_idx - (int) $current_idx,
+							'visible'   => $visible,
+						)
+					);
+					$catchup_idx = (int) $target_idx - 1;
+					while ( $catchup_idx > (int) $current_idx ) {
+						$intermediate = isset( $visible[ $catchup_idx ] ) ? (string) $visible[ $catchup_idx ] : '';
+						if ( '' === $intermediate ) {
+							break;
+						}
+						CheckoutSessionService::set_current_step( $intermediate );
+						$catchup_idx--;
+					}
+					$flow            = CheckoutSessionService::get_flow();
+					$manager         = new CheckoutStepManager( is_array( $flow ) ? $flow : null );
+					$current_step_id = $manager->get_current_step_id();
+					$current_idx     = null !== $current_step_id ? array_search( $current_step_id, $visible, true ) : false;
+				}
+				if ( ! $manager->can_navigate_to( $step_id ) ) {
+					wp_send_json_error( array( 'code' => 'invalid_step_navigation', 'message' => __( 'Переход на указанный шаг недоступен.', 'mp-custom-checkout' ) ), 400 );
+				}
+			}
 			if (
 				'address_delivery' === $current_step_id
 				&& false !== $current_idx
@@ -152,8 +188,8 @@ final class CheckoutAjaxHooks {
 				array(
 					'sub_action'    => $sub_action,
 					'current_step'  => $step_id,
-					'flow'          => self::build_flow_payload(),
-					'cart'          => CheckoutRouteContext::get_cart_data(),
+					'flow'          => self::safe_build_flow_payload( $sub_action, $step_id ),
+					'cart'          => self::safe_get_cart_data( $sub_action, $step_id ),
 				)
 			);
 		}
@@ -238,14 +274,30 @@ final class CheckoutAjaxHooks {
 			$need_wc_resync = ! $skip_wc_resync && ( ! $perf_v1 || $merged_recipient || $persisted_main_step );
 			if ( $need_wc_resync ) {
 				$t_sync = microtime( true );
-				WcCustomerShippingSync::after_session_set_answers( $step_id );
+				try {
+					WcCustomerShippingSync::after_session_set_answers( $step_id );
+				} catch ( \Throwable $sync_e ) {
+					do_action(
+						'mp_custom_checkout_log',
+						'warning',
+						'[ajax] wc_after_session_set_answers_failed',
+						array(
+							'source'          => 'ajax',
+							'event_type'      => 'wc_sync_failed',
+							'sub_action'      => $sub_action,
+							'step_id'         => $step_id,
+							'exception_class' => get_class( $sync_e ),
+							'exception_msg'   => substr( (string) $sync_e->getMessage(), 0, 200 ),
+						)
+					);
+				}
 				CheckoutAjaxPerf::add_segment_ms( 'wc_after_session_set_answers', microtime( true ) - $t_sync );
 			}
 			$t_flow = microtime( true );
-			$flow_payload = self::build_flow_payload();
+			$flow_payload = self::safe_build_flow_payload( $sub_action, $step_id );
 			CheckoutAjaxPerf::add_segment_ms( 'build_flow_payload', microtime( true ) - $t_flow );
 			$t_cart_d = microtime( true );
-			$cart_payload = CheckoutRouteContext::get_cart_data();
+			$cart_payload = self::safe_get_cart_data( $sub_action, $step_id );
 			CheckoutAjaxPerf::add_segment_ms( 'get_cart_data', microtime( true ) - $t_cart_d );
 			wp_send_json_success( array( 'sub_action' => $sub_action, 'step_id' => $step_id, 'flow' => $flow_payload, 'cart' => $cart_payload ) );
 		}
@@ -259,17 +311,48 @@ final class CheckoutAjaxHooks {
 				do_action( 'mp_custom_checkout_log', 'warning', '[scenario_switch] invalid_scenario_requested', array( 'requested' => $scenario_raw, 'resolved' => $scenario ) );
 			}
 			CheckoutSessionService::set_scenario( $scenario );
-			WcCustomerShippingSync::after_session_set_scenario();
-			wp_send_json_success( array( 'sub_action' => $sub_action, 'scenario' => $scenario, 'flow' => self::build_flow_payload(), 'cart' => CheckoutRouteContext::get_cart_data() ) );
+			try {
+				WcCustomerShippingSync::after_session_set_scenario();
+			} catch ( \Throwable $sc_sync_e ) {
+				do_action(
+					'mp_custom_checkout_log',
+					'warning',
+					'[ajax] wc_after_session_set_scenario_failed',
+					array(
+						'source'          => 'ajax',
+						'event_type'      => 'wc_sync_failed',
+						'sub_action'      => $sub_action,
+						'scenario'        => $scenario,
+						'exception_class' => get_class( $sc_sync_e ),
+						'exception_msg'   => substr( (string) $sc_sync_e->getMessage(), 0, 200 ),
+					)
+				);
+			}
+			wp_send_json_success( array( 'sub_action' => $sub_action, 'scenario' => $scenario, 'flow' => self::safe_build_flow_payload( $sub_action, '' ), 'cart' => self::safe_get_cart_data( $sub_action, '' ) ) );
 		}
 		if ( 'session_get_state' === $sub_action ) {
-			CheckoutSessionService::sync_discounts_from_cart();
+			try {
+				CheckoutSessionService::sync_discounts_from_cart();
+			} catch ( \Throwable $disc_e ) {
+				do_action(
+					'mp_custom_checkout_log',
+					'warning',
+					'[ajax] sync_discounts_failed',
+					array(
+						'source'          => 'ajax',
+						'event_type'      => 'sync_discounts_failed',
+						'sub_action'      => $sub_action,
+						'exception_class' => get_class( $disc_e ),
+						'exception_msg'   => substr( (string) $disc_e->getMessage(), 0, 200 ),
+					)
+				);
+			}
 			wp_send_json_success(
 				array_merge(
 					array(
 						'sub_action' => $sub_action,
-						'flow'       => self::build_flow_payload(),
-						'cart'       => CheckoutRouteContext::get_cart_data(),
+						'flow'       => self::safe_build_flow_payload( $sub_action, '' ),
+						'cart'       => self::safe_get_cart_data( $sub_action, '' ),
 					),
 					self::get_payment_fields_for_context()
 				)
@@ -1838,5 +1921,61 @@ final class CheckoutAjaxHooks {
 		$flow['visible_steps']  = $step_manager->get_visible_step_ids();
 		$flow['scenario_rules'] = CheckoutScenarioRules::build( $scenario );
 		return $flow;
+	}
+
+	/**
+	 * Защитная обёртка вокруг build_flow_payload: при исключении пишем лог и возвращаем
+	 * пустой массив, чтобы не сваливать весь session_set_answers в ajax_unhandled_exception
+	 * (данные шага в сессии уже сохранены до этого вызова).
+	 *
+	 * @return array<string, mixed>
+	 */
+	private static function safe_build_flow_payload( string $sub_action, string $step_id ): array {
+		try {
+			return self::build_flow_payload();
+		} catch ( \Throwable $e ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'warning',
+				'[ajax] build_flow_payload_failed',
+				array(
+					'source'          => 'ajax',
+					'event_type'      => 'flow_build_failed',
+					'sub_action'      => $sub_action,
+					'step_id'         => $step_id,
+					'exception_class' => get_class( $e ),
+					'exception_msg'   => substr( (string) $e->getMessage(), 0, 200 ),
+				)
+			);
+			return array();
+		}
+	}
+
+	/**
+	 * Защитная обёртка вокруг CheckoutRouteContext::get_cart_data: ошибки в WC cart serialization
+	 * не должны сваливать сохранение черновика контактов в ajax_unhandled_exception.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private static function safe_get_cart_data( string $sub_action, string $step_id ): array {
+		try {
+			$payload = CheckoutRouteContext::get_cart_data();
+			return is_array( $payload ) ? $payload : array();
+		} catch ( \Throwable $e ) {
+			do_action(
+				'mp_custom_checkout_log',
+				'warning',
+				'[ajax] get_cart_data_failed',
+				array(
+					'source'          => 'ajax',
+					'event_type'      => 'cart_data_failed',
+					'sub_action'      => $sub_action,
+					'step_id'         => $step_id,
+					'exception_class' => get_class( $e ),
+					'exception_msg'   => substr( (string) $e->getMessage(), 0, 200 ),
+				)
+			);
+			return array();
+		}
 	}
 }

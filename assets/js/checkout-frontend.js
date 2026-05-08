@@ -1594,11 +1594,16 @@
 
 	function recoverFromStepAjaxFailure(state, $app, fallbackMessage) {
 		setRuntimeFlag(state, 'blocked', false);
-		syncStoreWithBackend(state, $app, { force: true }).always(function () {
-			if (fallbackMessage) {
-				notify(fallbackMessage, 'error');
-			}
-		});
+		// Раньше тут был syncStoreWithBackend({force:true}) — он на транзитной ошибке
+		// (500/timeout/конфликт WC-сессии) забирал серверный flow.current_step (мог быть
+		// stale из-за гонки session_set_answers/session_set_step) и через
+		// applySessionGetStateResponse откидывал пользователя на ранний шаг.
+		// Безопаснее показать ошибку и оставить состояние; настоящий stale_context
+		// поднимет recoverFromInvalidSessionState на следующем запросе.
+		render(state, $app);
+		if (fallbackMessage) {
+			notify(fallbackMessage, 'error');
+		}
 	}
 
 	function recoverFromInvalidSessionState(state, $app) {
@@ -1877,17 +1882,30 @@
 		return screen && screen.legacyStep ? String(screen.legacyStep) : 'confirm';
 	}
 
+	function findV2ScreenIndexByLegacyStep(screens, legacyStepId) {
+		if (!Array.isArray(screens) || !legacyStepId) {
+			return -1;
+		}
+		var i;
+		for (i = 0; i < screens.length; i += 1) {
+			if (screens[i] && String(screens[i].legacyStep || '') === String(legacyStepId)) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
 	function ensureV2ScreenState(state) {
 		if (!isV2CheckoutUiEnabled(state)) {
 			return;
 		}
 		state.v2Screens = getV2StepScreens(state);
 		if (typeof state.v2CurrentIndex !== 'number' || state.v2CurrentIndex < 0 || state.v2CurrentIndex >= state.v2Screens.length) {
-			if (state.currentStepId === 'confirm') {
-				state.v2CurrentIndex = 1;
-			} else {
-				state.v2CurrentIndex = 0;
-			}
+			// Маппинг по фактическому currentStepId: иначе после reload/recovery
+			// session_get_state приходит с current_step='recipient'/'payment',
+			// а v2CurrentIndex=undefined → пользователь оказывается на 0-м экране.
+			var mappedIdx = findV2ScreenIndexByLegacyStep(state.v2Screens, state.currentStepId);
+			state.v2CurrentIndex = mappedIdx >= 0 ? mappedIdx : 0;
 		}
 		if (typeof state.v2MaxReachedIndex !== 'number' || state.v2MaxReachedIndex < 0) {
 			state.v2MaxReachedIndex = state.v2CurrentIndex;
@@ -5866,6 +5884,12 @@
 		if (flowPayload === undefined || flowPayload === null) {
 			return;
 		}
+		// Если параллельно идёт setCurrentStep / step transition, сервер мог вернуть
+		// stale current_step (свежий session_set_step ещё в полёте). Не перезаписываем
+		// локальный currentStepId более ранним значением — иначе пользователя «откидывает»
+		// назад во время typing/навигации на следующем шаге.
+		var preservedStepId = state.currentStepId;
+		var transitionInFlight = !!(state.isTransitioning || (criticalRequestLocks && criticalRequestLocks.stepTransition));
 		syncFromFlow(state, flowPayload, response.data.cart || {}, paymentFieldPayloadFromAjaxData(response.data));
 		var mergedPaymentFields = state.frontendStore && state.frontendStore.payment ? {
 			fieldsHtml: state.frontendStore.payment.fieldsHtml,
@@ -5875,7 +5899,13 @@
 		} : null;
 		var rehydrated = buildState(state.context);
 		state.visibleSteps = rehydrated.visibleSteps;
-		state.currentStepId = rehydrated.currentStepId;
+		var preservedIdx = getStepIndex(rehydrated.visibleSteps, preservedStepId);
+		var serverIdx = getStepIndex(rehydrated.visibleSteps, rehydrated.currentStepId);
+		if (transitionInFlight && preservedIdx >= 0 && serverIdx >= 0 && preservedIdx > serverIdx) {
+			state.currentStepId = preservedStepId;
+		} else {
+			state.currentStepId = rehydrated.currentStepId;
+		}
 		state.maxReachedIndex = Math.max(state.maxReachedIndex, rehydrated.maxReachedIndex);
 		applyContextCartToFrontendStore(rehydrated.frontendStore, state.context);
 		state.frontendStore = rehydrated.frontendStore;
@@ -6068,6 +6098,15 @@
 				}
 				if (httpStatus === 422) {
 					notify(payload.message || getUiText('common.error_generic', 'Произошла ошибка. Попробуйте ещё раз.'), 'error');
+				} else if (code === 'invalid_step_navigation') {
+					// Сервер отверг конкретный target. Это типично гонка с session_set_answers
+					// (его сбой не повышает current_step). Сервер сам делает catch-up на 1 шаг,
+					// поэтому 99% таких — уже реальная блокировка перехода (например, нет ПВЗ
+					// для официальной СДЭК). Не сбрасываем шаг и не просим обновлять страницу:
+					// просто восстанавливаем UI на том же шаге и просим юзера повторить.
+					setRuntimeFlag(state, 'blocked', false);
+					render(state, $app);
+					notify(payload.message || getUiText('common.error_generic', 'Произошла ошибка. Попробуйте ещё раз.'), 'error');
 				} else {
 					recoverFromStepAjaxFailure(state, $app, getStepFourAjaxMessage('step_sync_failed', 'step_4.contact_ajax_step_sync_failed', 'Не удалось синхронизировать шаг. Обновите страницу.'));
 				}
@@ -6205,8 +6244,16 @@
 					return;
 				}
 				setV2StepInvalidState(state, currentScreen.id, false);
-				saveCurrentStepDraft(state);
-				setCurrentV2Screen(state, $app, v2Idx + 1);
+				// Гасим debounced черновик: иначе session_set_answers и session_set_step летят
+				// параллельно, конфликтуют по WC-сессии и второй валится с ошибкой —
+				// recoverFromStepAjaxFailure откидывает пользователя обратно на шаг 1.
+				if (draftSaveTimer) {
+					window.clearTimeout(draftSaveTimer);
+					draftSaveTimer = null;
+				}
+				saveCurrentStepDraft(state).always(function () {
+					setCurrentV2Screen(state, $app, v2Idx + 1);
+				});
 				return;
 			}
 			if (currentScreen.id === 'payment_screen') {
@@ -6222,12 +6269,20 @@
 					return;
 				}
 				setV2StepInvalidState(state, currentScreen.id, false);
+				if (draftSaveTimer) {
+					window.clearTimeout(draftSaveTimer);
+					draftSaveTimer = null;
+				}
 				saveCurrentStepDraft(state).always(function () {
 					setCurrentV2Screen(state, $app, v2Idx + 1);
 				});
 				return;
 			}
 			if (currentScreen.id === 'confirm_screen') {
+				if (draftSaveTimer) {
+					window.clearTimeout(draftSaveTimer);
+					draftSaveTimer = null;
+				}
 				saveCurrentStepDraft(state).always(function () {
 					submitFinalPayment(state, $app);
 				});
