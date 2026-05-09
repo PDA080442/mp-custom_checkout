@@ -71,7 +71,51 @@ final class AdminMenuHooks {
 		$merged  = array_replace_recursive( $stored, $incoming );
 		$sanitized = self::sanitize_by_shape( $merged, $defaults, '' );
 		$sanitized = self::normalize_delivery_settings( $sanitized );
-		return self::normalize_motion_settings( $sanitized );
+		$sanitized = self::normalize_motion_settings( $sanitized );
+		return self::normalize_payment_gateway_titles( $sanitized, $merged );
+	}
+
+	/**
+	 * Сохраняет переопределения названий платёжных шлюзов: ключи неизвестные на момент дефолтов
+	 * (`gateway_id => string`) sanitize_by_shape отбрасывает (default = `array()`), поэтому
+	 * после нормализации возвращаем их обратно из исходного post-данного дерева.
+	 *
+	 * @param array<string, mixed> $settings Результат sanitize_by_shape.
+	 * @param array<string, mixed> $merged   Сырой merged-tree до sanitize.
+	 * @return array<string, mixed>
+	 */
+	private static function normalize_payment_gateway_titles( array $settings, array $merged ): array {
+		$path = array( OptionKeys::SECTION_STEP_4, 'payment_block', 'gateway_titles' );
+		$node = $merged;
+		foreach ( $path as $segment ) {
+			if ( ! is_array( $node ) || ! isset( $node[ $segment ] ) ) {
+				$node = null;
+				break;
+			}
+			$node = $node[ $segment ];
+		}
+		$out = array();
+		if ( is_array( $node ) ) {
+			foreach ( $node as $gid => $title ) {
+				$gid_clean = sanitize_key( (string) $gid );
+				if ( '' === $gid_clean ) {
+					continue;
+				}
+				$title_clean = trim( wp_strip_all_tags( (string) $title ) );
+				if ( '' === $title_clean ) {
+					continue;
+				}
+				$out[ $gid_clean ] = $title_clean;
+			}
+		}
+		if ( ! isset( $settings[ OptionKeys::SECTION_STEP_4 ] ) || ! is_array( $settings[ OptionKeys::SECTION_STEP_4 ] ) ) {
+			$settings[ OptionKeys::SECTION_STEP_4 ] = array();
+		}
+		if ( ! isset( $settings[ OptionKeys::SECTION_STEP_4 ]['payment_block'] ) || ! is_array( $settings[ OptionKeys::SECTION_STEP_4 ]['payment_block'] ) ) {
+			$settings[ OptionKeys::SECTION_STEP_4 ]['payment_block'] = array();
+		}
+		$settings[ OptionKeys::SECTION_STEP_4 ]['payment_block']['gateway_titles'] = $out;
+		return $settings;
 	}
 
 	/**
@@ -625,6 +669,10 @@ final class AdminMenuHooks {
 		// На вкладке шага 4 скрываем эти блоки, чтобы не дублировать.
 		if ( OptionKeys::SECTION_STEP_4 === $tab_id ) {
 			unset( $section_value['contact_block'], $section_value['address_block'], $section_value['address_geo'] );
+			// gateway_titles рендерится отдельным блоком (см. render_step_4_payment_gateway_titles_group).
+			if ( isset( $section_value['payment_block'] ) && is_array( $section_value['payment_block'] ) ) {
+				unset( $section_value['payment_block']['gateway_titles'] );
+			}
 		}
 		$title = isset( AdminSectionsRegistry::sections()[ $tab_id ]['label'] ) ? (string) AdminSectionsRegistry::sections()[ $tab_id ]['label'] : $tab_id;
 		$description = isset( $tabs[ $tab_id ]['description'] ) ? (string) $tabs[ $tab_id ]['description'] : '';
@@ -767,6 +815,9 @@ final class AdminMenuHooks {
 	private static function render_supplemental_groups_for_tab( string $tab_id, array $settings ): void {
 		if ( OptionKeys::SECTION_STEP_1 === $tab_id ) {
 			self::render_step_1_parcel_count_labels_group( $settings );
+		}
+		if ( OptionKeys::SECTION_STEP_4 === $tab_id || OptionKeys::SECTION_PAYMENT === $tab_id ) {
+			self::render_step_4_payment_gateway_titles_group( $settings );
 		}
 		if ( OptionKeys::SECTION_SERVICE === $tab_id ) {
 			self::render_config_io_block();
@@ -1087,6 +1138,105 @@ final class AdminMenuHooks {
 			echo '<span class="mp-cc-admin-shell__field-label">' . esc_html( $meta['label'] ) . '</span>';
 			echo '<input type="text" class="regular-text" name="' . esc_attr( $name ) . '" value="' . esc_attr( $value ) . '" />';
 			echo '<span class="description mp-cc-admin-shell__field-tooltip">' . esc_html( $meta['help'] ) . '</span>';
+			echo '</label>';
+		}
+
+		echo '</details>';
+	}
+
+	/**
+	 * Блок «Названия способов оплаты» на вкладке Шага 4.
+	 * Перечисляет все установленные шлюзы WooCommerce и позволяет переопределить заголовок.
+	 * Хранится в `step_4.payment_block.gateway_titles[<gateway_id>]`.
+	 *
+	 * @param array<string, mixed> $settings
+	 */
+	private static function render_step_4_payment_gateway_titles_group( array $settings ): void {
+		$step_four = isset( $settings[ OptionKeys::SECTION_STEP_4 ] ) && is_array( $settings[ OptionKeys::SECTION_STEP_4 ] )
+			? $settings[ OptionKeys::SECTION_STEP_4 ]
+			: array();
+		$payment_block = isset( $step_four['payment_block'] ) && is_array( $step_four['payment_block'] )
+			? $step_four['payment_block']
+			: array();
+		$titles = isset( $payment_block['gateway_titles'] ) && is_array( $payment_block['gateway_titles'] )
+			? $payment_block['gateway_titles']
+			: array();
+
+		echo '<details class="mp-cc-admin-shell__fieldset" open>';
+		echo '<summary><span>' . esc_html__( 'Названия способов оплаты', 'mp-custom-checkout' ) . '</span><em class="mp-cc-admin-shell__type-badge mp-cc-admin-shell__type-badge--content">' . esc_html( self::group_type_label( 'content' ) ) . '</em></summary>';
+		echo '<p class="description">' . esc_html__( 'Здесь можно переопределить названия отдельных способов оплаты, которые видит покупатель на шаге «Способ оплаты». Если поле пустое — берётся название из настроек самого WooCommerce-шлюза. Список ниже отражает шлюзы, установленные в WooCommerce → Платежи (включая отключённые).', 'mp-custom-checkout' ) . '</p>';
+
+		$gateways = array();
+		if ( function_exists( 'WC' ) && WC() && WC()->payment_gateways() instanceof \WC_Payment_Gateways ) {
+			$all = WC()->payment_gateways()->payment_gateways();
+			if ( is_array( $all ) ) {
+				$gateways = $all;
+			}
+		}
+
+		if ( empty( $gateways ) ) {
+			echo '<p>' . esc_html__( 'WooCommerce не вернул ни одного шлюза. Откройте WooCommerce → Платежи и активируйте хотя бы один способ оплаты.', 'mp-custom-checkout' ) . '</p>';
+			echo '</details>';
+			return;
+		}
+
+		$known_ids = array();
+		foreach ( $gateways as $gateway ) {
+			if ( ! $gateway instanceof \WC_Payment_Gateway ) {
+				continue;
+			}
+			$gid = sanitize_key( (string) $gateway->id );
+			if ( '' === $gid ) {
+				continue;
+			}
+			$known_ids[ $gid ] = true;
+
+			$wc_title = wp_strip_all_tags( (string) $gateway->get_title() );
+			$wc_method_title = wp_strip_all_tags( (string) ( method_exists( $gateway, 'get_method_title' ) ? $gateway->get_method_title() : '' ) );
+			$is_enabled = isset( $gateway->enabled ) ? ( 'yes' === $gateway->enabled ) : true;
+			$override = isset( $titles[ $gid ] ) ? (string) $titles[ $gid ] : '';
+
+			$name = OptionKeys::MAIN . '[' . OptionKeys::SECTION_STEP_4 . '][payment_block][gateway_titles][' . $gid . ']';
+
+			$badge_html = $is_enabled
+				? '<em class="mp-cc-admin-shell__scenario-badge">' . esc_html__( 'включён', 'mp-custom-checkout' ) . '</em>'
+				: '<em class="mp-cc-admin-shell__scenario-badge is-risky">' . esc_html__( 'отключён', 'mp-custom-checkout' ) . '</em>';
+
+			$current_label = '' !== $override ? $override : $wc_title;
+
+			echo '<label class="mp-cc-admin-shell__field">';
+			echo '<span class="mp-cc-admin-shell__field-label">';
+			echo esc_html( '' !== $wc_method_title ? $wc_method_title : $gid );
+			echo ' <code style="font-weight:normal;opacity:.7">' . esc_html( $gid ) . '</code> ';
+			echo $badge_html; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- безопасный статический HTML.
+			echo '</span>';
+			echo '<input type="text" class="regular-text" name="' . esc_attr( $name ) . '" value="' . esc_attr( $override ) . '" placeholder="' . esc_attr( $wc_title ) . '" />';
+			echo '<span class="description mp-cc-admin-shell__field-tooltip">';
+			printf(
+				/* translators: 1: WC gateway title, 2: current label visible to customer. */
+				esc_html__( 'Название из WooCommerce: «%1$s». Сейчас покупатель видит: «%2$s». Очистите поле, чтобы вернуть исходное название WooCommerce.', 'mp-custom-checkout' ),
+				esc_html( '' !== $wc_title ? $wc_title : '—' ),
+				esc_html( '' !== $current_label ? $current_label : '—' )
+			);
+			echo '</span>';
+			echo '</label>';
+		}
+
+		// Если в БД остались переопределения для удалённых/недоступных шлюзов — рендерим их тоже,
+		// чтобы пользователь мог увидеть и сбросить значение, не трогая БД руками.
+		foreach ( $titles as $orphan_id => $orphan_value ) {
+			$gid = sanitize_key( (string) $orphan_id );
+			if ( '' === $gid || isset( $known_ids[ $gid ] ) ) {
+				continue;
+			}
+			$name = OptionKeys::MAIN . '[' . OptionKeys::SECTION_STEP_4 . '][payment_block][gateway_titles][' . $gid . ']';
+			echo '<label class="mp-cc-admin-shell__field">';
+			echo '<span class="mp-cc-admin-shell__field-label">';
+			echo esc_html( $gid );
+			echo ' <em class="mp-cc-admin-shell__scenario-badge is-risky">' . esc_html__( 'шлюз не найден в WooCommerce', 'mp-custom-checkout' ) . '</em>';
+			echo '</span>';
+			echo '<input type="text" class="regular-text" name="' . esc_attr( $name ) . '" value="' . esc_attr( (string) $orphan_value ) . '" />';
+			echo '<span class="description mp-cc-admin-shell__field-tooltip">' . esc_html__( 'Шлюз больше не установлен в WooCommerce. Очистите поле, чтобы убрать сохранённое переопределение.', 'mp-custom-checkout' ) . '</span>';
 			echo '</label>';
 		}
 

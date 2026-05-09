@@ -529,6 +529,7 @@ final class SafeSettingsResolver {
 						'title' => 'Способ оплаты',
 						'intro' => 'Выберите удобный способ оплаты.',
 						'gateway_order' => array(),
+						'gateway_titles' => array(),
 						'card_surface' => 'visual',
 						'auto_classic_on_empty_gateway_fields' => true,
 						'decorative_card_fields' => true,
