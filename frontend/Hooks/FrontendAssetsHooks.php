@@ -437,14 +437,24 @@ final class FrontendAssetsHooks {
 				remove_filter( 'woocommerce_is_checkout', '__return_true', PHP_INT_MAX );
 			}
 		}
+		$step_four = SafeSettingsResolver::get_section( 'step_4' );
+		$payment_block = is_array( $step_four ) && isset( $step_four['payment_block'] ) && is_array( $step_four['payment_block'] )
+			? $step_four['payment_block']
+			: array();
+		$title_overrides = isset( $payment_block['gateway_titles'] ) && is_array( $payment_block['gateway_titles'] )
+			? $payment_block['gateway_titles']
+			: array();
 		$result    = array();
 		foreach ( $available as $gateway ) {
 			if ( ! $gateway instanceof \WC_Payment_Gateway ) {
 				continue;
 			}
+			$gid = sanitize_key( (string) $gateway->id );
+			$wc_title = wp_strip_all_tags( (string) $gateway->get_title() );
+			$override = isset( $title_overrides[ $gid ] ) ? trim( wp_strip_all_tags( (string) $title_overrides[ $gid ] ) ) : '';
 			$result[] = array(
-				'id'          => sanitize_key( (string) $gateway->id ),
-				'title'       => wp_strip_all_tags( (string) $gateway->get_title() ),
+				'id'          => $gid,
+				'title'       => '' !== $override ? $override : $wc_title,
 				'description' => wp_strip_all_tags( (string) $gateway->get_description() ),
 			);
 		}
