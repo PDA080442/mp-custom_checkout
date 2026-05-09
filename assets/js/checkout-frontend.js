@@ -8229,9 +8229,19 @@
 							}
 						}
 						try { render(state, $app); } catch (_pvzRenderErr) {}
-						scheduleCurrentStepDraftSave(state, function () {
-							notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
-						});
+						// setTimeout(0): дождаться `.always()` обёртки cdek_set_office (там снимается
+						// shippingMutationInFlight и отрабатывает flushPendingShippingMutation), а уже
+						// потом без debounce сохранить новый contact_billing+step_one и форсированно
+						// подтянуть свежий cart.summary с пересчитанной ценой ПВЗ под новый город.
+						window.setTimeout(function () {
+							saveCurrentStepDraft(state)
+								.then(function () {
+									syncStoreWithBackend(state, $app, { force: true });
+								})
+								.fail(function () {
+									notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
+								});
+						}, 0);
 					} catch (_pvzPatchErr) {
 						// Авто-заполнение адреса — best-effort: ошибки не превращаем в «Не удалось сохранить ПВЗ».
 						if (window.console && typeof window.console.warn === 'function') {
