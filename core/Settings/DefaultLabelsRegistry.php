@@ -36,6 +36,7 @@ final class DefaultLabelsRegistry {
 			'step_1' => array(
 				'title'            => 'Корзина',
 				'empty_cart'       => 'Корзина пуста',
+				'empty_cart_redirect' => 'Корзина пуста — оформлять нечего. Возвращаемся в магазин…',
 				'return_to_shop'   => 'Вернуться в магазин',
 				'continue'         => 'Продолжить оформление',
 				'subtotal'         => 'Подытог',

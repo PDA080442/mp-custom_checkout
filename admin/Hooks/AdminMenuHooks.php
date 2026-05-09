@@ -765,6 +765,9 @@ final class AdminMenuHooks {
 	 * @param array<string, mixed> $settings
 	 */
 	private static function render_supplemental_groups_for_tab( string $tab_id, array $settings ): void {
+		if ( OptionKeys::SECTION_STEP_1 === $tab_id ) {
+			self::render_step_1_parcel_count_labels_group( $settings );
+		}
 		if ( OptionKeys::SECTION_SERVICE === $tab_id ) {
 			self::render_config_io_block();
 			self::render_supplemental_group(
@@ -1034,6 +1037,59 @@ final class AdminMenuHooks {
 			echo '<p><strong>' . esc_html( $name ) . '</strong> <span class="' . esc_attr( $badge_class ) . '">' . esc_html( strtoupper( $status ) ) . '</span><br />' . esc_html( $message ) . '</p>';
 		}
 		echo '<p><a class="button button-small" href="' . esc_url( admin_url( 'admin.php?page=' . self::PAGE_SLUG . '&tab=' . OptionKeys::SECTION_LOGS ) ) . '">' . esc_html__( 'Открыть логи checkout', 'mp-custom-checkout' ) . '</a></p>';
+		echo '</details>';
+	}
+
+	/**
+	 * Блок «Подпись количества посылок» на вкладке Шага 1.
+	 * Хранится в виртуальной секции `labels.step_1.parcel_count_*`.
+	 *
+	 * @param array<string, mixed> $settings
+	 */
+	private static function render_step_1_parcel_count_labels_group( array $settings ): void {
+		$labels_section = isset( $settings[ OptionKeys::KEY_LABELS ] ) && is_array( $settings[ OptionKeys::KEY_LABELS ] )
+			? $settings[ OptionKeys::KEY_LABELS ]
+			: array();
+		$step_labels = isset( $labels_section['step_1'] ) && is_array( $labels_section['step_1'] )
+			? $labels_section['step_1']
+			: array();
+		$defaults_tree    = SafeSettingsResolver::get_defaults_tree();
+		$labels_defaults  = isset( $defaults_tree[ OptionKeys::KEY_LABELS ]['step_1'] ) && is_array( $defaults_tree[ OptionKeys::KEY_LABELS ]['step_1'] )
+			? $defaults_tree[ OptionKeys::KEY_LABELS ]['step_1']
+			: array();
+
+		$keys = array(
+			'parcel_count_one'   => array(
+				'label' => __( 'Подпись «посылка» (1)', 'mp-custom-checkout' ),
+				'help'  => __( 'Используется при числе посылок, оканчивающемся на 1 (но не на 11). Пример: 1 посылка. Используйте плейсхолдер {n} для подстановки числа.', 'mp-custom-checkout' ),
+			),
+			'parcel_count_few'   => array(
+				'label' => __( 'Подпись «посылки» (2–4)', 'mp-custom-checkout' ),
+				'help'  => __( 'Используется при числе посылок 2–4 (но не 12–14). Пример: 3 посылки. Плейсхолдер {n} обязателен.', 'mp-custom-checkout' ),
+			),
+			'parcel_count_other' => array(
+				'label' => __( 'Подпись «посылок» (0, 5+, 11–14)', 'mp-custom-checkout' ),
+				'help'  => __( 'Используется во всех остальных случаях. Пример: 0 посылок, 5 посылок, 11 посылок. Плейсхолдер {n} обязателен.', 'mp-custom-checkout' ),
+			),
+		);
+
+		echo '<details class="mp-cc-admin-shell__fieldset" open>';
+		echo '<summary><span>' . esc_html__( 'Подпись количества посылок (заголовок страницы)', 'mp-custom-checkout' ) . '</span><em class="mp-cc-admin-shell__type-badge mp-cc-admin-shell__type-badge--content">' . esc_html( self::group_type_label( 'content' ) ) . '</em></summary>';
+		echo '<p class="description">' . esc_html__( 'Подписи под заголовком «Оформление заказа» с количеством посылок. Поддерживается русское склонение.', 'mp-custom-checkout' ) . '</p>';
+
+		foreach ( $keys as $key => $meta ) {
+			$value = isset( $step_labels[ $key ] ) ? (string) $step_labels[ $key ] : '';
+			if ( '' === $value && isset( $labels_defaults[ $key ] ) ) {
+				$value = (string) $labels_defaults[ $key ];
+			}
+			$name = OptionKeys::MAIN . '[' . OptionKeys::KEY_LABELS . '][step_1][' . $key . ']';
+			echo '<label class="mp-cc-admin-shell__field">';
+			echo '<span class="mp-cc-admin-shell__field-label">' . esc_html( $meta['label'] ) . '</span>';
+			echo '<input type="text" class="regular-text" name="' . esc_attr( $name ) . '" value="' . esc_attr( $value ) . '" />';
+			echo '<span class="description mp-cc-admin-shell__field-tooltip">' . esc_html( $meta['help'] ) . '</span>';
+			echo '</label>';
+		}
+
 		echo '</details>';
 	}
 
