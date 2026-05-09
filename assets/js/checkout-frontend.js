@@ -7605,7 +7605,7 @@
 		}
 		if (state.currentStepId === 'confirm') {
 			html += '<div class="mp-cc-summary-card__scenario mp-cc-summary-card__scenario--final-review" data-final-review-block="1">';
-			html += '<p class="mp-cc-summary-card__scenario-title"><strong>' + escapeHtml(getUiText('order_review.final_review_title', 'Сводка заказа')) + '</strong></p>';
+			html += '<p class="mp-cc-summary-card__scenario-title"><strong>' + escapeHtml(getUiText('order_review.final_review_title', 'Детали заказа')) + '</strong></p>';
 			html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(getUiText('order_review.final_review_lead', 'Проверьте данные и нажмите кнопку оплаты.')) + '</p>';
 			html += '</div>';
 			var contact = state.frontendStore && state.frontendStore.form ? (state.frontendStore.form.contact || {}) : {};

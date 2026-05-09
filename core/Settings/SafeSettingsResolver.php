@@ -79,7 +79,7 @@ final class SafeSettingsResolver {
 				$tree[ $section_key ] = array(
 					'labels' => array(
 						'title'          => 'Корзина',
-						'summary_title'  => 'Сводка заказа',
+						'summary_title'  => 'Детали заказа',
 						'subtotal_label' => 'Подытог',
 						'shipping_label' => 'Доставка',
 						'discount_label' => 'Скидка',

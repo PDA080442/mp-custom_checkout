@@ -16,7 +16,7 @@
 		return {
 			previewEnabled: Boolean(source.admin_preview && source.admin_preview.enabled !== false),
 			title: labels.title || 'Корзина',
-			summaryTitle: labels.summary_title || 'Сводка заказа',
+			summaryTitle: labels.summary_title || 'Детали заказа',
 			subtotalLabel: labels.subtotal_label || 'Подытог',
 			shippingLabel: labels.shipping_label || 'Доставка',
 			discountLabel: labels.discount_label || 'Скидка',
