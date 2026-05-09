@@ -4493,6 +4493,44 @@
 		);
 	}
 
+	/**
+	 * Строит патч для блока адреса (contact_billing) из нормализованного объекта ПВЗ.
+	 * Возвращает только непустые поля + country='Россия'. address_2 не трогаем.
+	 */
+	function buildAddressPatchFromCdekOffice(officeDetails) {
+		var o = officeDetails && typeof officeDetails === 'object' ? officeDetails : {};
+		var patch = { country: 'Россия' };
+		var stateRaw = trimNonEmpty(o.region);
+		if (stateRaw) {
+			patch.state = stateRaw;
+		}
+		var cityRaw = trimNonEmpty(o.city);
+		if (cityRaw) {
+			patch.city = cityRaw;
+		}
+		var addrRaw = trimNonEmpty(o.address);
+		if (addrRaw) {
+			var line = addrRaw;
+			if (cityRaw) {
+				var cityNorm = normalizeCityNameForMatch(cityRaw);
+				var firstComma = line.indexOf(',');
+				var head = firstComma === -1 ? line : line.slice(0, firstComma);
+				if (cityNorm && normalizeCityNameForMatch(head) === cityNorm) {
+					line = firstComma === -1 ? '' : line.slice(firstComma + 1);
+				}
+			}
+			line = line.replace(/^[\s,]+/, '').replace(/\s+/g, ' ').trim();
+			if (line) {
+				patch.address_1 = line;
+			}
+		}
+		var pcRaw = trimNonEmpty(o.postal_code);
+		if (pcRaw) {
+			patch.postcode = pcRaw;
+		}
+		return patch;
+	}
+
 	function getConditionsCopyRoot() {
 		var cfg = getStepThreeConfig();
 		return cfg && cfg.conditions_copy && typeof cfg.conditions_copy === 'object' ? cfg.conditions_copy : {};
@@ -8156,6 +8194,51 @@
 					setV2StepInvalidState(state, 'delivery_screen', false);
 				}
 				try { render(state, $app); } catch (_renderErr) {}
+				if (c !== '' && hasDetailsPayload) {
+					try {
+						var addrPatch = buildAddressPatchFromCdekOffice(normalizedDetails);
+						var contactSrc = state.frontendStore && state.frontendStore.form && state.frontendStore.form.contact
+							? state.frontendStore.form.contact
+							: {};
+						var contactNext = $.extend({}, contactSrc);
+						var pk;
+						for (pk in addrPatch) {
+							if (!Object.prototype.hasOwnProperty.call(addrPatch, pk)) {
+								continue;
+							}
+							contactNext[pk] = addrPatch[pk];
+							var $inp = $app.find('[data-contact-field="' + pk + '"]');
+							if ($inp.length) {
+								$inp.val(addrPatch[pk]);
+							}
+						}
+						state.frontendStore.form = state.frontendStore.form || {};
+						state.frontendStore.form.contact = contactNext;
+						if (state.frontendStore.form.errors && typeof state.frontendStore.form.errors === 'object') {
+							var errs = state.frontendStore.form.errors.contact && typeof state.frontendStore.form.errors.contact === 'object'
+								? $.extend({}, state.frontendStore.form.errors.contact)
+								: null;
+							if (errs) {
+								var ek;
+								for (ek in addrPatch) {
+									if (Object.prototype.hasOwnProperty.call(addrPatch, ek) && Object.prototype.hasOwnProperty.call(errs, ek)) {
+										delete errs[ek];
+									}
+								}
+								state.frontendStore.form.errors.contact = errs;
+							}
+						}
+						try { render(state, $app); } catch (_pvzRenderErr) {}
+						scheduleCurrentStepDraftSave(state, function () {
+							notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
+						});
+					} catch (_pvzPatchErr) {
+						// Авто-заполнение адреса — best-effort: ошибки не превращаем в «Не удалось сохранить ПВЗ».
+						if (window.console && typeof window.console.warn === 'function') {
+							window.console.warn('[mp-cc] pvz address autofill warning:', _pvzPatchErr && _pvzPatchErr.message ? _pvzPatchErr.message : _pvzPatchErr);
+						}
+					}
+				}
 				return response;
 			}).fail(function () {
 				notify(getStepOneLabel(state, 'address_form.pvz_save_failed', '', 'Не удалось сохранить пункт ПВЗ. Попробуйте ещё раз.'), 'error');
