@@ -1134,6 +1134,18 @@ final class AdminMenuHooks {
 			'general.checkout_layout.max_width'          => __( 'Максимальная ширина страницы checkout', 'mp-custom-checkout' ),
 			'general.checkout_layout.vertical_padding'   => __( 'Вертикальные отступы блока checkout (сверху и снизу)', 'mp-custom-checkout' ),
 			'step_1.address_form_style_preset'          => __( 'Пресет стиля формы адреса', 'mp-custom-checkout' ),
+			'step_1.labels.title'                       => __( 'Шаг 1: заголовок страницы корзины', 'mp-custom-checkout' ),
+			'step_1.labels.summary_title'               => __( 'Заголовок блока «Детали заказа» (боковая колонка)', 'mp-custom-checkout' ),
+			'step_1.labels.subtotal_label'              => __( 'Сводка: подпись «Подытог»', 'mp-custom-checkout' ),
+			'step_1.labels.shipping_label'              => __( 'Сводка: подпись «Доставка»', 'mp-custom-checkout' ),
+			'step_1.labels.discount_label'              => __( 'Сводка: подпись «Скидка»', 'mp-custom-checkout' ),
+			'step_1.labels.gift_card_label'             => __( 'Сводка: подпись «Подарочная карта»', 'mp-custom-checkout' ),
+			'step_1.labels.tax_label'                   => __( 'Сводка: подпись «Налоги»', 'mp-custom-checkout' ),
+			'step_1.labels.total_label'                 => __( 'Сводка: подпись «Итого»', 'mp-custom-checkout' ),
+			'step_1.labels.items_label'                 => __( 'Сводка: подпись «Позиций»', 'mp-custom-checkout' ),
+			'step_1.labels.continue_label'              => __( 'Кнопка «Продолжить оформление»', 'mp-custom-checkout' ),
+			'step_1.labels.return_label'                => __( 'Кнопка «Вернуться в магазин»', 'mp-custom-checkout' ),
+			'step_1.labels.empty_title'                 => __( 'Заголовок при пустой корзине', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.card_bg'        => __( 'Фон карточки', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.card_border'    => __( 'Рамка карточки', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.card_radius'    => __( 'Скругление карточки', 'mp-custom-checkout' ),
@@ -1281,6 +1293,7 @@ final class AdminMenuHooks {
 			'styles.progress_step_index'                 => __( 'Кружки номеров шагов (вертикальный таймлайн)', 'mp-custom-checkout' ),
 			'step_1.address_form_styles'                 => __( 'Стили формы адреса и доставки (шаг 1)', 'mp-custom-checkout' ),
 			'step_1.step_panel_screen_styles'            => __( 'Рамка экрана шага (.mp-cc-step-panel.mp-cc-step-screen)', 'mp-custom-checkout' ),
+			'step_1.labels'                              => __( 'Тексты сводки заказа и кнопок (шаг 1)', 'mp-custom-checkout' ),
 			'step_4.contact_block'                       => __( 'Контактные данные (шаг 4)', 'mp-custom-checkout' ),
 			'step_4.contact_block.layout'                => __( 'Сетка полей контактов', 'mp-custom-checkout' ),
 			'step_4.contact_block.field_state_styles'    => __( 'Стили состояний полей контактов', 'mp-custom-checkout' ),
@@ -1480,6 +1493,9 @@ final class AdminMenuHooks {
 		}
 		if ( false !== strpos( $p, 'step_1.labels.address_form' ) ) {
 			return __( 'Тексты полей формы «Адрес и доставка» на checkout (шаг 1): подписи строк, placeholder города, кнопка «другой», подпись к тарифам, строка адреса офиса.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'step_1.labels.summary_title' ) ) {
+			return __( 'Заголовок верхней карточки в правой/нижней колонке checkout — над списком товаров и итогом. По умолчанию «Детали заказа».', 'mp-custom-checkout' );
 		}
 		if ( false !== strpos( $p, 'phone_country_codes' ) ) {
 			return __( 'Список стран для выбора кода телефона на шаге «Получатель»: dial, ISO, national_digits (сколько цифр без кода страны), label (подпись в списке, обычно код ISO: RU, KZ, …). Флаги на сайте — эмодзи по ISO.', 'mp-custom-checkout' );
