@@ -130,6 +130,7 @@ final class DefaultLabelsRegistry {
 				'coupon_empty' => 'Введите промокод.',
 				'coupon_success' => 'Промокод применён.',
 				'coupon_error' => 'Не удалось применить промокод. Проверьте написание и срок действия купона.',
+				'coupon_remove_success' => 'Промокод успешно отменён.',
 				'gift_card_title' => 'Подарочная карта',
 				'gift_card_intro' => 'Введите код подарочной карты.',
 				'gift_card_input_label' => 'Номер подарочной карты',
