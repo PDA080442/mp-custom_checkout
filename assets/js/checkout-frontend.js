@@ -2341,6 +2341,20 @@
 		return !isKrasnoyarskCityLabel(cy);
 	}
 
+	/** Когда город Красноярск, общероссийские методы (Почта России / ПВЗ / курьер) недоступны. */
+	function shouldHideNonKrasnoyarskMethods(state) {
+		var cy = getStepOneContactCity(state);
+		if (!cy) {
+			return false;
+		}
+		return isKrasnoyarskCityLabel(cy);
+	}
+
+	function isNonKrasnoyarskShippingMethodId(methodId) {
+		var id = String(methodId || '');
+		return id === 'post_russia' || id === 'pvz' || id === 'courier';
+	}
+
 	/** §29.5: нормализация города для сравнения до/после (регистронезависимо), как на сервере. */
 	function normalizeCityForPvzInvalidation(value) {
 		var t = String(value === undefined || value === null ? '' : value).trim();
@@ -2411,6 +2425,9 @@
 			if (shouldHideKrasnoyarskLocalMethods(state) && (methodId === 'pickup' || methodId === 'krasnoyarsk_delivery')) {
 				continue;
 			}
+			if (shouldHideNonKrasnoyarskMethods(state) && isNonKrasnoyarskShippingMethodId(methodId)) {
+				continue;
+			}
 			var normalized = {
 				id: methodId,
 				title: String(raw.title || methodId),
@@ -2473,6 +2490,16 @@
 				filteredMethods.push(methods[fj]);
 			}
 			methods = filteredMethods;
+		}
+		if (shouldHideNonKrasnoyarskMethods(state)) {
+			var filteredKrsk = [];
+			for (var fk = 0; fk < methods.length; fk += 1) {
+				if (isNonKrasnoyarskShippingMethodId(methods[fk].id)) {
+					continue;
+				}
+				filteredKrsk.push(methods[fk]);
+			}
+			methods = filteredKrsk;
 		}
 		return overlayWcShippingCatalogPrices(methods, state);
 	}
