@@ -142,9 +142,7 @@
 					city_empty_hint: '',
 					change_button: '',
 					method_row: '',
-					tariff_intro: '',
-					office_row: '',
-					office_not_set: ''
+					tariff_intro: ''
 				}
 			},
 			product_meta_visibility: {
@@ -7063,9 +7061,11 @@
 		var inferredCity = savedCity || (point && point.city ? String(point.city) : '');
 		var cityEmptyHint = getStepOneLabel(state, 'address_form.city_empty_hint', '', 'Укажите населённый пункт');
 		var cityPlaceholder = getStepOneLabel(state, 'address_form.city_placeholder', '', 'Укажите город');
-		var officeNotSet = getStepOneLabel(state, 'address_form.office_not_set', '', 'Не выбран');
-		var pointAddress = point && point.address ? String(point.address) : officeNotSet;
-		var showPvzRow = selectedMethodId === 'pickup' || selectedMethodId === 'pvz';
+		// Статическая строка «адрес офиса» для самовывоза удалена по продуктовому решению:
+		// адрес ПВЗ магазина показывается под названием метода в списке «способ доставки»
+		// как hint, отдельная строка под списком методов больше не нужна. Для метода `pvz`
+		// (CDEK) строка остаётся — там не статическая надпись, а интерактивный выбор пункта.
+		var showPvzRow = selectedMethodId === 'pvz';
 		var cityEditMode = Boolean(runtime.step1_city_editing);
 		var pvzEditMode = Boolean(runtime.step1_pvz_editing);
 		var html = '';
@@ -7156,19 +7156,17 @@
 		html += '</div>';
 		html += '</div>';
 
-		html += '<div class="mp-cc-address-form__row" data-row="pvz"' + (showPvzRow ? '' : ' hidden') + '>';
-		var officeRowLabelKey = selectedMethodId === 'pvz' ? 'address_form.pvz_row' : 'address_form.office_row';
-		var officeRowLabelDefault = selectedMethodId === 'pvz' ? 'адрес пвз' : 'адрес офиса';
-		html += '<span class="mp-cc-address-form__label">' + escapeHtml(getStepOneLabel(state, officeRowLabelKey, '', officeRowLabelDefault)) + '</span>';
-		html += '<div class="mp-cc-address-form__control">';
-		var pickupCfgRow = getPickupConfig();
-		var pointsRow = pickupCfgRow.points || [];
-		if (selectedMethodId === 'pvz') {
+		if (showPvzRow) {
+			html += '<div class="mp-cc-address-form__row" data-row="pvz">';
+			html += '<span class="mp-cc-address-form__label">' + escapeHtml(getStepOneLabel(state, 'address_form.pvz_row', '', 'адрес пвз')) + '</span>';
+			html += '<div class="mp-cc-address-form__control">';
+			var pickupCfgRow = getPickupConfig();
+			var pointsRow = pickupCfgRow.points || [];
 			var wcfgPvz = (typeof window.mpCcCdekWidget !== 'undefined' && window.mpCcCdekWidget) ? window.mpCcCdekWidget : {};
 			var cdekOffice = trimNonEmpty(dateBox.cdek_office_code);
 			var pvzStatusText = cdekOffice
 				? getStepOneLabel(state, 'address_form.pvz_cdek_selected', '', 'ПВЗ СДЭК') + ': ' + cdekOffice
-				: getStepOneLabel(state, 'address_form.pvz_cdek_not_set', '', officeNotSet);
+				: getStepOneLabel(state, 'address_form.pvz_cdek_not_set', '', 'Не выбран');
 			var rtPvzInv = runtime && typeof runtime === 'object' ? runtime : {};
 			var invMapV2Pvz = rtPvzInv.invalid_v2_steps && typeof rtPvzInv.invalid_v2_steps === 'object' ? rtPvzInv.invalid_v2_steps : {};
 			var invMapLegacyPvz = rtPvzInv.invalid_steps && typeof rtPvzInv.invalid_steps === 'object' ? rtPvzInv.invalid_steps : {};
@@ -7207,31 +7205,9 @@
 				html += '<button type="button" class="mp-cc-address-form__edit" data-pvz-edit>';
 				html += escapeHtml(getStepOneLabel(state, 'address_form.pvz_shop_list_button', '', 'Список точек магазина')) + '</button>';
 			}
-		} else if (pvzEditMode) {
-			if (pointsRow.length > 1) {
-				html += '<div class="mp-cc-address-form__pvz-list">';
-				for (i = 0; i < pointsRow.length; i += 1) {
-					var item = pointsRow[i] || {};
-					var itemId = String(item.id || '');
-					var isPointChecked = point && String(point.id || '') === itemId;
-					html += '<label class="mp-cc-address-form__pvz-item">';
-					html += '<input type="radio" name="mp-cc-pvz-point" data-pvz-point="' + escapeHtml(itemId) + '"' + (isPointChecked ? ' checked' : '') + '>';
-					html += '<span>' + escapeHtml(String(item.address || item.title || itemId)) + '</span>';
-					html += '</label>';
-				}
-				html += '</div>';
-			} else {
-				html += '<span class="mp-cc-address-form__value">' + escapeHtml(pointAddress) + '</span>';
-			}
-		} else {
-			html += '<span class="mp-cc-address-form__value">' + escapeHtml(pointAddress) + '</span>';
-			if (selectedMethodId === 'pickup' && pointsRow.length > 1) {
-				html += ' <button type="button" class="mp-cc-address-form__edit" data-pvz-edit>';
-				html += escapeHtml(getStepOneLabel(state, 'address_form.pickup_change_point', '', 'Изменить точку')) + '</button>';
-			}
+			html += '</div>';
+			html += '</div>';
 		}
-		html += '</div>';
-		html += '</div>';
 		html += '</section>';
 		return html;
 	}

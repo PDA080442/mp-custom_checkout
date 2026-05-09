@@ -97,8 +97,6 @@ final class SafeSettingsResolver {
 							'change_button'    => 'другой',
 							'method_row'       => 'способ доставки',
 							'tariff_intro'     => 'Выбрать вариант:',
-							'office_row'       => 'адрес офиса',
-							'office_not_set'   => 'Не выбран',
 						),
 					),
 					'product_meta_visibility' => array(

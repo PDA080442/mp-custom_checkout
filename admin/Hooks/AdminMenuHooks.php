@@ -1492,7 +1492,7 @@ final class AdminMenuHooks {
 			return __( 'Адрес пункта самовывоза одной строкой. Отображается в карточке метода «Самовывоз».', 'mp-custom-checkout' );
 		}
 		if ( false !== strpos( $p, 'step_1.labels.address_form' ) ) {
-			return __( 'Тексты полей формы «Адрес и доставка» на checkout (шаг 1): подписи строк, placeholder города, кнопка «другой», подпись к тарифам, строка адреса офиса.', 'mp-custom-checkout' );
+			return __( 'Тексты полей формы «Адрес и доставка» на checkout (шаг 1): подписи строк, placeholder города, кнопка «другой», подпись к тарифам.', 'mp-custom-checkout' );
 		}
 		if ( false !== strpos( $p, 'step_1.labels.summary_title' ) ) {
 			return __( 'Заголовок верхней карточки в правой/нижней колонке checkout — над списком товаров и итогом. По умолчанию «Детали заказа».', 'mp-custom-checkout' );
