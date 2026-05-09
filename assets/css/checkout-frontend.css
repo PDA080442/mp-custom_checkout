@@ -4041,6 +4041,34 @@ body.mp-custom-checkout form.checkout.woocommerce-checkout {
 	font-size: 0.84rem;
 }
 
+.mp-cc-parcel-head__body {
+	display: flex;
+	flex-direction: column;
+	gap: 0.55rem;
+	min-width: 0;
+}
+
+.mp-cc-parcel-head__controls {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 0.4rem;
+}
+
+.mp-cc-parcel-head__qty-controls {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+}
+
+.mp-cc-qty-btn--remove {
+	font-size: 1.05rem;
+	padding: 0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+
 .mp-cc-layout__main {
 	grid-template-columns: minmax(8rem, 11rem) minmax(0, 1fr);
 	grid-template-areas:

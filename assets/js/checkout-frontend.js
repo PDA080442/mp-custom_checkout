@@ -6615,16 +6615,30 @@
 		if (!items.length) {
 			return '';
 		}
+		var config = state.stepOneConfig || {};
+		var quantityControls = config.quantity_controls || {};
+		var qtyEnabled = quantityControls.enabled !== false;
+		var qtyShowDecrement = quantityControls.show_decrement !== false;
+		var qtyShowIncrement = quantityControls.show_increment !== false;
+		var qtyAllowManualInput = quantityControls.allow_manual_input !== false;
 		var html = '';
 		html += '<ul class="mp-cc-parcel-head-list" role="list">';
 		for (var i = 0; i < items.length; i += 1) {
 			var item = items[i] && typeof items[i] === 'object' ? items[i] : {};
+			var itemKey = String(item.key || 'item-' + i);
+			var productId = Number(item.product_id || 0);
+			var variationId = Number(item.variation_id || 0);
 			var title = trimNonEmpty(item.name) || getUiText('step_1.title', 'Товар');
 			var qty = Number(item.quantity || 0);
-			var qtyLabel = qty > 0 ? String(qty) + ' шт' : '';
+			var minQty = Number(item.min_quantity || 1);
+			var maxQty = Number(item.max_quantity || 9999);
 			var imageUrl = item.image_url ? String(item.image_url) : '';
 			html += '<li class="mp-cc-parcel-head-list__item">';
-			html += '<article class="mp-cc-parcel-head">';
+			html += '<article class="mp-cc-parcel-head"';
+			html += ' data-cart-item-key="' + escapeHtml(itemKey) + '"';
+			html += ' data-product-id="' + escapeHtml(productId) + '"';
+			html += ' data-variation-id="' + escapeHtml(variationId) + '"';
+			html += '>';
 			html += '<div class="mp-cc-parcel-head__media" aria-hidden="true">';
 			if (imageUrl) {
 				html += '<img class="mp-cc-parcel-head__img" src="' + escapeHtml(imageUrl) + '" alt="" loading="lazy" decoding="async" />';
@@ -6634,8 +6648,26 @@
 			html += '</div>';
 			html += '<div class="mp-cc-parcel-head__body">';
 			html += '<h3 class="mp-cc-parcel-head__title">' + escapeHtml(title) + '</h3>';
-			if (qtyLabel) {
-				html += '<p class="mp-cc-parcel-head__meta">' + escapeHtml(qtyLabel) + '</p>';
+			if (qtyEnabled) {
+				// Используем те же data-cart-* атрибуты, что и в legacy buildCartItemsHtml,
+				// чтобы applyQuantityChange / applyRemoveItem работали без изменений
+				// (обработчики дополнительно навешиваются на $parcel в bindHandlers).
+				html += '<div class="mp-cc-parcel-head__controls">';
+				html += '<div class="mp-cc-parcel-head__qty-controls" role="group" aria-label="' + escapeHtml(getUiText('step_1.positions_count', 'Количество')) + '">';
+				if (qtyShowDecrement) {
+					html += '<button type="button" class="mp-cc-qty-btn" data-qty-action="decrease" data-cart-qty-btn="-1" aria-label="' + escapeHtml(getUiText('common.decrease_quantity', 'Уменьшить количество')) + '"' + (qty <= minQty ? ' disabled' : '') + '>−</button>';
+				}
+				if (qtyAllowManualInput) {
+					html += '<input class="mp-cc-qty-input" type="number" inputmode="numeric" min="' + escapeHtml(minQty) + '" max="' + escapeHtml(maxQty) + '" step="1" value="' + escapeHtml(qty) + '" data-cart-qty-input="1" aria-label="' + escapeHtml(getUiText('step_1.positions_count', 'Количество')) + '" />';
+				} else {
+					html += '<span class="mp-cc-qty-static">' + escapeHtml(qty) + '</span>';
+				}
+				if (qtyShowIncrement) {
+					html += '<button type="button" class="mp-cc-qty-btn" data-qty-action="increase" data-cart-qty-btn="+1" aria-label="' + escapeHtml(getUiText('common.increase_quantity', 'Увеличить количество')) + '"' + (qty >= maxQty ? ' disabled' : '') + '>+</button>';
+				}
+				html += '</div>';
+				html += '<button type="button" class="mp-cc-parcel-head__remove mp-cc-qty-btn mp-cc-qty-btn--remove" data-cart-remove="1" aria-label="' + escapeHtml(getUiText('common.remove', 'Удалить')) + '">×</button>';
+				html += '</div>';
 			}
 			html += '</div>';
 			html += '</article>';
@@ -9025,7 +9057,11 @@
 			}
 		});
 
-		$app.find('[data-cart-qty-btn]').off('click').on('click', function () {
+		// Cart-style controls: ищем не только в $app, но и в parcel-header (он лежит вне $app),
+		// чтобы +/-/× работали и в верхнем «Оформление заказа», и в legacy cart-list.
+		var $parcelRoot = $(selectors.parcel);
+		var $cartScopes = $app.add($parcelRoot);
+		$cartScopes.find('[data-cart-qty-btn]').off('click').on('click', function () {
 			var $btn = $(this);
 			var $item = $btn.closest('[data-cart-item-key]');
 			if (!$item.length) {
@@ -9040,7 +9076,7 @@
 			applyQuantityChange(state, $app, $item, current + delta);
 		});
 
-		$app.find('[data-cart-qty-input]').off('change blur').on('change blur', function () {
+		$cartScopes.find('[data-cart-qty-input]').off('change blur').on('change blur', function () {
 			var $input = $(this);
 			var $item = $input.closest('[data-cart-item-key]');
 			if (!$item.length) {
@@ -9048,7 +9084,7 @@
 			}
 			applyQuantityChange(state, $app, $item, Number($input.val() || 0));
 		});
-		$app.find('[data-cart-qty-input]').off('input').on('input', function () {
+		$cartScopes.find('[data-cart-qty-input]').off('input').on('input', function () {
 			var $input = $(this);
 			var $item = $input.closest('[data-cart-item-key]');
 			var itemKey = String($item.data('cart-item-key') || '');
@@ -9061,7 +9097,7 @@
 			}, 220);
 		});
 
-		$app.find('[data-cart-remove]').off('click').on('click', function () {
+		$cartScopes.find('[data-cart-remove]').off('click').on('click', function () {
 			var $btn = $(this);
 			var $item = $btn.closest('[data-cart-item-key]');
 			if (!$item.length) {
@@ -9968,6 +10004,37 @@
 		});
 	}
 
+	/**
+	 * Корзина опустела после удаления последнего товара: показываем снэкбар, блокируем
+	 * дальнейшее взаимодействие и через короткую паузу уводим юзера на каталог/главную
+	 * (URL приходит с сервера в `cart.summary.catalog_url` через CheckoutReturnPaths).
+	 * Делаем idempotent: повторные триггеры (например, два параллельных remove_item
+	 * вернувшихся с is_empty=true) не дёргают setTimeout повторно.
+	 */
+	function redirectToCatalogOnEmptyCart(state) {
+		if (!state || state.__emptyCartRedirectScheduled) {
+			return;
+		}
+		state.__emptyCartRedirectScheduled = true;
+		var summary = state.frontendStore && state.frontendStore.cart ? (state.frontendStore.cart.summary || {}) : {};
+		var catalogUrl = trimNonEmpty(summary.catalog_url) || '/';
+		var message = getUiText('step_1.empty_cart_redirect', 'Корзина пуста — оформлять нечего. Возвращаемся в магазин…');
+		notify(message, 'info');
+		setRuntimeFlag(state, 'blocked', true);
+		// Небольшая задержка, чтобы юзер успел прочитать снэкбар; в этот момент UI
+		// уже отрендерен в empty-state. Скип, если в e2e/SSR-окружении нет window.
+		if (typeof window === 'undefined' || typeof window.location === 'undefined') {
+			return;
+		}
+		window.setTimeout(function () {
+			try {
+				window.location.assign(catalogUrl);
+			} catch (e) {
+				window.location.href = catalogUrl;
+			}
+		}, 2200);
+	}
+
 	function applyRemoveItem(state, $app, $item) {
 		var itemKey = String($item.data('cart-item-key') || '');
 		if (!itemKey || state.isTransitioning) {
@@ -10006,7 +10073,7 @@
 			syncFromFlow(state, nextFlow, nextCart);
 			render(state, $app);
 			if (payload.is_empty) {
-				notify(getUiText('step_1.empty_cart', 'Cart is empty'), 'info');
+				redirectToCatalogOnEmptyCart(state);
 			}
 		}).fail(function (xhr) {
 			var errorPayload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
