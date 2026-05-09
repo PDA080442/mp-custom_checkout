@@ -8871,6 +8871,14 @@
 				if (data.flow || data.cart) {
 					syncFromFlow(state, data.flow || {}, data.cart || {});
 				}
+				ensureDiscountDefaults(state);
+				var discountsAfter = state.frontendStore.discounts || {};
+				var rtAfter = discountsAfter.coupon_runtime || { code: '', state: 'empty', message: '' };
+				rtAfter.state = 'success';
+				rtAfter.code = '';
+				rtAfter.message = trimNonEmpty(data.message) || getUiText('step_4.coupon_remove_success', 'Промокод успешно отменён.');
+				discountsAfter.coupon_runtime = rtAfter;
+				state.frontendStore.discounts = discountsAfter;
 				render(state, $app);
 			}).fail(function (xhr) {
 				var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
@@ -9762,7 +9770,8 @@
 			}
 		});
 
-		$app.find('[data-coupon-code]').off('input').on('input', function () {
+		var $couponScopes = $app.add($(selectors.summary));
+		$couponScopes.find('[data-coupon-code]').off('input').on('input', function () {
 			ensureDiscountDefaults(state);
 			var discounts = state.frontendStore.discounts || {};
 			var rt = discounts.coupon_runtime || { code: '', state: 'empty', message: '' };
@@ -9775,7 +9784,7 @@
 			state.frontendStore.discounts = discounts;
 		});
 
-		$app.find('[data-coupon-apply]').off('click').on('click', function () {
+		$couponScopes.find('[data-coupon-apply]').off('click').on('click', function () {
 			ensureDiscountDefaults(state);
 			var discounts = state.frontendStore.discounts || {};
 			var rt = discounts.coupon_runtime || { code: '', state: 'empty', message: '' };
