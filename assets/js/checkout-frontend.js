@@ -1512,10 +1512,13 @@
 		}
 		var pay = state.frontendStore && state.frontendStore.payment ? state.frontendStore.payment : {};
 		var gw = trimNonEmpty(pay.gateway);
+		var rowId = trimNonEmpty(pay.row_id);
 		var payState = String(pay.state || 'idle');
 		var title = trimNonEmpty(mr.title) || getUiText('order_review.payment_mini_title', 'Способ оплаты');
 		var intro = trimNonEmpty(mr.intro) || getUiText('order_review.payment_mini_intro', 'Выбранный метод проведения платежа.');
-		var gatewayTitle = getSelectedGatewayTitle(state);
+		var gatewayTitle = rowId === MP_CC_VIRTUAL_CARD_ROW_ID
+			? getCardRowConfig().title
+			: getSelectedGatewayTitle(state);
 		var meta = getGatewayMetaById(gw);
 		var desc = '';
 		if (mr.show_gateway_description !== false && meta && meta.description) {
@@ -7252,12 +7255,21 @@
 
 	function buildConfirmationScreenHtml(state) {
 		var payment = state.frontendStore && state.frontendStore.payment ? state.frontendStore.payment : {};
-		var gateway = trimNonEmpty(payment.gateway) || getUiText('step_4.payment_title', 'способ оплаты');
+		var rowId = trimNonEmpty(payment.row_id);
+		var gatewayLabel = '';
+		if (rowId === MP_CC_VIRTUAL_CARD_ROW_ID) {
+			gatewayLabel = getCardRowConfig().title;
+		} else {
+			gatewayLabel = getSelectedGatewayTitle(state);
+		}
+		if (!gatewayLabel) {
+			gatewayLabel = trimNonEmpty(payment.gateway) || getUiText('step_4.payment_title', 'способ оплаты');
+		}
 		var html = '';
 		html += '<section class="mp-cc-confirm-screen" aria-labelledby="mp-cc-confirm-title">';
 		html += '<h3 id="mp-cc-confirm-title">' + escapeHtml(getUiText('common.confirm', 'Подтверждение')) + '</h3>';
 		html += '<p class="mp-cc-step-panel__hint">' + escapeHtml(getUiText('order_review.final_hint', 'Проверьте данные справа и нажмите кнопку оформления заказа.')) + '</p>';
-		html += '<p class="mp-cc-step-panel__hint">' + escapeHtml(getUiText('order_review.selected_gateway', 'Выбранный способ оплаты') + ': ' + gateway) + '</p>';
+		html += '<p class="mp-cc-step-panel__hint">' + escapeHtml(getUiText('order_review.selected_gateway', 'Выбранный способ оплаты') + ': ' + gatewayLabel) + '</p>';
 		html += '</section>';
 		return html;
 	}
