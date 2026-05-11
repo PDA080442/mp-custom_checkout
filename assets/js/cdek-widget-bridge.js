@@ -9,6 +9,66 @@
 	var lastFocus = null;
 	/** Кэш инстанса виджета (паритет с эталоном: updateOfficesRaw / updateLocation / open). */
 	var nativeCdekWidgetInstance = null;
+	/** Снимок кнопки-триггера на время загрузки (показываем лоадер, блокируем повторный клик). */
+	var bridgeLoadingTriggerSnap = null;
+	/** Полу-прозрачный оверлей со спиннером «Загружаем карту…» на время инициализации виджета/списка ПВЗ. */
+	var $bridgeLoadingOverlay = null;
+
+	/**
+	 * Включает индикатор загрузки на кнопке-триггере и показывает overlay-спиннер «Загружаем карту…».
+	 *
+	 * @param {Element|null|undefined} triggerEl
+	 * @param {Object} labels
+	 */
+	function startBridgeLoading(triggerEl, labels) {
+		if (triggerEl && triggerEl.nodeType === 1) {
+			bridgeLoadingTriggerSnap = {
+				el: triggerEl,
+				disabled: Boolean(triggerEl.disabled)
+			};
+			try {
+				triggerEl.disabled = true;
+				triggerEl.setAttribute('aria-busy', 'true');
+				triggerEl.setAttribute('data-loading', '1');
+			} catch (eLoad) {
+				bridgeLoadingTriggerSnap = null;
+			}
+		}
+		if (!$bridgeLoadingOverlay) {
+			var text = (labels && labels.loading_map) || 'Загружаем карту…';
+			$bridgeLoadingOverlay = $(
+				'<div class="mp-cc-cdek-loading-overlay" role="status" aria-live="polite" aria-busy="true">' +
+					'<div class="mp-cc-cdek-loading-overlay__panel">' +
+						'<span class="mp-cc-cdek-loading-overlay__spinner" aria-hidden="true"></span>' +
+						'<span class="mp-cc-cdek-loading-overlay__text"></span>' +
+					'</div>' +
+				'</div>'
+			);
+			$bridgeLoadingOverlay.find('.mp-cc-cdek-loading-overlay__text').text(text);
+			$('body').append($bridgeLoadingOverlay);
+		}
+	}
+
+	/**
+	 * Снимает индикатор загрузки с кнопки и убирает overlay-спиннер.
+	 */
+	function endBridgeLoading() {
+		if (bridgeLoadingTriggerSnap && bridgeLoadingTriggerSnap.el) {
+			var el = bridgeLoadingTriggerSnap.el;
+			try {
+				el.disabled = bridgeLoadingTriggerSnap.disabled;
+				el.removeAttribute('aria-busy');
+				el.removeAttribute('data-loading');
+			} catch (eRestore) {
+				// ignore
+			}
+		}
+		bridgeLoadingTriggerSnap = null;
+		if ($bridgeLoadingOverlay) {
+			$bridgeLoadingOverlay.remove();
+			$bridgeLoadingOverlay = null;
+		}
+	}
 
 	function escHtml(s) {
 		return String(s == null ? '' : s)
@@ -333,6 +393,7 @@
 	 * @param {'pickup_point'|'cdek_office'} selectionKind
 	 */
 	function showListModal(opts, labels, pickupPoints, selectionKind, titleOverride) {
+		endBridgeLoading();
 		pickupPoints = Array.isArray(pickupPoints) ? pickupPoints : [];
 		selectionKind = selectionKind || 'pickup_point';
 		var ctx = {
@@ -474,6 +535,7 @@
 	 * @param {boolean} [hasCity] — для `pvz_list`: есть ли город в конфиге для загрузки офисов
 	 */
 	function showPvzEmptyModal(opts, labels, emptyMode, hasCity) {
+		endBridgeLoading();
 		var cfg = getCfg();
 		var hint = String(cfg.reason_hint || labels.reason_hint || '').trim();
 		emptyMode = emptyMode === 'pvz_list' ? 'pvz_list' : 'pvz_map';
@@ -620,39 +682,6 @@
 			return;
 		}
 
-		var loadSnap = null;
-		var triggerEl = opts && opts.trigger;
-		if (triggerEl && triggerEl.nodeType === 1) {
-			loadSnap = {
-				el: triggerEl,
-				text: triggerEl.textContent,
-				disabled: Boolean(triggerEl.disabled)
-			};
-			try {
-				triggerEl.disabled = true;
-				triggerEl.setAttribute('aria-busy', 'true');
-				triggerEl.setAttribute('data-loading', '1');
-			} catch (eLoad) {
-				loadSnap = null;
-			}
-		}
-
-		function restoreMapTriggerLoading() {
-			if (!loadSnap || !loadSnap.el) {
-				return;
-			}
-			try {
-				loadSnap.el.disabled = loadSnap.disabled;
-				loadSnap.el.removeAttribute('aria-busy');
-				loadSnap.el.removeAttribute('data-loading');
-				if (typeof loadSnap.text === 'string') {
-					loadSnap.el.textContent = loadSnap.text;
-				}
-			} catch (eRestore) {
-				// ignore
-			}
-		}
-
 		function continueWithOfficesRaw(officesRaw) {
 			var defaultLocation = String(cfg.default_city || 'Москва').trim() || 'Москва';
 
@@ -729,6 +758,7 @@
 				if (nativeCdekWidgetInstance && typeof nativeCdekWidgetInstance.open === 'function') {
 					nativeCdekWidgetInstance.open();
 				}
+				endBridgeLoading();
 			} catch (err) {
 				nativeCdekWidgetInstance = null;
 				openPvzMapFallback(opts, labels, 'widget_init_failed');
@@ -749,7 +779,6 @@
 			}
 
 			if (officesRaw.length > 0) {
-				restoreMapTriggerLoading();
 				continueWithOfficesRaw(officesRaw);
 				return;
 			}
@@ -761,7 +790,6 @@
 				getCurrentPostcode: function () { return ''; }
 			});
 			fetchOfficesForCurrentCity(cityOpts, function (cityResult) {
-				restoreMapTriggerLoading();
 				var cityRaw = Array.isArray(cityResult.officesRaw) ? cityResult.officesRaw : [];
 				if (cityRaw.length > 0) {
 					if (typeof opts.logValidationFailure === 'function') {
@@ -786,6 +814,10 @@
 		var bridgeMode = normalizeBridgeMode(opts.mode);
 		var pickupPoints = Array.isArray(opts.pickupPoints) ? opts.pickupPoints : [];
 		lastFocus = opts.trigger || document.activeElement;
+
+		// Сразу показываем спиннер на кнопке и overlay со «Загружаем карту…» —
+		// убираем, как только откроется виджет/модал, или при ошибке.
+		startBridgeLoading(opts && opts.trigger, labels);
 
 		if (bridgeMode === 'pickup_list') {
 			showListModal(opts, labels, pickupPoints, 'pickup_point', null);

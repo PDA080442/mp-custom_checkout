@@ -6530,6 +6530,9 @@
 				state.maxReachedIndex = Math.max(state.maxReachedIndex, targetIndex);
 				setRuntimeFlag(state, 'blocked', false);
 				render(state, $app);
+				// Успешный переход — старые валидационные ошибки предыдущего шага
+				// (например, «Выберите пункт выдачи (ПВЗ)…») больше неактуальны.
+				clearNotifications();
 				scrollToStepTop();
 
 				document.dispatchEvent(
@@ -6605,6 +6608,8 @@
 			state.v2CurrentIndex = targetIndex;
 			state.v2MaxReachedIndex = Math.max(state.v2MaxReachedIndex, targetIndex);
 			render(state, $app);
+			// Успешный переход на следующий/предыдущий V2-экран — старая ошибка предыдущего экрана не должна висеть.
+			clearNotifications();
 			scrollToStepTop();
 			document.dispatchEvent(
 				new CustomEvent('mp_cc_v2_step_changed', {
@@ -8144,6 +8149,30 @@
 		container.innerHTML = '<div class="mp-cc-notice mp-cc-notice--' + safeLevel + '" role="' + role + '" aria-live="' + live + '" aria-atomic="true">' + safeMessage + '</div>';
 	}
 
+	/**
+	 * Снимает любое уведомление из `#mp-cc-notifications`.
+	 * Используется при успешных переходах между шагами и после исправления валидационных ошибок,
+	 * чтобы старая красная плашка (например «Выберите пункт выдачи (ПВЗ)…») не висела на следующих экранах.
+	 *
+	 * @param {string} [level] — если указан ('error'|'success'|'info'),
+	 *                          очищать только уведомления этого уровня.
+	 */
+	function clearNotifications(level) {
+		var container = document.querySelector(selectors.notifications);
+		if (!container) {
+			return;
+		}
+		if (!level) {
+			container.innerHTML = '';
+			return;
+		}
+		var sel = '.mp-cc-notice--' + (level === 'error' ? 'error' : (level === 'success' ? 'success' : 'info'));
+		var existing = container.querySelector(sel);
+		if (existing) {
+			container.innerHTML = '';
+		}
+	}
+
 	function focusStepHeading($app) {
 		var heading = $app.find('#mp-cc-step-heading').get(0);
 		if (!heading || typeof heading.focus !== 'function') {
@@ -8534,6 +8563,11 @@
 				if (savedOffice) {
 					setStepInvalidState(state, 'address_delivery', false);
 					setV2StepInvalidState(state, 'delivery_screen', false);
+					if (state.frontendStore.form && state.frontendStore.form.errors && state.frontendStore.form.errors.cdek_office_code) {
+						state.frontendStore.form.errors.cdek_office_code = '';
+					}
+					// Юзер исправил «pvz_required» — старое красное уведомление больше не актуально.
+					clearNotifications('error');
 				}
 				try { render(state, $app); } catch (_renderErr) {}
 				if (c !== '' && hasDetailsPayload) {
