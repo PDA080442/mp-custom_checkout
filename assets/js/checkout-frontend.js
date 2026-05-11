@@ -662,22 +662,18 @@
 				title: '',
 				intro: '',
 				gateway_order: [],
-				gateway_icons: {},
 				rows_layout: true,
 				card_row: {
 					enabled: true,
 					bound_gateway_id: '',
 					title: 'Оплата банковской картой',
-					icon_url: '',
 					disclaimer: 'Данные карты вводятся в защищённом окне платёжной системы.'
 				},
 				discount_toggles: {
 					coupon_in_step: true,
 					gift_card_in_step: true,
 					coupon_in_summary: false,
-					gift_card_in_summary: false,
-					coupon_icon_url: '',
-					gift_card_icon_url: ''
+					gift_card_in_summary: false
 				},
 				card_surface: 'visual',
 				decorative_card_fields: true,

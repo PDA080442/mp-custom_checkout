@@ -536,7 +536,6 @@ final class SafeSettingsResolver {
 							'enabled'          => true,
 							'bound_gateway_id' => '',
 							'title'            => 'Оплата банковской картой',
-							'icon_url'         => '',
 							'disclaimer'       => 'Данные карты вводятся в защищённом окне платёжной системы.',
 						),
 						'discount_toggles' => array(
@@ -544,8 +543,6 @@ final class SafeSettingsResolver {
 							'gift_card_in_step'   => true,
 							'coupon_in_summary'   => false,
 							'gift_card_in_summary'=> false,
-							'coupon_icon_url'     => '',
-							'gift_card_icon_url'  => '',
 						),
 						'card_surface' => 'visual',
 						'auto_classic_on_empty_gateway_fields' => true,
