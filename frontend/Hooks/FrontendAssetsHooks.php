@@ -347,6 +347,8 @@ final class FrontendAssetsHooks {
 		$defaults_all = DefaultLabelsRegistry::all();
 		$def_checkout = isset( $defaults_all['checkout'] ) && is_array( $defaults_all['checkout'] ) ? $defaults_all['checkout'] : array();
 		$stored_checkout = isset( $stored['checkout'] ) && is_array( $stored['checkout'] ) ? $stored['checkout'] : array();
+		$def_delivery = isset( $defaults_all['delivery'] ) && is_array( $defaults_all['delivery'] ) ? $defaults_all['delivery'] : array();
+		$stored_delivery = isset( $stored['delivery'] ) && is_array( $stored['delivery'] ) ? $stored['delivery'] : array();
 		return array(
 			'common'       => isset( $stored['common'] ) && is_array( $stored['common'] ) ? $stored['common'] : array(),
 			'checkout'     => array_merge( $def_checkout, $stored_checkout ),
@@ -354,6 +356,7 @@ final class FrontendAssetsHooks {
 			'step_2'       => isset( $stored['step_2'] ) && is_array( $stored['step_2'] ) ? $stored['step_2'] : array(),
 			'step_3'       => isset( $stored['step_3'] ) && is_array( $stored['step_3'] ) ? $stored['step_3'] : array(),
 			'step_4'       => isset( $stored['step_4'] ) && is_array( $stored['step_4'] ) ? $stored['step_4'] : array(),
+			'delivery'     => array_merge( $def_delivery, $stored_delivery ),
 			'coupon'       => isset( $stored['coupon'] ) && is_array( $stored['coupon'] ) ? $stored['coupon'] : array(),
 			'gift_card'    => isset( $stored['gift_card'] ) && is_array( $stored['gift_card'] ) ? $stored['gift_card'] : array(),
 			'order_review' => isset( $stored['order_review'] ) && is_array( $stored['order_review'] ) ? $stored['order_review'] : array(),

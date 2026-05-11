@@ -1982,6 +1982,74 @@
 		return map;
 	}
 
+	function buildWcShippingRateMap(rates) {
+		var map = {};
+		if (!Array.isArray(rates)) {
+			return map;
+		}
+		var i;
+		for (i = 0; i < rates.length; i += 1) {
+			var r = rates[i] || {};
+			var rid = String(r.id || '');
+			if (rid) {
+				map[rid] = r;
+			}
+		}
+		return map;
+	}
+
+	function pluralizeRuDaysWord(n) {
+		var num = Math.abs(Math.round(Number(n) || 0));
+		var mod10 = num % 10;
+		var mod100 = num % 100;
+		if (num === 1 || (mod10 === 1 && mod100 !== 11)) {
+			return getUiText('delivery.eta_days_one', 'день');
+		}
+		if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+			return getUiText('delivery.eta_days_few', 'дня');
+		}
+		return getUiText('delivery.eta_days_many', 'дней');
+	}
+
+	function formatEtaDaysRange(min, max) {
+		var lo = Number(min);
+		var hi = Number(max);
+		var loOk = Number.isFinite(lo) && lo >= 1;
+		var hiOk = Number.isFinite(hi) && hi >= 1;
+		if (!loOk && !hiOk) {
+			return '';
+		}
+		if (loOk && !hiOk) { hi = lo; hiOk = true; }
+		if (!loOk && hiOk) { lo = hi; loOk = true; }
+		lo = Math.round(lo);
+		hi = Math.round(hi);
+		if (lo > hi) {
+			var tmp = lo; lo = hi; hi = tmp;
+		}
+		if (lo === hi) {
+			var single = getUiText('delivery.eta_days_single', '{value} {plural}');
+			return String(single)
+				.replace(/\{value\}/g, String(lo))
+				.replace(/\{plural\}/g, pluralizeRuDaysWord(lo));
+		}
+		var rng = getUiText('delivery.eta_days_range', '{min}–{max} {plural}');
+		return String(rng)
+			.replace(/\{min\}/g, String(lo))
+			.replace(/\{max\}/g, String(hi))
+			.replace(/\{plural\}/g, pluralizeRuDaysWord(hi));
+	}
+
+	function formatEtaDaysFromRate(rate) {
+		if (!rate || typeof rate !== 'object') {
+			return '';
+		}
+		var eta = rate.eta_days && typeof rate.eta_days === 'object' ? rate.eta_days : null;
+		if (!eta) {
+			return '';
+		}
+		return formatEtaDaysRange(eta.min, eta.max);
+	}
+
 	function wcMethodAnchorPattern(methodId) {
 		switch (String(methodId || '').toLowerCase()) {
 			case 'pvz':
@@ -2251,6 +2319,7 @@
 		if (!Object.keys(costById).length) {
 			return methods;
 		}
+		var rateById = buildWcShippingRateMap(rates);
 		var dateBox = state.frontendStore.fulfillment && state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
 			? state.frontendStore.fulfillment.date
 			: {};
@@ -2263,12 +2332,21 @@
 			var m = methods[mi] || {};
 			var m2 = $.extend({}, m);
 			var wr = String(m.wc_rate_id || '');
+			var pickedRateId = '';
 			if (wr && Object.prototype.hasOwnProperty.call(costById, wr)) {
 				m2.price = wcOverlayPriceOrCatalog(costById[wr], m2.price);
+				pickedRateId = wr;
 			} else if (!Array.isArray(m.tariffs) || !m.tariffs.length) {
 				var singleId = wcBestRateForMethodOnly(m.id, m.title, rates, costById);
 				if (singleId) {
 					m2.price = wcOverlayPriceOrCatalog(costById[singleId], m2.price);
+					pickedRateId = singleId;
+				}
+			}
+			if (pickedRateId && Object.prototype.hasOwnProperty.call(rateById, pickedRateId)) {
+				var newEta = formatEtaDaysFromRate(rateById[pickedRateId]);
+				if (newEta) {
+					m2.eta = newEta;
 				}
 			}
 			if (Array.isArray(m.tariffs) && m.tariffs.length) {
@@ -2281,10 +2359,19 @@
 					var tr = String(t.wc_rate_id || '');
 					var autoRid = String(assign[String(t.id || '')] || '');
 					var catP = Number(t.price || 0);
+					var pickedTariffRateId = '';
 					if (tr && Object.prototype.hasOwnProperty.call(costById, tr)) {
 						row.price = wcOverlayPriceOrCatalog(costById[tr], catP);
+						pickedTariffRateId = tr;
 					} else if (autoRid && Object.prototype.hasOwnProperty.call(costById, autoRid)) {
 						row.price = wcOverlayPriceOrCatalog(costById[autoRid], catP);
+						pickedTariffRateId = autoRid;
+					}
+					if (pickedTariffRateId && Object.prototype.hasOwnProperty.call(rateById, pickedTariffRateId)) {
+						var tariffEta = formatEtaDaysFromRate(rateById[pickedTariffRateId]);
+						if (tariffEta) {
+							row.eta = tariffEta;
+						}
 					}
 					if (
 						selPrice > 0 &&
@@ -7219,7 +7306,9 @@
 					methodHint = String(pickupPoints[0].address);
 				}
 			} else {
-				methodHint = trimNonEmpty(method.description) || trimNonEmpty(method.eta) || '';
+				var methodDescr = trimNonEmpty(method.description);
+				var methodEta = trimNonEmpty(method.eta);
+				methodHint = [methodDescr, methodEta].filter(function (s) { return !!s; }).join(' · ');
 			}
 			html += '<div class="mp-cc-ship-option-group' + (isMethodActive ? ' is-active' : '') + (hasTariffsForMethod ? ' has-tariffs' : '') + '">';
 			html += '<label class="mp-cc-ship-option' + (isMethodActive ? ' is-active' : '') + '">';
@@ -7608,6 +7697,13 @@
 		if (isPickup && shippingTotalNum <= 0) {
 			shippingText = '';
 		}
+		var shippingEtaText = '';
+		if (!isPickup) {
+			var dateBoxForEta = state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+				? state.frontendStore.fulfillment.date
+				: {};
+			shippingEtaText = trimNonEmpty(dateBoxForEta.shipping_eta);
+		}
 		var taxText = String(cartSummary.tax || '');
 		var feeLines = Array.isArray(cartSummary.fee_lines) ? cartSummary.fee_lines : [];
 		var shippingLabel = getStepOneLabel(state, 'shipping_label', 'order_review.shipping', 'Доставка');
@@ -7654,7 +7750,11 @@
 				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(subtotalLineLabel) + ': <span class="mp-cc-summary-card__amount--inline" data-summary-amount="1">' + wcPriceHtmlFragment(subtotalText) + '</span></p>';
 			}
 			if (trimNonEmpty(shippingText)) {
-				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(shippingLabel) + ': <span class="mp-cc-summary-card__amount--inline" data-summary-amount="1" data-summary-shipping-amount="1">' + wcPriceHtmlFragment(shippingText) + '</span></p>';
+				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(shippingLabel) + ': <span class="mp-cc-summary-card__amount--inline" data-summary-amount="1" data-summary-shipping-amount="1">' + wcPriceHtmlFragment(shippingText) + '</span>';
+				if (shippingEtaText) {
+					html += ' <span class="mp-cc-summary-card__shipping-eta" data-summary-shipping-eta="1">· ' + escapeHtml(shippingEtaText) + '</span>';
+				}
+				html += '</p>';
 			}
 			for (var fi = 0; fi < feeLines.length; fi += 1) {
 				var feeRow = feeLines[fi] || {};
