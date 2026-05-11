@@ -55,9 +55,6 @@
 	var pendingCdekOfficeDetails = null;
 	/** Deferred для очереди office-save: резолвится только после реального AJAX (модал карты не закрывается на «фейковом» resolve). */
 	var pendingCdekOfficeDeferred = null;
-	/** Пока идёт «Рассчитать доставку» — не даём render() убрать кнопку из-за гонки с черновиком / get_state. */
-	var shippingRecalcPending = false;
-
 	function getUiText(path, fallback) {
 		var source = (window.mpCcCheckout && window.mpCcCheckout.uiText) ? window.mpCcCheckout.uiText : {};
 		var parts = String(path || '').split('.');
@@ -6773,14 +6770,6 @@
 						scrollToFirstInvalidField($app);
 						return;
 					}
-					if (isPostRussiaRecalcRequired(state)) {
-						setShippingRatesLoadingOverlay(false, $app);
-						setV2StepInvalidState(state, currentScreen.id, true);
-						logValidationFailure(state, 'delivery_screen', { post_russia_recalc: 'required' });
-						notify(getPostRussiaRecalcRequiredMessage(), 'error');
-						render(state, $app);
-						return;
-					}
 					setV2StepInvalidState(state, currentScreen.id, false);
 					saveCurrentStepDraft(state).always(function () {
 						setCurrentV2Screen(state, $app, v2Idx + 1).always(function () {
@@ -6913,16 +6902,6 @@
 					notify(getStepOneLabel(state, 'pvz_required', 'step_1.errors.pvz_required', 'Выберите пункт выдачи (ПВЗ), чтобы продолжить.'), 'error');
 					render(state, $app);
 					scrollToFirstInvalidField($app);
-					return;
-				}
-				if (isPostRussiaRecalcRequired(state)) {
-					if (step1ForwardLoadingOverlay) {
-						setShippingRatesLoadingOverlay(false, $app);
-					}
-					setStepInvalidState(state, 'address_delivery', true);
-					logValidationFailure(state, 'address_delivery', { post_russia_recalc: 'required' });
-					notify(getPostRussiaRecalcRequiredMessage(), 'error');
-					render(state, $app);
 					return;
 				}
 				state.frontendStore.form.errors = state.frontendStore.form.errors || {};
@@ -7106,7 +7085,7 @@
 	 *
 	 * Обычный sync на этом шаге не идёт (см. `syncStoreWithBackend` guard), иначе любая правка адреса
 	 * дёргала бы корзину. Но при смене города ранее выбранный ПВЗ/тариф невалиден, и без force=true
-	 * корзина зависает на 0₽ или старых ценах до ручного «Рассчитать доставку».
+	 * корзина зависает на 0₽ или старых ценах до принудительного sync с бэкендом.
 	 */
 	function scheduleAddressForcedRatesSync(state, $app) {
 		if (addressRatesSyncTimer) {
@@ -7467,35 +7446,6 @@
 	}
 
 	/**
-	 * Проверяет, что для выбранной «Почты России» обязательное подтверждение через
-	 * «Рассчитать доставку» ещё не выполнено в этой сессии.
-	 *
-	 * Флаг `post_russia_recalc_confirmed` хранится в step_one (`fulfillment.date`) и:
-	 *  - сбрасывается при выборе post_russia после другого метода;
-	 *  - сбрасывается при смене города/региона/страны;
-	 *  - выставляется в true перед reload, который инициирует кнопка «Рассчитать доставку».
-	 *
-	 * Используется как дополнительный gate в moveForward (legacy + V2): пока пользователь
-	 * не нажал «Рассчитать доставку», на следующий шаг checkout не пускаем.
-	 */
-	function isPostRussiaRecalcRequired(state) {
-		var dateBox = state && state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.date || {}) : {};
-		var methodId = String(dateBox.shipping_method_id || '');
-		if (methodId !== 'post_russia') {
-			return false;
-		}
-		var confirmedRaw = dateBox.post_russia_recalc_confirmed;
-		if (confirmedRaw === true || confirmedRaw === 1 || confirmedRaw === '1' || confirmedRaw === 'true') {
-			return false;
-		}
-		return true;
-	}
-
-	function getPostRussiaRecalcRequiredMessage() {
-		return 'Нажмите «Рассчитать доставку», чтобы подтвердить стоимость для «Почты России».';
-	}
-
-	/**
 	 * Проверяет обязательные адресные поля шага «Адрес и доставка».
 	 *
 	 * Раньше адресный блок дублировался на шаге «Получатель», и валидация адреса жила там.
@@ -7544,8 +7494,7 @@
 	 * Раннее блокирующее условие на переходах вперёд для шага «Адрес и доставка».
 	 *
 	 * Возвращает true и показывает соответствующий notify, если:
-	 *  - выбран метод `pvz`, но не выбран ПВЗ на карте (см. isPvzMissingOfficeRequired);
-	 *  - выбран `post_russia`, но «Рассчитать доставку» не нажата (isPostRussiaRecalcRequired).
+	 *  - выбран метод `pvz`, но не выбран ПВЗ на карте (см. isPvzMissingOfficeRequired).
 	 *
 	 * Используем его до `saveCurrentStepDraft` в обработчиках continue/next/v2-next, чтобы:
 	 *  - не сохранять промежуточный draft с невалидным state;
@@ -7568,13 +7517,6 @@
 			notify(getStepOneLabel(state, 'pvz_required', 'step_1.errors.pvz_required', 'Выберите пункт выдачи (ПВЗ) на карте, чтобы продолжить.'), 'error');
 			render(state, $app);
 			scrollToFirstInvalidField($app);
-			return true;
-		}
-		if (isPostRussiaRecalcRequired(state)) {
-			setStepInvalidState(state, 'address_delivery', true);
-			setV2StepInvalidState(state, 'delivery_screen', true);
-			notify(getPostRussiaRecalcRequiredMessage(), 'error');
-			render(state, $app);
 			return true;
 		}
 		// Перенесённая со 2-го шага валидация адреса. Адресный блок теперь живёт только на шаге 1,
@@ -8051,37 +7993,6 @@
 		return '';
 	}
 
-	function hasCartLinesForShippingRecalc(state) {
-		if (!state || !state.frontendStore) {
-			return false;
-		}
-		var sum = state.frontendStore.cart && state.frontendStore.cart.summary ? state.frontendStore.cart.summary : {};
-		var n = Number(sum.items_count || 0);
-		if (!n && state.frontendStore.cart && Array.isArray(state.frontendStore.cart.items)) {
-			n = state.frontendStore.cart.items.length;
-		}
-		return n > 0;
-	}
-
-	function shouldShowShippingRecalcButton(state) {
-		if (!state || !state.frontendStore) {
-			return false;
-		}
-		if (state.currentStepId !== 'address_delivery' && !shippingRecalcPending) {
-			return false;
-		}
-		var dateBox = state.frontendStore.fulfillment && state.frontendStore.fulfillment.date ? state.frontendStore.fulfillment.date : {};
-		var shipMethod = String(dateBox.shipping_method_id || '');
-		// Кнопку «Рассчитать доставку» показываем только для «Почта России»: для остальных методов
-		// (pvz / courier / pickup / krasnoyarsk_delivery) бэк автоматически пересчитывает rates после
-		// смены метода/тарифа/города (см. force-sync в applyShipping*UserChoice). У почты исторически
-		// расчёт может зависеть от ручной кнопки + reload, поэтому оставляем её именно для этого метода.
-		if (shipMethod !== 'post_russia') {
-			return false;
-		}
-		return hasCartLinesForShippingRecalc(state);
-	}
-
 	function buildSummaryHtml(state) {
 		var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
 		var total = state.visibleSteps.length;
@@ -8153,13 +8064,10 @@
 				html += '<p class="mp-cc-summary-card__meta"><span class="mp-cc-summary-card__amount-label">' + escapeHtml(amountLabel) + ':</span> <span class="mp-cc-summary-card__amount" data-summary-amount="1">' + wcPriceHtmlFragment(displayAmount) + '</span></p>';
 			}
 		}
-		if (state.currentStepId === 'address_delivery' || shippingRecalcPending) {
+		if (state.currentStepId === 'address_delivery') {
 			html += '<div class="mp-cc-summary-card__actions">';
 			html += '<button type="button" class="mp-cc-summary-card__btn mp-cc-summary-card__btn--primary" data-summary-action="continue">' + escapeHtml(getStepOneLabel(state, 'continue_label', 'step_1.continue', 'Continue')) + '</button>';
 			html += '<a href="' + escapeHtml(returnUrl) + '" class="mp-cc-summary-card__btn mp-cc-summary-card__btn--ghost">' + escapeHtml(getStepOneLabel(state, 'return_label', 'step_1.return_to_shop', 'Return to shop')) + '</a>';
-			if (shouldShowShippingRecalcButton(state)) {
-				html += '<button type="button" class="mp-cc-summary-card__btn mp-cc-summary-card__btn--ghost" data-mp-cc-recalc-shipping="1">' + escapeHtml(getUiText('order_review.recalc_shipping', 'Рассчитать доставку')) + '</button>';
-			}
 			html += '</div>';
 		}
 		if (state.currentStepId !== 'confirm') {
@@ -9005,9 +8913,7 @@
 
 	/**
 	 * Включает/выключает оверлей «идёт пересчёт ставок» на блоке оформления.
-	 * Используется при автоматических пересчётах после смены метода/тарифа доставки —
-	 * визуально совпадает с поведением кнопки «Рассчитать доставку», чтобы пользователь
-	 * понимал, что данные подгружаются (особенно когда обновляются цены вариантов).
+	 * Используется при автоматических пересчётах после смены метода/тарифа доставки или адреса.
 	 */
 	function setShippingRatesLoadingOverlay(on, $app) {
 		var $checkoutRoot = $(selectors.root);
@@ -9083,15 +8989,6 @@
 			setStepInvalidState(state, 'address_delivery', false);
 			if (state.frontendStore.form.errors && state.frontendStore.form.errors.cdek_office_code) {
 				state.frontendStore.form.errors.cdek_office_code = '';
-			}
-		}
-		// Гейт «Рассчитать доставку» работает только для post_russia. При уходе с post_russia
-		// флаг становится неактуален; при свежем выборе post_russia требуем подтверждения заново.
-		if (state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object') {
-			if (methodId !== 'post_russia') {
-				delete state.frontendStore.fulfillment.date.post_russia_recalc_confirmed;
-			} else if (prevMethodIdForPvz !== 'post_russia') {
-				state.frontendStore.fulfillment.date.post_russia_recalc_confirmed = false;
 			}
 		}
 		var selectedMethod = null;
@@ -9286,11 +9183,6 @@
 			// Явная пустая строка, не delete: на бэке `set_step_answers` делает array_replace,
 			// и при отсутствии ключа в payload остался бы старый код от прошлого города.
 			state.frontendStore.fulfillment.date.cdek_office_code = '';
-			// Смена города/региона инвалидирует подтверждение «Рассчитать доставку» для post_russia —
-			// тариф почты завязан на регион, поэтому требуем повторного подтверждения.
-			if (String(state.frontendStore.fulfillment.date.shipping_method_id || '') === 'post_russia') {
-				state.frontendStore.fulfillment.date.post_russia_recalc_confirmed = false;
-			}
 			var summaryDd = state.frontendStore.cart && state.frontendStore.cart.summary && typeof state.frontendStore.cart.summary === 'object'
 				? state.frontendStore.cart.summary
 				: {};
@@ -9587,74 +9479,6 @@
 			moveForward(state, $app);
 		});
 
-		$(selectors.summary).find('[data-mp-cc-recalc-shipping="1"]').off('click').on('click', function () {
-			var $btn = $(this);
-			if ($btn.prop('disabled')) {
-				return;
-			}
-			if (draftSaveTimer) {
-				window.clearTimeout(draftSaveTimer);
-				draftSaveTimer = null;
-			}
-			cancelAddressRatesBackendSync();
-			shippingRecalcPending = true;
-			var idleLabel = String($btn.text() || '');
-			$btn.attr('data-loading-label', idleLabel);
-			$btn.text(getUiText('order_review.recalc_shipping_loading', 'Рассчитываем...'));
-			$btn.prop('disabled', true).attr('aria-busy', 'true').addClass('is-loading');
-			var $checkoutRoot = $(selectors.root);
-			if ($checkoutRoot.length) {
-				$checkoutRoot.addClass('is-shipping-recalc-loading');
-			}
-			if ($app && $app.length) {
-				$app.addClass('is-shipping-recalc-loading');
-			}
-			var runSave = function () {
-				flushContactFormFromDom(state, $app);
-				// Подтверждаем «Рассчитать доставку» для post_russia: после reload session_get_state
-				// восстановит этот флаг, и moveForward не будет блокировать переход на следующий шаг.
-				state.frontendStore = state.frontendStore || {};
-				state.frontendStore.fulfillment = state.frontendStore.fulfillment || {};
-				state.frontendStore.fulfillment.date = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
-					? state.frontendStore.fulfillment.date
-					: {};
-				if (String(state.frontendStore.fulfillment.date.shipping_method_id || '') === 'post_russia') {
-					state.frontendStore.fulfillment.date.post_russia_recalc_confirmed = true;
-				}
-				saveCurrentStepDraft(state).then(function () {
-					shippingRecalcPending = false;
-					window.location.reload();
-				}).fail(function (xhr) {
-					shippingRecalcPending = false;
-					if ($checkoutRoot.length) {
-						$checkoutRoot.removeClass('is-shipping-recalc-loading');
-					}
-					if ($app && $app.length) {
-						$app.removeClass('is-shipping-recalc-loading');
-					}
-					render(state, $app);
-					var payload422 = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
-					var serverMsg = trimNonEmpty(payload422.message) ? String(payload422.message) : '';
-					var fallback = getUiText('order_review.recalc_shipping_failed', 'Не удалось сохранить адрес. Проверьте поля и попробуйте снова.');
-					var netHint = '';
-					var st = xhr && typeof xhr.status === 'number' ? xhr.status : 0;
-					if (st === 0) {
-						netHint = ' ' + getUiText('order_review.recalc_shipping_network', 'Проверьте соединение или отключите VPN и попробуйте снова.');
-					} else if (st === 504 || st === 524) {
-						netHint = ' ' + getUiText('order_review.recalc_shipping_gateway_timeout', 'Сервер долго отвечал (таймаут). Подождите минуту и повторите.');
-					}
-					notify(serverMsg || (fallback + netHint), 'error');
-				});
-			};
-			if (typeof window.requestAnimationFrame === 'function') {
-				window.requestAnimationFrame(function () {
-					window.requestAnimationFrame(runSave);
-				});
-			} else {
-				window.setTimeout(runSave, 0);
-			}
-		});
-
 		$progress.find('.mp-cc-progress__btn').off('click').on('click', function () {
 			if (isV2CheckoutUiEnabled(state)) {
 				var v2Index = Number($(this).attr('data-step-index'));
@@ -9855,10 +9679,6 @@
 				// Явная пустая строка (см. afterDadataContactGeocode) — иначе array_replace
 				// в session_set_answers оставит старый код от прошлого города.
 				state.frontendStore.fulfillment.date.cdek_office_code = '';
-				// Смена города инвалидирует подтверждение «Рассчитать доставку» для post_russia.
-				if (String(state.frontendStore.fulfillment.date.shipping_method_id || '') === 'post_russia') {
-					state.frontendStore.fulfillment.date.post_russia_recalc_confirmed = false;
-				}
 				invalidateV2DownstreamFrom(state, 0);
 				var summaryCity = state.frontendStore.cart && state.frontendStore.cart.summary && typeof state.frontendStore.cart.summary === 'object'
 					? state.frontendStore.cart.summary
@@ -9913,7 +9733,7 @@
 					shippingMutationInFlight = false;
 					flushPendingShippingMutation(state, $app, '');
 					// На шаге 1 после смены города принудительно пересчитываем ставки и cart, иначе цены
-					// не обновляются до клика «Рассчитать доставку». Для address_delivery нужен force=true.
+					// не обновляются без принудительного sync. Для address_delivery нужен force=true.
 					if (state && state.currentStepId === 'address_delivery') {
 						scheduleAddressForcedRatesSync(state, $app);
 					}
