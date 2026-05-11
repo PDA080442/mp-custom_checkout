@@ -660,12 +660,6 @@
 				intro: '',
 				gateway_order: [],
 				rows_layout: true,
-				card_row: {
-					enabled: true,
-					bound_gateway_id: '',
-					title: 'Оплата банковской картой',
-					disclaimer: 'Данные карты вводятся в защищённом окне платёжной системы.'
-				},
 				discount_toggles: {
 					coupon_in_step: true,
 					gift_card_in_step: true,
@@ -1505,13 +1499,10 @@
 		}
 		var pay = state.frontendStore && state.frontendStore.payment ? state.frontendStore.payment : {};
 		var gw = trimNonEmpty(pay.gateway);
-		var rowId = trimNonEmpty(pay.row_id);
 		var payState = String(pay.state || 'idle');
 		var title = trimNonEmpty(mr.title) || getUiText('order_review.payment_mini_title', 'Способ оплаты');
 		var intro = trimNonEmpty(mr.intro) || getUiText('order_review.payment_mini_intro', 'Выбранный метод проведения платежа.');
-		var gatewayTitle = rowId === MP_CC_VIRTUAL_CARD_ROW_ID
-			? getCardRowConfig().title
-			: getSelectedGatewayTitle(state);
+		var gatewayTitle = getSelectedGatewayTitle(state);
 		var meta = getGatewayMetaById(gw);
 		var desc = '';
 		if (mr.show_gateway_description !== false && meta && meta.description) {
@@ -3971,8 +3962,6 @@
 		return b === 'bank' || b === 'robokassa' || b === 'yookassa';
 	}
 
-	var MP_CC_VIRTUAL_CARD_ROW_ID = '__mp_cc_virtual_card';
-
 	function getPaymentBlockCfg() {
 		var cfg = getStepFourConfig();
 		return cfg.payment_block && typeof cfg.payment_block === 'object' ? cfg.payment_block : {};
@@ -3984,18 +3973,6 @@
 			return !!pb.rows_layout;
 		}
 		return true;
-	}
-
-	function getCardRowConfig() {
-		var pb = getPaymentBlockCfg();
-		var raw = pb.card_row && typeof pb.card_row === 'object' ? pb.card_row : {};
-		return {
-			enabled: Object.prototype.hasOwnProperty.call(raw, 'enabled') ? !!raw.enabled : true,
-			bound_gateway_id: trimNonEmpty(raw.bound_gateway_id),
-			title: trimNonEmpty(raw.title) || getUiText('step_4.payment_card_title', 'Оплата банковской картой'),
-			icon: trimNonEmpty(raw.icon) || trimNonEmpty(raw.icon_url),
-			disclaimer: trimNonEmpty(raw.disclaimer) || getUiText('step_4.payment_card_disclaimer', 'Данные карты вводятся в защищённом окне платёжной системы.')
-		};
 	}
 
 	function getDiscountTogglesConfig() {
@@ -4011,20 +3988,7 @@
 		};
 	}
 
-	function getPaymentRowId(state) {
-		if (!state || !state.frontendStore || !state.frontendStore.payment) {
-			return '';
-		}
-		return trimNonEmpty(state.frontendStore.payment.row_id);
-	}
-
-	function setPaymentRowId(state, rowId) {
-		state.frontendStore = state.frontendStore || {};
-		state.frontendStore.payment = state.frontendStore.payment || { gateway: '', state: 'idle' };
-		state.frontendStore.payment.row_id = trimNonEmpty(rowId);
-	}
-
-	function buildPaymentRowHtml(rowId, gatewayId, title, iconUrl, isActive, errPayment, extraClass) {
+	function buildPaymentRowHtml(gatewayId, title, iconUrl, isActive, errPayment, extraClass) {
 		var html = '';
 		var labelClass = 'mp-cc-payment-row';
 		if (extraClass) {
@@ -4033,17 +3997,14 @@
 		if (isActive) {
 			labelClass += ' is-active';
 		}
-		var inputAttrs = ' name="mp_cc_payment_gateway" value="' + escapeHtml(gatewayId) + '" data-payment-gateway="1" data-payment-row-id="' + escapeHtml(rowId) + '"';
-		if (rowId === MP_CC_VIRTUAL_CARD_ROW_ID) {
-			inputAttrs += ' data-virtual-card="1"';
-		}
+		var inputAttrs = ' name="mp_cc_payment_gateway" value="' + escapeHtml(gatewayId) + '" data-payment-gateway="1" data-payment-row-id="' + escapeHtml(gatewayId) + '"';
 		if (isActive) {
 			inputAttrs += ' checked';
 		}
 		if (errPayment) {
 			inputAttrs += ' aria-invalid="true" aria-describedby="mp-cc-payment-gateway-err"';
 		}
-		html += '<label class="' + labelClass + '" data-payment-row="' + escapeHtml(rowId) + '">';
+		html += '<label class="' + labelClass + '" data-payment-row="' + escapeHtml(gatewayId) + '">';
 		html += '<input type="radio" class="mp-cc-payment-row__radio' + (errPayment ? ' is-invalid' : '') + '"' + inputAttrs + ' />';
 		html += '<span class="mp-cc-payment-row__radio-mark" aria-hidden="true"></span>';
 		html += '<span class="mp-cc-payment-row__title">' + escapeHtml(title) + '</span>';
@@ -4053,78 +4014,6 @@
 			html += '<span class="mp-cc-payment-row__icon mp-cc-payment-row__icon--empty" aria-hidden="true"></span>';
 		}
 		html += '</label>';
-		return html;
-	}
-
-	function buildBankCardPreviewHtml(state) {
-		var labelNum = getUiText('step_4.payment_card_field_number', 'Номер карты');
-		var labelExp = getUiText('step_4.payment_card_field_expiry', 'Срок действия');
-		var labelCvc = getUiText('step_4.payment_card_field_cvc', 'CVC');
-		var labelPhone = getUiText('step_4.payment_card_field_phone', 'Телефон');
-		var labelBank = getUiText('step_4.payment_card_field_bank', 'Банк');
-		var phNum = getUiText('step_4.payment_card_placeholder_number', '0000 0000 0000 0000');
-		var phExp = getUiText('step_4.payment_card_placeholder_expiry', 'дд/гг');
-		var phCvc = getUiText('step_4.payment_card_placeholder_cvc', 'CVC');
-		var phPhone = getUiText('step_4.payment_card_placeholder_phone', '+7 ___ ___-__-__');
-		var phBank = getUiText('step_4.payment_card_placeholder_bank', 'Например, Сбер');
-		var disclaimer = getCardRowConfig().disclaimer;
-		var html = '';
-		html += '<div class="mp-cc-bank-card-deck" data-bank-card-deck="1">';
-		html += '<div class="mp-cc-bank-card" data-bank-card-preview="1" aria-hidden="true">';
-		html += '<div class="mp-cc-bank-card__top">';
-		html += '<span class="mp-cc-bank-card__chip" aria-hidden="true"></span>';
-		html += '<span class="mp-cc-bank-card__bank" data-bank-card-preview-bank="1"></span>';
-		html += '</div>';
-		html += '<div class="mp-cc-bank-card__number" data-bank-card-preview-number="1">1234 5678 9101 1213</div>';
-		html += '<div class="mp-cc-bank-card__bottom">';
-		html += '<span class="mp-cc-bank-card__hint">дд/гг</span>';
-		html += '<span class="mp-cc-bank-card__expiry" data-bank-card-preview-expiry="1"></span>';
-		html += '</div>';
-		html += '</div>';
-		html += '<div class="mp-cc-bank-card-fields">';
-		html += '<label class="mp-cc-bank-card-field mp-cc-bank-card-field--full">';
-		html += '<span class="mp-cc-bank-card-field__label">' + escapeHtml(labelNum) + '</span>';
-		html += '<input type="text" inputmode="numeric" autocomplete="off" data-bank-card-input="number" placeholder="' + escapeHtml(phNum) + '" maxlength="23" />';
-		html += '</label>';
-		html += '<label class="mp-cc-bank-card-field">';
-		html += '<span class="mp-cc-bank-card-field__label">' + escapeHtml(labelExp) + '</span>';
-		html += '<input type="text" inputmode="numeric" autocomplete="off" data-bank-card-input="expiry" placeholder="' + escapeHtml(phExp) + '" maxlength="5" />';
-		html += '</label>';
-		html += '<label class="mp-cc-bank-card-field">';
-		html += '<span class="mp-cc-bank-card-field__label">' + escapeHtml(labelCvc) + '</span>';
-		html += '<input type="password" inputmode="numeric" autocomplete="off" data-bank-card-input="cvc" placeholder="' + escapeHtml(phCvc) + '" maxlength="4" />';
-		html += '</label>';
-		html += '<label class="mp-cc-bank-card-field">';
-		html += '<span class="mp-cc-bank-card-field__label">' + escapeHtml(labelPhone) + '</span>';
-		html += '<input type="tel" autocomplete="off" data-bank-card-input="phone" placeholder="' + escapeHtml(phPhone) + '" />';
-		html += '</label>';
-		html += '<label class="mp-cc-bank-card-field">';
-		html += '<span class="mp-cc-bank-card-field__label">' + escapeHtml(labelBank) + '</span>';
-		html += '<input type="text" autocomplete="off" data-bank-card-input="bank" placeholder="' + escapeHtml(phBank) + '" />';
-		html += '</label>';
-		if (disclaimer) {
-			html += '<p class="mp-cc-bank-card-disclaimer">' + escapeHtml(disclaimer) + '</p>';
-		}
-		html += '</div>';
-		html += '</div>';
-		return html;
-	}
-
-	function buildVirtualCardRowHtml(state, isActive, errPayment) {
-		var card = getCardRowConfig();
-		if (!card.enabled) {
-			return '';
-		}
-		if (!card.bound_gateway_id) {
-			return '';
-		}
-		var html = '';
-		html += '<div class="mp-cc-payment-row-wrap mp-cc-payment-row-wrap--card' + (isActive ? ' is-active' : '') + '">';
-		html += buildPaymentRowHtml(MP_CC_VIRTUAL_CARD_ROW_ID, card.bound_gateway_id, card.title, card.icon, isActive, errPayment, 'mp-cc-payment-row--expandable');
-		html += '<div class="mp-cc-payment-row__expanded" data-bank-card-expanded="1"' + (isActive ? '' : ' hidden') + '>';
-		html += buildBankCardPreviewHtml(state);
-		html += '</div>';
-		html += '</div>';
 		return html;
 	}
 
@@ -4272,8 +4161,6 @@
 		var pb = getPaymentBlockCfg();
 		var gateways = getAvailablePaymentGateways();
 		var selectedGateway = trimNonEmpty(state.frontendStore && state.frontendStore.payment ? state.frontendStore.payment.gateway : '');
-		var selectedRowId = getPaymentRowId(state);
-		var card = getCardRowConfig();
 		var errPayment = getContactFieldError(state, 'payment_gateway');
 		var a11ySection = getUiText('step_4.payment_method_group_label', 'Выбор способа оплаты');
 		var messages = pb.messages && typeof pb.messages === 'object' ? pb.messages : {};
@@ -4290,11 +4177,6 @@
 			return htmlEmpty;
 		}
 
-		// Selected row defaults: if row_id is empty but gateway is selected, infer row_id = gateway id.
-		if (!selectedRowId && selectedGateway) {
-			selectedRowId = selectedGateway;
-		}
-
 		var html = '';
 		html += '<section class="mp-cc-payment mp-cc-payment--rows' + stateClass + errClass + loadingClass + '" aria-label="' + escapeHtml(a11ySection) + '">';
 		if (errPayment) {
@@ -4304,20 +4186,12 @@
 		var gi;
 		for (gi = 0; gi < gateways.length; gi += 1) {
 			var g = gateways[gi];
-			var isActive = String(selectedRowId) === String(g.id);
-			html += buildPaymentRowHtml(g.id, g.id, g.title, g.icon, isActive, errPayment, '');
-		}
-		// Virtual bank card row.
-		if (card.enabled && card.bound_gateway_id) {
-			var isCardActive = selectedRowId === MP_CC_VIRTUAL_CARD_ROW_ID;
-			html += buildVirtualCardRowHtml(state, isCardActive, errPayment);
+			var isActive = String(selectedGateway) === String(g.id);
+			html += buildPaymentRowHtml(g.id, g.title, g.icon, isActive, errPayment, '');
 		}
 		html += '</div>';
 
-		// Gateway fields region (for selected gateway, only when not virtual card).
-		if (selectedRowId !== MP_CC_VIRTUAL_CARD_ROW_ID) {
-			html += buildPaymentGatewayFieldsBlock(state, selectedGateway, 'visual', 'below_grid');
-		}
+		html += buildPaymentGatewayFieldsBlock(state, selectedGateway, 'visual', 'below_grid');
 
 		// Discount toggles (coupon / gift card).
 		html += buildDiscountTogglesHtml(state);
@@ -7220,13 +7094,7 @@
 
 	function buildConfirmationScreenHtml(state) {
 		var payment = state.frontendStore && state.frontendStore.payment ? state.frontendStore.payment : {};
-		var rowId = trimNonEmpty(payment.row_id);
-		var gatewayLabel = '';
-		if (rowId === MP_CC_VIRTUAL_CARD_ROW_ID) {
-			gatewayLabel = getCardRowConfig().title;
-		} else {
-			gatewayLabel = getSelectedGatewayTitle(state);
-		}
+		var gatewayLabel = getSelectedGatewayTitle(state);
 		if (!gatewayLabel) {
 			gatewayLabel = trimNonEmpty(payment.gateway) || getUiText('step_4.payment_title', 'способ оплаты');
 		}
@@ -10115,10 +9983,8 @@
 			if (!gateway) {
 				return;
 			}
-			var rowId = trimNonEmpty($radioEl.attr('data-payment-row-id')) || gateway;
 			state.frontendStore.payment = state.frontendStore.payment || { gateway: '', state: 'idle' };
 			state.frontendStore.payment.gateway = gateway;
-			state.frontendStore.payment.row_id = rowId;
 			state.frontendStore.payment.user_confirmed = true;
 			state.frontendStore.payment.state = 'syncing';
 			window.clearTimeout(state.__mpCcPaymentSuccessTimer);
@@ -10218,43 +10084,6 @@
 			var $row = $(this).closest('[data-discount-toggle]');
 			$row.toggleClass('is-open', open);
 			$row.find('[data-discount-toggle-body]').first().prop('hidden', !open);
-		});
-
-		// Bank card decorative inputs: live preview update.
-		function formatCardNumber(raw) {
-			var digits = String(raw || '').replace(/\D+/g, '').slice(0, 19);
-			var groups = [];
-			for (var i = 0; i < digits.length; i += 4) {
-				groups.push(digits.substr(i, 4));
-			}
-			return groups.join(' ');
-		}
-		function formatCardExpiry(raw) {
-			var digits = String(raw || '').replace(/\D+/g, '').slice(0, 4);
-			if (digits.length <= 2) {
-				return digits;
-			}
-			return digits.substr(0, 2) + '/' + digits.substr(2);
-		}
-		$app.off('input.mpCcBankCard', '[data-bank-card-input]').on('input.mpCcBankCard', '[data-bank-card-input]', function () {
-			var $inp = $(this);
-			var field = String($inp.attr('data-bank-card-input') || '');
-			var $deck = $inp.closest('[data-bank-card-deck]');
-			if (!$deck.length) {
-				return;
-			}
-			var $preview = $deck.find('[data-bank-card-preview]').first();
-			if (field === 'number') {
-				var formatted = formatCardNumber($inp.val());
-				$inp.val(formatted);
-				$preview.find('[data-bank-card-preview-number]').text(formatted || '1234 5678 9101 1213');
-			} else if (field === 'expiry') {
-				var exp = formatCardExpiry($inp.val());
-				$inp.val(exp);
-				$preview.find('[data-bank-card-preview-expiry]').text(exp);
-			} else if (field === 'bank') {
-				$preview.find('[data-bank-card-preview-bank]').text(String($inp.val() || ''));
-			}
 		});
 
 		var $couponScopes = $app.add($(selectors.summary));

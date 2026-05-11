@@ -684,9 +684,7 @@ final class AdminMenuHooks {
 			// gateway_titles рендерятся отдельным блоком (см. render_step_4_payment_gateway_titles_group).
 			if ( isset( $section_value['payment_block'] ) && is_array( $section_value['payment_block'] ) ) {
 				unset( $section_value['payment_block']['gateway_titles'], $section_value['payment_block']['gateway_icons'] );
-				if ( isset( $section_value['payment_block']['card_row'] ) && is_array( $section_value['payment_block']['card_row'] ) ) {
-					unset( $section_value['payment_block']['card_row']['icon_url'] );
-				}
+				unset( $section_value['payment_block']['card_row'] );
 				if ( isset( $section_value['payment_block']['discount_toggles'] ) && is_array( $section_value['payment_block']['discount_toggles'] ) ) {
 					unset(
 						$section_value['payment_block']['discount_toggles']['coupon_icon_url'],
@@ -1482,10 +1480,6 @@ final class AdminMenuHooks {
 			'step_4.payment_block.card_styles.gift_peer_seal_ring_inner' => __( 'Подарочная карта (печать слева): цвет внутреннего кольца', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.gift_peer_seal_ring_outer' => __( 'Подарочная карта (печать слева): цвет внешней обводки', 'mp-custom-checkout' ),
 			'step_4.payment_block.rows_layout' => __( 'Оплата: показывать способы оплаты строчками (вместо плиток)', 'mp-custom-checkout' ),
-			'step_4.payment_block.card_row.enabled' => __( 'Карта: показывать строку «Оплата банковской картой»', 'mp-custom-checkout' ),
-			'step_4.payment_block.card_row.bound_gateway_id' => __( 'Карта: реальный gateway-id для оплаты (если пусто — берётся первый ЮKassa)', 'mp-custom-checkout' ),
-			'step_4.payment_block.card_row.title' => __( 'Карта: название строки', 'mp-custom-checkout' ),
-			'step_4.payment_block.card_row.disclaimer' => __( 'Карта: подсказка под полями карты', 'mp-custom-checkout' ),
 			'step_4.payment_block.discount_toggles.coupon_in_step' => __( 'Промокод: показывать тоггл на шаге «Оплата»', 'mp-custom-checkout' ),
 			'step_4.payment_block.discount_toggles.gift_card_in_step' => __( 'Подарочная карта: показывать тоггл на шаге «Оплата»', 'mp-custom-checkout' ),
 			'step_4.payment_block.discount_toggles.coupon_in_summary' => __( 'Промокод: показывать форму ввода в правой сводке', 'mp-custom-checkout' ),
@@ -1548,7 +1542,6 @@ final class AdminMenuHooks {
 			'step_4.recipient_styles'                    => __( 'Стили шага 2: Получатель', 'mp-custom-checkout' ),
 			'step_4.recipient_step_panel_styles'         => __( 'Рамка и тень панели шага «Получатель» (data-step-panel=recipient)', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles'           => __( 'Стили карточек оплаты', 'mp-custom-checkout' ),
-			'step_4.payment_block.card_row'              => __( 'Виртуальный пункт «Оплата банковской картой»', 'mp-custom-checkout' ),
 			'step_4.payment_block.discount_toggles'      => __( 'Промокод и подарочная карта на шаге оплаты', 'mp-custom-checkout' ),
 		);
 		if ( isset( $map[ $path ] ) ) {

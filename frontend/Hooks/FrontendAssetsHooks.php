@@ -416,56 +416,8 @@ final class FrontendAssetsHooks {
 		if ( ! isset( $config['payment_block'] ) || ! is_array( $config['payment_block'] ) ) {
 			$config['payment_block'] = array();
 		}
-		$config['payment_block']['card_row'] = self::card_row_runtime_config( $config['available_gateways'] );
 		$config['payment_block']['discount_toggles'] = self::discount_toggles_runtime_config();
 		return $config;
-	}
-
-	/**
-	 * Готовит рантайм-конфиг виртуального пункта «Оплата банковской картой».
-	 *
-	 * @param array<int, array<string, mixed>> $available_gateways
-	 * @return array<string, mixed>
-	 */
-	private static function card_row_runtime_config( array $available_gateways ): array {
-		$step_four = SafeSettingsResolver::get_section( 'step_4' );
-		$payment_block = is_array( $step_four ) && isset( $step_four['payment_block'] ) && is_array( $step_four['payment_block'] )
-			? $step_four['payment_block']
-			: array();
-		$raw = isset( $payment_block['card_row'] ) && is_array( $payment_block['card_row'] )
-			? $payment_block['card_row']
-			: array();
-		$enabled = isset( $raw['enabled'] ) ? (bool) $raw['enabled'] : true;
-		$bound   = isset( $raw['bound_gateway_id'] ) ? sanitize_key( (string) $raw['bound_gateway_id'] ) : '';
-		if ( '' === $bound ) {
-			foreach ( $available_gateways as $gw ) {
-				if ( ! isset( $gw['id'] ) ) {
-					continue;
-				}
-				$gid = (string) $gw['id'];
-				$lower = strtolower( $gid );
-				if ( false !== strpos( $lower, 'yookassa' )
-					|| false !== strpos( $lower, 'yoomoney' )
-					|| false !== strpos( $lower, 'yandex_kassa' )
-					|| false !== strpos( $lower, 'yandex-kassa' ) ) {
-					$bound = $gid;
-					break;
-				}
-			}
-		}
-		if ( '' === $bound && ! empty( $available_gateways ) && isset( $available_gateways[0]['id'] ) ) {
-			$bound = (string) $available_gateways[0]['id'];
-		}
-		$title = isset( $raw['title'] ) ? trim( wp_strip_all_tags( (string) $raw['title'] ) ) : '';
-		$icon  = self::payment_default_asset_url( 'bank_cart.png' );
-		$disclaimer = isset( $raw['disclaimer'] ) ? wp_strip_all_tags( (string) $raw['disclaimer'] ) : '';
-		return array(
-			'enabled'          => $enabled,
-			'bound_gateway_id' => $bound,
-			'title'            => '' !== $title ? $title : 'Оплата банковской картой',
-			'icon'             => $icon,
-			'disclaimer'       => $disclaimer,
-		);
 	}
 
 	/**
@@ -519,16 +471,8 @@ final class FrontendAssetsHooks {
 			$title = strtolower( $plain );
 		}
 
-		if ( false !== strpos( $title, 'сплит' ) || false !== strpos( $title, 'split' ) ) {
-			return self::payment_default_asset_url( 'split.png' );
-		}
-		if ( false !== strpos( $title, 'сбп' ) || false !== strpos( $title, 'sbp' ) ) {
-			return self::payment_default_asset_url( 'sbp.png' );
-		}
-		if ( false !== strpos( $title, 'карт' ) || false !== strpos( $title, 'card' ) || false !== strpos( $title, 'банк' ) ) {
-			return self::payment_default_asset_url( 'bank_cart.png' );
-		}
-
+		// По id шлюза — раньше эвристик по заголовку: в подписи часто есть «картой»,
+		// из‑за чего ветка «карт» перехватывала ЮKassa раньше, чем срабатывала привязка к sbp.png.
 		if ( false !== strpos( $id, 'robokassa' ) ) {
 			return self::payment_default_asset_url( 'split.png' );
 		}
@@ -536,6 +480,20 @@ final class FrontendAssetsHooks {
 			return self::payment_default_asset_url( 'sbp.png' );
 		}
 		if ( false !== strpos( $id, 'stripe' ) || false !== strpos( $id, 'paypal' ) ) {
+			return self::payment_default_asset_url( 'bank_cart.png' );
+		}
+
+		if ( false !== strpos( $title, 'сплит' ) || false !== strpos( $title, 'split' ) ) {
+			return self::payment_default_asset_url( 'split.png' );
+		}
+		if ( false !== strpos( $title, 'сбп' ) || false !== strpos( $title, 'sbp' ) ) {
+			return self::payment_default_asset_url( 'sbp.png' );
+		}
+		// Частая опечатка: латинская «p» вместо кириллической «п» в «СБП» (например «сpб»).
+		if ( preg_match( '/с(?:п|p)б/ui', $title ) ) {
+			return self::payment_default_asset_url( 'sbp.png' );
+		}
+		if ( false !== strpos( $title, 'карт' ) || false !== strpos( $title, 'card' ) || false !== strpos( $title, 'банк' ) ) {
 			return self::payment_default_asset_url( 'bank_cart.png' );
 		}
 
