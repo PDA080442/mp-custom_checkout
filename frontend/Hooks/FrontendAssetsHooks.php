@@ -413,7 +413,82 @@ final class FrontendAssetsHooks {
 		$config = SafeSettingsResolver::get_section( 'step_4' );
 		$config = is_array( $config ) ? $config : array();
 		$config['available_gateways'] = self::available_payment_gateways_for_runtime();
+		if ( ! isset( $config['payment_block'] ) || ! is_array( $config['payment_block'] ) ) {
+			$config['payment_block'] = array();
+		}
+		$config['payment_block']['card_row'] = self::card_row_runtime_config( $config['available_gateways'] );
+		$config['payment_block']['discount_toggles'] = self::discount_toggles_runtime_config();
 		return $config;
+	}
+
+	/**
+	 * Готовит рантайм-конфиг виртуального пункта «Оплата банковской картой».
+	 *
+	 * @param array<int, array<string, mixed>> $available_gateways
+	 * @return array<string, mixed>
+	 */
+	private static function card_row_runtime_config( array $available_gateways ): array {
+		$step_four = SafeSettingsResolver::get_section( 'step_4' );
+		$payment_block = is_array( $step_four ) && isset( $step_four['payment_block'] ) && is_array( $step_four['payment_block'] )
+			? $step_four['payment_block']
+			: array();
+		$raw = isset( $payment_block['card_row'] ) && is_array( $payment_block['card_row'] )
+			? $payment_block['card_row']
+			: array();
+		$enabled = isset( $raw['enabled'] ) ? (bool) $raw['enabled'] : true;
+		$bound   = isset( $raw['bound_gateway_id'] ) ? sanitize_key( (string) $raw['bound_gateway_id'] ) : '';
+		if ( '' === $bound ) {
+			foreach ( $available_gateways as $gw ) {
+				if ( ! isset( $gw['id'] ) ) {
+					continue;
+				}
+				$gid = (string) $gw['id'];
+				$lower = strtolower( $gid );
+				if ( false !== strpos( $lower, 'yookassa' )
+					|| false !== strpos( $lower, 'yoomoney' )
+					|| false !== strpos( $lower, 'yandex_kassa' )
+					|| false !== strpos( $lower, 'yandex-kassa' ) ) {
+					$bound = $gid;
+					break;
+				}
+			}
+		}
+		if ( '' === $bound && ! empty( $available_gateways ) && isset( $available_gateways[0]['id'] ) ) {
+			$bound = (string) $available_gateways[0]['id'];
+		}
+		$title = isset( $raw['title'] ) ? trim( wp_strip_all_tags( (string) $raw['title'] ) ) : '';
+		$icon  = isset( $raw['icon_url'] ) ? esc_url_raw( (string) $raw['icon_url'] ) : '';
+		$disclaimer = isset( $raw['disclaimer'] ) ? wp_strip_all_tags( (string) $raw['disclaimer'] ) : '';
+		return array(
+			'enabled'          => $enabled,
+			'bound_gateway_id' => $bound,
+			'title'            => '' !== $title ? $title : 'Оплата банковской картой',
+			'icon'             => $icon,
+			'disclaimer'       => $disclaimer,
+		);
+	}
+
+	/**
+	 * Готовит рантайм-конфиг тогглов промокода и подарочной карты на шаге оплаты.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private static function discount_toggles_runtime_config(): array {
+		$step_four = SafeSettingsResolver::get_section( 'step_4' );
+		$payment_block = is_array( $step_four ) && isset( $step_four['payment_block'] ) && is_array( $step_four['payment_block'] )
+			? $step_four['payment_block']
+			: array();
+		$raw = isset( $payment_block['discount_toggles'] ) && is_array( $payment_block['discount_toggles'] )
+			? $payment_block['discount_toggles']
+			: array();
+		return array(
+			'coupon_in_step'      => isset( $raw['coupon_in_step'] ) ? (bool) $raw['coupon_in_step'] : true,
+			'gift_card_in_step'   => isset( $raw['gift_card_in_step'] ) ? (bool) $raw['gift_card_in_step'] : true,
+			'coupon_in_summary'   => isset( $raw['coupon_in_summary'] ) ? (bool) $raw['coupon_in_summary'] : false,
+			'gift_card_in_summary'=> isset( $raw['gift_card_in_summary'] ) ? (bool) $raw['gift_card_in_summary'] : false,
+			'coupon_icon_url'     => isset( $raw['coupon_icon_url'] ) ? esc_url_raw( (string) $raw['coupon_icon_url'] ) : '',
+			'gift_card_icon_url'  => isset( $raw['gift_card_icon_url'] ) ? esc_url_raw( (string) $raw['gift_card_icon_url'] ) : '',
+		);
 	}
 
 	private static function delivery_config(): array {
@@ -447,6 +522,9 @@ final class FrontendAssetsHooks {
 		$title_overrides = isset( $payment_block['gateway_titles'] ) && is_array( $payment_block['gateway_titles'] )
 			? $payment_block['gateway_titles']
 			: array();
+		$icon_overrides = isset( $payment_block['gateway_icons'] ) && is_array( $payment_block['gateway_icons'] )
+			? $payment_block['gateway_icons']
+			: array();
 		$result    = array();
 		foreach ( $available as $gateway ) {
 			if ( ! $gateway instanceof \WC_Payment_Gateway ) {
@@ -455,10 +533,12 @@ final class FrontendAssetsHooks {
 			$gid = sanitize_key( (string) $gateway->id );
 			$wc_title = wp_strip_all_tags( (string) $gateway->get_title() );
 			$override = isset( $title_overrides[ $gid ] ) ? trim( wp_strip_all_tags( (string) $title_overrides[ $gid ] ) ) : '';
+			$icon     = isset( $icon_overrides[ $gid ] ) ? esc_url_raw( (string) $icon_overrides[ $gid ] ) : '';
 			$result[] = array(
 				'id'          => $gid,
 				'title'       => '' !== $override ? $override : $wc_title,
 				'description' => wp_strip_all_tags( (string) $gateway->get_description() ),
+				'icon'        => $icon,
 			);
 		}
 		return $result;

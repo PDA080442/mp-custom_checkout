@@ -4815,3 +4815,420 @@ body.mp-cc-cdek-modal-open {
 		border-radius: 0;
 	}
 }
+
+/* ==========================================================================
+   Payment rows layout (step 4)
+   ========================================================================== */
+
+.mp-cc-payment--rows .mp-cc-payment__header {
+	margin-bottom: 0.75rem;
+}
+
+.mp-cc-payment--rows .mp-cc-payment__rows {
+	display: flex;
+	flex-direction: column;
+	border-top: 1px solid var(--mp-cc-color-border, #e5e5e5);
+}
+
+.mp-cc-payment-row-wrap {
+	border-bottom: 1px solid var(--mp-cc-color-border, #e5e5e5);
+}
+
+.mp-cc-payment-row {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 0.95rem 0.25rem;
+	cursor: pointer;
+	border-bottom: 1px solid var(--mp-cc-color-border, #e5e5e5);
+	transition: background-color 0.15s ease;
+}
+
+.mp-cc-payment-row-wrap > .mp-cc-payment-row {
+	border-bottom: none;
+}
+
+.mp-cc-payment-row:hover {
+	background-color: rgba(0, 0, 0, 0.02);
+}
+
+.mp-cc-payment-row__radio {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	white-space: nowrap;
+}
+
+.mp-cc-payment-row__radio-mark {
+	flex: 0 0 auto;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	border: 1.5px solid var(--mp-cc-color-text, #1a1a1a);
+	background: transparent;
+	position: relative;
+	transition: border-color 0.15s ease;
+}
+
+.mp-cc-payment-row__radio-mark::before {
+	content: "";
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background-color: var(--mp-cc-color-text, #1a1a1a);
+	transform: translate(-50%, -50%) scale(0);
+	transition: transform 0.15s ease;
+}
+
+.mp-cc-payment-row.is-active .mp-cc-payment-row__radio-mark::before,
+.mp-cc-payment-row__radio:checked + .mp-cc-payment-row__radio-mark::before {
+	transform: translate(-50%, -50%) scale(1);
+}
+
+.mp-cc-payment-row__radio:focus-visible + .mp-cc-payment-row__radio-mark {
+	outline: 2px solid var(--mp-cc-color-rail, #2563eb);
+	outline-offset: 2px;
+}
+
+.mp-cc-payment-row__title {
+	flex: 1 1 auto;
+	font-size: 1rem;
+	font-weight: 500;
+	color: var(--mp-cc-color-text, #1a1a1a);
+}
+
+.mp-cc-payment-row__icon {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+	justify-content: flex-end;
+	min-width: 56px;
+	height: 24px;
+}
+
+.mp-cc-payment-row__icon img {
+	max-height: 24px;
+	max-width: 80px;
+	object-fit: contain;
+}
+
+.mp-cc-payment-row__icon--empty {
+	min-width: 0;
+}
+
+.mp-cc-payment-row__radio.is-invalid + .mp-cc-payment-row__radio-mark {
+	border-color: var(--mp-cc-color-error, #b91c1c);
+}
+
+.mp-cc-payment-row__expanded {
+	padding: 0.5rem 0 1rem;
+}
+
+.mp-cc-payment-row-wrap--card.is-active {
+	background-color: rgba(0, 0, 0, 0.015);
+}
+
+/* Bank card preview & decorative fields */
+.mp-cc-bank-card-deck {
+	display: flex;
+	flex-direction: column;
+	gap: 1.1rem;
+}
+
+.mp-cc-bank-card {
+	aspect-ratio: 1.6 / 1;
+	max-width: 320px;
+	border-radius: 14px;
+	background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+	color: #fff;
+	padding: 1rem 1.1rem;
+	display: flex;
+	flex-direction: column;
+	justify-content: space-between;
+	box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+	font-family: "Courier New", Consolas, monospace;
+	user-select: none;
+}
+
+.mp-cc-bank-card__top {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.mp-cc-bank-card__chip {
+	width: 36px;
+	height: 24px;
+	border-radius: 4px;
+	background: linear-gradient(135deg, #b9b9b9, #8a8a8a);
+}
+
+.mp-cc-bank-card__bank {
+	font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	font-size: 0.85rem;
+	font-weight: 600;
+	opacity: 0.85;
+	min-height: 1em;
+}
+
+.mp-cc-bank-card__number {
+	font-size: 1.25rem;
+	letter-spacing: 0.08em;
+	font-weight: 600;
+}
+
+.mp-cc-bank-card__bottom {
+	display: flex;
+	align-items: baseline;
+	gap: 0.5rem;
+	justify-content: flex-end;
+	font-size: 0.85rem;
+}
+
+.mp-cc-bank-card__hint {
+	opacity: 0.55;
+	font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.mp-cc-bank-card__expiry {
+	letter-spacing: 0.04em;
+	min-width: 3.5em;
+	text-align: right;
+	min-height: 1em;
+}
+
+.mp-cc-bank-card-fields {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 0.6rem 0.75rem;
+}
+
+.mp-cc-bank-card-field {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+}
+
+.mp-cc-bank-card-field--full {
+	grid-column: 1 / -1;
+}
+
+.mp-cc-bank-card-field__label {
+	font-size: 0.85rem;
+	color: var(--mp-cc-color-text-muted, #666);
+}
+
+.mp-cc-bank-card-field input {
+	width: 100%;
+	padding: 0.55rem 0.65rem;
+	border: 1px solid var(--mp-cc-color-border, #e5e5e5);
+	border-radius: 8px;
+	background: #fff;
+	color: var(--mp-cc-color-text, #1a1a1a);
+	font-size: 0.95rem;
+	transition: border-color 0.15s ease;
+}
+
+.mp-cc-bank-card-field input:focus {
+	outline: none;
+	border-color: var(--mp-cc-color-rail, #2563eb);
+}
+
+.mp-cc-bank-card-disclaimer {
+	grid-column: 1 / -1;
+	margin: 0;
+	font-size: 0.83rem;
+	color: var(--mp-cc-color-text-muted, #666);
+	line-height: 1.4;
+}
+
+/* Visual divider between payment methods and discount toggles */
+.mp-cc-payment-divider {
+	height: 1.25rem;
+}
+
+/* Discount toggles (Промокод, Подарочная карта) */
+.mp-cc-discount-toggles {
+	display: flex;
+	flex-direction: column;
+	border-top: 1px solid var(--mp-cc-color-border, #e5e5e5);
+}
+
+.mp-cc-toggle-row {
+	border-bottom: 1px solid var(--mp-cc-color-border, #e5e5e5);
+}
+
+.mp-cc-toggle-row__head {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 0.95rem 0.25rem;
+	cursor: pointer;
+}
+
+.mp-cc-toggle-row__title {
+	flex: 1 1 auto;
+	font-size: 1rem;
+	font-weight: 500;
+	color: var(--mp-cc-color-text, #1a1a1a);
+}
+
+.mp-cc-toggle-row__icon {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	height: 24px;
+	min-width: 24px;
+}
+
+.mp-cc-toggle-row__icon img {
+	max-height: 24px;
+	max-width: 56px;
+	object-fit: contain;
+}
+
+.mp-cc-toggle__input {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	white-space: nowrap;
+}
+
+.mp-cc-toggle {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+}
+
+.mp-cc-toggle__track {
+	display: inline-flex;
+	align-items: center;
+	width: 38px;
+	height: 22px;
+	border-radius: 11px;
+	background: #e5e5e5;
+	border: 1px solid var(--mp-cc-color-border, #e5e5e5);
+	transition: background-color 0.15s ease, border-color 0.15s ease;
+	position: relative;
+}
+
+.mp-cc-toggle__thumb {
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	background: #fff;
+	border: 1px solid var(--mp-cc-color-text, #1a1a1a);
+	transform: translateX(1px);
+	transition: transform 0.18s ease, background-color 0.15s ease;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.mp-cc-toggle__input:checked + .mp-cc-toggle .mp-cc-toggle__track,
+.mp-cc-toggle-row.is-open .mp-cc-toggle__track {
+	background: var(--mp-cc-color-text, #1a1a1a);
+	border-color: var(--mp-cc-color-text, #1a1a1a);
+}
+
+.mp-cc-toggle__input:checked + .mp-cc-toggle .mp-cc-toggle__thumb,
+.mp-cc-toggle-row.is-open .mp-cc-toggle__thumb {
+	transform: translateX(16px);
+	background: #fff;
+	border-color: #fff;
+}
+
+.mp-cc-toggle__input:focus-visible + .mp-cc-toggle .mp-cc-toggle__track {
+	outline: 2px solid var(--mp-cc-color-rail, #2563eb);
+	outline-offset: 2px;
+}
+
+.mp-cc-toggle-row__body {
+	padding: 0.4rem 0 1rem;
+}
+
+.mp-cc-toggle-row__body[hidden] {
+	display: none;
+}
+
+.mp-cc-toggle-row__form,
+.mp-cc-toggle-row__chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.6rem;
+	align-items: center;
+}
+
+.mp-cc-toggle-row__form input[type="text"] {
+	flex: 1 1 200px;
+	padding: 0.55rem 0.7rem;
+	border: 1px solid var(--mp-cc-color-border, #e5e5e5);
+	border-radius: 8px;
+}
+
+.mp-cc-toggle-row__chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	padding: 0.25rem 0.55rem;
+	border-radius: 999px;
+	background: rgba(0, 0, 0, 0.05);
+	font-size: 0.9rem;
+}
+
+.mp-cc-toggle-row__chip-remove {
+	border: none;
+	background: transparent;
+	cursor: pointer;
+	font-size: 1rem;
+	line-height: 1;
+	color: var(--mp-cc-color-text-muted, #666);
+	padding: 0 0.15rem;
+}
+
+.mp-cc-toggle-row__chip-remove:hover {
+	color: var(--mp-cc-color-text, #1a1a1a);
+}
+
+.mp-cc-toggle-row__hint {
+	margin: 0.45rem 0 0;
+	font-size: 0.88rem;
+	color: var(--mp-cc-color-text-muted, #666);
+}
+
+.mp-cc-toggle-row__hint--error {
+	color: var(--mp-cc-color-error, #b91c1c);
+}
+
+.mp-cc-toggle-row__hint--success {
+	color: var(--mp-cc-color-success, #15803d);
+}
+
+.mp-cc-toggle-row__notice {
+	margin: 0;
+	font-size: 0.88rem;
+	color: var(--mp-cc-color-text-muted, #666);
+}
+
+/* Summary chips-only coupon block (when form is moved to payment step). */
+.mp-cc-coupon--chips-only .mp-cc-coupon__title,
+.mp-cc-coupon--chips-only .mp-cc-coupon__intro,
+.mp-cc-coupon--chips-only .mp-cc-coupon__row {
+	display: none;
+}
+
+@media (max-width: 480px) {
+	.mp-cc-bank-card-fields {
+		grid-template-columns: 1fr;
+	}
+
+	.mp-cc-bank-card {
+		max-width: 100%;
+	}
+}
