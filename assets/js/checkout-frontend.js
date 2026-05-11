@@ -4722,52 +4722,99 @@
 		if (paymentToggle) {
 			rootClass += ' mp-cc-coupon--payment-toggle';
 		}
+		var usePaymentToggleFieldUi = paymentToggle;
 		html += '<article class="' + escapeHtml(rootClass) + '" data-coupon-block="1"' + buildCouponStylesAttr(state, inSummary) + '>';
 		if (!hideInputRow) {
-			html += '<h4 class="mp-cc-coupon__title">' + escapeHtml(copy.title) + '</h4>';
-			if (copy.intro) {
-				html += '<p class="mp-cc-coupon__intro">' + escapeHtml(copy.intro) + '</p>';
-			}
-			html += '<div class="mp-cc-coupon__row">';
-			html += '<label class="mp-cc-field-label" for="' + escapeHtml(couponInputId) + '">' + escapeHtml(copy.inputLabel) + '</label>';
-			html += '<input type="text" class="mp-cc-input' + (runtimeState === 'error' ? ' is-invalid' : '') + '" id="' + escapeHtml(couponInputId) + '" data-coupon-code="1" value="' + escapeHtml(code) + '" placeholder="' + escapeHtml(copy.placeholder) + '" />';
-			html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--next mp-cc-coupon__apply" data-coupon-apply="1">' + escapeHtml(copy.applyLabel) + '</button>';
-			html += '</div>';
-			if (msg) {
-				html += '<p class="mp-cc-field-hint' + (runtimeState === 'error' ? ' mp-cc-field-error' : '') + '" data-coupon-message="1">' + escapeHtml(msg) + '</p>';
+			if (usePaymentToggleFieldUi) {
+				html += '<div class="mp-cc-toggle-row__form">';
+				html += '<label class="mp-cc-visually-hidden" for="' + escapeHtml(couponInputId) + '">' + escapeHtml(copy.inputLabel) + '</label>';
+				html += '<input type="text" class="mp-cc-input' + (runtimeState === 'error' ? ' is-invalid' : '') + '" id="' + escapeHtml(couponInputId) + '" data-coupon-code="1" value="' + escapeHtml(code) + '" placeholder="' + escapeHtml(copy.placeholder) + '" autocomplete="off" />';
+				html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--next mp-cc-coupon__apply" data-coupon-apply="1">' + escapeHtml(copy.applyLabel) + '</button>';
+				html += '</div>';
+				if (msg) {
+					var couponHintMod = runtimeState === 'error' ? 'error' : (runtimeState === 'success' ? 'success' : '');
+					html += '<p class="mp-cc-toggle-row__hint' + (couponHintMod ? ' mp-cc-toggle-row__hint--' + couponHintMod : '') + '" data-coupon-message="1">' + escapeHtml(msg) + '</p>';
+				}
+			} else {
+				html += '<h4 class="mp-cc-coupon__title">' + escapeHtml(copy.title) + '</h4>';
+				if (copy.intro) {
+					html += '<p class="mp-cc-coupon__intro">' + escapeHtml(copy.intro) + '</p>';
+				}
+				html += '<div class="mp-cc-coupon__row">';
+				html += '<label class="mp-cc-field-label" for="' + escapeHtml(couponInputId) + '">' + escapeHtml(copy.inputLabel) + '</label>';
+				html += '<input type="text" class="mp-cc-input' + (runtimeState === 'error' ? ' is-invalid' : '') + '" id="' + escapeHtml(couponInputId) + '" data-coupon-code="1" value="' + escapeHtml(code) + '" placeholder="' + escapeHtml(copy.placeholder) + '" />';
+				html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--next mp-cc-coupon__apply" data-coupon-apply="1">' + escapeHtml(copy.applyLabel) + '</button>';
+				html += '</div>';
+				if (msg) {
+					html += '<p class="mp-cc-field-hint' + (runtimeState === 'error' ? ' mp-cc-field-error' : '') + '" data-coupon-message="1">' + escapeHtml(msg) + '</p>';
+				}
 			}
 		}
 		if (appliedCoupons.length) {
-			html += '<div class="mp-cc-coupon__applied" data-coupon-list="1">';
-			for (var i = 0; i < appliedCoupons.length; i += 1) {
-				var cp = String(appliedCoupons[i] || '');
-				if (!cp) {
-					continue;
+			if (usePaymentToggleFieldUi) {
+				html += '<div class="mp-cc-toggle-row__chips" data-coupon-list="1">';
+				for (var i = 0; i < appliedCoupons.length; i += 1) {
+					var cp = String(appliedCoupons[i] || '');
+					if (!cp) {
+						continue;
+					}
+					html += '<span class="mp-cc-toggle-row__chip">';
+					html += '<span>' + escapeHtml(cp) + '</span>';
+					if (allowCouponRm) {
+						html += '<button type="button" class="mp-cc-toggle-row__chip-remove" data-coupon-remove="1" data-code="' + escapeHtml(cp) + '" aria-label="' + escapeHtml(getUiText('step_4.coupon_remove', 'Снять купон')) + '">×</button>';
+					}
+					html += '</span>';
 				}
-				html += '<span class="mp-cc-coupon__chip">';
-				html += '<span>' + escapeHtml(cp) + '</span>';
-				if (allowCouponRm) {
-					html += '<button type="button" class="mp-cc-coupon__chip-remove" data-coupon-remove="1" data-code="' + escapeHtml(cp) + '" aria-label="' + escapeHtml(getUiText('step_4.coupon_remove', 'Снять купон')) + '">×</button>';
+				html += '</div>';
+			} else {
+				html += '<div class="mp-cc-coupon__applied" data-coupon-list="1">';
+				for (var i2 = 0; i2 < appliedCoupons.length; i2 += 1) {
+					var cp2 = String(appliedCoupons[i2] || '');
+					if (!cp2) {
+						continue;
+					}
+					html += '<span class="mp-cc-coupon__chip">';
+					html += '<span>' + escapeHtml(cp2) + '</span>';
+					if (allowCouponRm) {
+						html += '<button type="button" class="mp-cc-coupon__chip-remove" data-coupon-remove="1" data-code="' + escapeHtml(cp2) + '" aria-label="' + escapeHtml(getUiText('step_4.coupon_remove', 'Снять купон')) + '">×</button>';
+					}
+					html += '</span>';
 				}
-				html += '</span>';
+				html += '</div>';
 			}
-			html += '</div>';
 		}
 		if (!hideGiftInCoupon && appliedGiftCards.length) {
-			html += '<div class="mp-cc-coupon__applied mp-cc-coupon__applied--gift" data-gift-card-list="1">';
-			for (var gi = 0; gi < appliedGiftCards.length; gi += 1) {
-				var gc = String(appliedGiftCards[gi] || '');
-				if (!gc) {
-					continue;
+			if (usePaymentToggleFieldUi) {
+				html += '<div class="mp-cc-toggle-row__chips mp-cc-toggle-row__chips--nested-gift" data-gift-card-list="1">';
+				for (var gi = 0; gi < appliedGiftCards.length; gi += 1) {
+					var gc = String(appliedGiftCards[gi] || '');
+					if (!gc) {
+						continue;
+					}
+					html += '<span class="mp-cc-toggle-row__chip">';
+					html += '<span>' + escapeHtml(gc) + '</span>';
+					if (allowGiftRm) {
+						html += '<button type="button" class="mp-cc-toggle-row__chip-remove" data-gift-card-remove="1" data-code="' + escapeHtml(gc) + '" aria-label="' + escapeHtml(getUiText('step_4.gift_card_remove', 'Снять подарочную карту')) + '">×</button>';
+					}
+					html += '</span>';
 				}
-				html += '<span class="mp-cc-coupon__chip mp-cc-coupon__chip--gift">';
-				html += '<span>' + escapeHtml(gc) + '</span>';
-				if (allowGiftRm) {
-					html += '<button type="button" class="mp-cc-coupon__chip-remove" data-gift-card-remove="1" data-code="' + escapeHtml(gc) + '" aria-label="' + escapeHtml(getUiText('step_4.gift_card_remove', 'Снять подарочную карту')) + '">×</button>';
+				html += '</div>';
+			} else {
+				html += '<div class="mp-cc-coupon__applied mp-cc-coupon__applied--gift" data-gift-card-list="1">';
+				for (var gi2 = 0; gi2 < appliedGiftCards.length; gi2 += 1) {
+					var gc2 = String(appliedGiftCards[gi2] || '');
+					if (!gc2) {
+						continue;
+					}
+					html += '<span class="mp-cc-coupon__chip mp-cc-coupon__chip--gift">';
+					html += '<span>' + escapeHtml(gc2) + '</span>';
+					if (allowGiftRm) {
+						html += '<button type="button" class="mp-cc-coupon__chip-remove" data-gift-card-remove="1" data-code="' + escapeHtml(gc2) + '" aria-label="' + escapeHtml(getUiText('step_4.gift_card_remove', 'Снять подарочную карту')) + '">×</button>';
+					}
+					html += '</span>';
 				}
-				html += '</span>';
+				html += '</div>';
 			}
-			html += '</div>';
 		}
 		html += '</article>';
 		return html;
@@ -10098,6 +10145,13 @@
 			}
 			discounts.coupon_runtime = rt;
 			state.frontendStore.discounts = discounts;
+		});
+
+		$couponScopes.find('[data-coupon-code]').off('keydown.mpCcCouponEnter').on('keydown.mpCcCouponEnter', function (ev) {
+			if (ev.key === 'Enter') {
+				ev.preventDefault();
+				$(this).closest('[data-coupon-block]').find('[data-coupon-apply]').first().trigger('click');
+			}
 		});
 
 		$couponScopes.find('[data-coupon-apply]').off('click').on('click', function () {

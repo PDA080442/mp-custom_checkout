@@ -5075,6 +5075,29 @@ body.mp-cc-cdek-modal-open {
 	color: var(--mp-cc-color-text-muted, #666);
 }
 
+/* Промокод в тоггле шага оплаты — тот же «лёгкий» блок, что и подарочная карта (без рамки-карточки). */
+.mp-cc-coupon--payment-toggle {
+	border: none;
+	padding: 0;
+	background: transparent;
+	box-shadow: none;
+	margin: 0;
+}
+
+.mp-cc-coupon--payment-toggle.mp-cc-coupon--success,
+.mp-cc-coupon--payment-toggle.mp-cc-coupon--error,
+.mp-cc-coupon--payment-toggle.mp-cc-coupon--default {
+	border-color: transparent;
+}
+
+.mp-cc-coupon--payment-toggle .mp-cc-toggle-row__chips {
+	margin-top: 0.5rem;
+}
+
+.mp-cc-coupon--payment-toggle .mp-cc-toggle-row__chips--nested-gift {
+	margin-top: 0.35rem;
+}
+
 /* Summary chips-only coupon block (when form is moved to payment step). */
 .mp-cc-coupon--chips-only .mp-cc-coupon__title,
 .mp-cc-coupon--chips-only .mp-cc-coupon__intro,
