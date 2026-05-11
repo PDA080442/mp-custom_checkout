@@ -4820,18 +4820,9 @@ body.mp-cc-cdek-modal-open {
    Payment rows layout (step 4)
    ========================================================================== */
 
-.mp-cc-payment--rows .mp-cc-payment__header {
-	margin-bottom: 0.75rem;
-}
-
 .mp-cc-payment--rows .mp-cc-payment__rows {
 	display: flex;
 	flex-direction: column;
-	border-top: 1px solid var(--mp-cc-color-border, #e5e5e5);
-}
-
-.mp-cc-payment-row-wrap {
-	border-bottom: 1px solid var(--mp-cc-color-border, #e5e5e5);
 }
 
 .mp-cc-payment-row {
@@ -4840,12 +4831,7 @@ body.mp-cc-cdek-modal-open {
 	gap: 0.75rem;
 	padding: 0.95rem 0.25rem;
 	cursor: pointer;
-	border-bottom: 1px solid var(--mp-cc-color-border, #e5e5e5);
 	transition: background-color 0.15s ease;
-}
-
-.mp-cc-payment-row-wrap > .mp-cc-payment-row {
-	border-bottom: none;
 }
 
 .mp-cc-payment-row:hover {
@@ -5056,11 +5042,6 @@ body.mp-cc-cdek-modal-open {
 .mp-cc-discount-toggles {
 	display: flex;
 	flex-direction: column;
-	border-top: 1px solid var(--mp-cc-color-border, #e5e5e5);
-}
-
-.mp-cc-toggle-row {
-	border-bottom: 1px solid var(--mp-cc-color-border, #e5e5e5);
 }
 
 .mp-cc-toggle-row__head {

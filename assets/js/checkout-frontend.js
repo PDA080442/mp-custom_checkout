@@ -4278,8 +4278,7 @@
 		var selectedRowId = getPaymentRowId(state);
 		var card = getCardRowConfig();
 		var errPayment = getContactFieldError(state, 'payment_gateway');
-		var title = trimNonEmpty(pb.title) || getUiText('step_4.payment_title', 'Способ оплаты');
-		var intro = trimNonEmpty(pb.intro) || getUiText('step_4.payment_intro', 'Выберите удобный способ оплаты.');
+		var a11ySection = getUiText('step_4.payment_method_group_label', 'Выбор способа оплаты');
 		var messages = pb.messages && typeof pb.messages === 'object' ? pb.messages : {};
 		var paymentState = state.frontendStore && state.frontendStore.payment ? String(state.frontendStore.payment.state || 'idle') : 'idle';
 		var stateClass = paymentState === 'success' ? ' mp-cc-payment--state-success' : (paymentState === 'error' ? ' mp-cc-payment--state-error' : '');
@@ -4288,10 +4287,7 @@
 
 		if (!gateways.length) {
 			var emptyMsg = getUiText('step_4.payment_gateways_empty', 'Способы оплаты не настроены в WooCommerce или недоступны для этой корзины. Проверьте раздел «Платежи» и условия шлюзов.');
-			var htmlEmpty = '<section class="mp-cc-payment mp-cc-payment--rows mp-cc-payment--empty"' + stateClass + errClass + ' aria-labelledby="mp-cc-payment-title">';
-			htmlEmpty += '<header class="mp-cc-payment__header">';
-			htmlEmpty += '<h4 class="mp-cc-payment__title" id="mp-cc-payment-title">' + escapeHtml(title) + '</h4>';
-			htmlEmpty += '</header>';
+			var htmlEmpty = '<section class="mp-cc-payment mp-cc-payment--rows mp-cc-payment--empty' + stateClass + errClass + '" aria-label="' + escapeHtml(a11ySection) + '">';
 			htmlEmpty += '<p class="mp-cc-field-error" role="alert">' + escapeHtml(emptyMsg) + '</p>';
 			htmlEmpty += '</section>';
 			return htmlEmpty;
@@ -4303,13 +4299,7 @@
 		}
 
 		var html = '';
-		html += '<section class="mp-cc-payment mp-cc-payment--rows' + stateClass + errClass + loadingClass + '" aria-labelledby="mp-cc-payment-title">';
-		html += '<header class="mp-cc-payment__header">';
-		html += '<h4 class="mp-cc-payment__title" id="mp-cc-payment-title">' + escapeHtml(title) + '</h4>';
-		if (intro) {
-			html += '<p class="mp-cc-payment__intro">' + escapeHtml(intro) + '</p>';
-		}
-		html += '</header>';
+		html += '<section class="mp-cc-payment mp-cc-payment--rows' + stateClass + errClass + loadingClass + '" aria-label="' + escapeHtml(a11ySection) + '">';
 		if (errPayment) {
 			html += '<p class="mp-cc-field-error" id="mp-cc-payment-gateway-err" role="alert">' + escapeHtml(getUiText('step_4.payment_error_required', 'Выберите способ оплаты.')) + '</p>';
 		}
