@@ -353,11 +353,276 @@ final class CheckoutRouteContext {
 	}
 
 	/**
-	 * Плоский список ставок WC для текущего адреса корзины (после calculate_totals / синка сессии).
+	 * Извлекает диапазон срока доставки в днях из мета-данных WC-ставки.
 	 *
-	 * @return array<int, array{id: string, label: string, cost: float, method_id: string, meta: array<string, string>}>
+	 * Парсит распространённые ключи (period_min/max от официального плагина СДЭК и др.).
+	 * Возвращает массив { min: ?int, max: ?int }. Если данных нет — оба значения null.
+	 *
+	 * @param array<string, string> $meta       Очищенная мета ставки (ключ => строка).
+	 * @param \WC_Shipping_Rate     $rate       Сам объект ставки (для фильтра).
+	 * @param string                $method_id  ID метода (cdek, post_russia и т.п.) — для фильтра.
+	 *
+	 * @return array{min: ?int, max: ?int}
+	 */
+	private static function extract_wc_shipping_rate_eta_days( array $meta, \WC_Shipping_Rate $rate, string $method_id ): array {
+		$min = null;
+		$max = null;
+
+		$normalized = array();
+		foreach ( $meta as $k => $v ) {
+			$normalized[ strtolower( (string) $k ) ] = (string) $v;
+		}
+
+		$min_keys = array( 'period_min', '_cdek_period_min', 'min_delivery_days', 'days_min', 'delivery_min' );
+		$max_keys = array( 'period_max', '_cdek_period_max', 'max_delivery_days', 'days_max', 'delivery_max' );
+
+		foreach ( $min_keys as $mk ) {
+			if ( isset( $normalized[ $mk ] ) && '' !== $normalized[ $mk ] ) {
+				$parsed = self::parse_first_positive_int( $normalized[ $mk ] );
+				if ( null !== $parsed ) {
+					$min = $parsed;
+					break;
+				}
+			}
+		}
+		foreach ( $max_keys as $mxk ) {
+			if ( isset( $normalized[ $mxk ] ) && '' !== $normalized[ $mxk ] ) {
+				$parsed = self::parse_first_positive_int( $normalized[ $mxk ] );
+				if ( null !== $parsed ) {
+					$max = $parsed;
+					break;
+				}
+			}
+		}
+
+		if ( null === $min && null === $max ) {
+			$combo_keys = array( 'delivery_days', 'period', 'days', 'eta_days' );
+			foreach ( $combo_keys as $ck ) {
+				if ( isset( $normalized[ $ck ] ) && '' !== $normalized[ $ck ] ) {
+					$pair = self::parse_days_range_string( $normalized[ $ck ] );
+					if ( null !== $pair['min'] || null !== $pair['max'] ) {
+						$min = $pair['min'];
+						$max = $pair['max'];
+						break;
+					}
+				}
+			}
+		}
+
+		// Многие плагины (например, официальный плагин CDEK) не пишут срок в meta, но добавляют его в label
+		// ставки: "Курьером до двери (экспресс), (3-4 дней)". Если meta пуста — пробуем извлечь срок из label,
+		// но ТОЛЬКО когда числа стоят рядом со словом "дн"/"day" — иначе можно зацепить вес/код/индекс.
+		if ( null === $min && null === $max ) {
+			$label = is_callable( array( $rate, 'get_label' ) ) ? (string) $rate->get_label() : '';
+			$from_label = self::parse_days_from_label( $label );
+			if ( null !== $from_label['min'] || null !== $from_label['max'] ) {
+				$min = $from_label['min'];
+				$max = $from_label['max'];
+			}
+		}
+
+		if ( null === $min && null !== $max ) {
+			$min = $max;
+		}
+		if ( null !== $min && null === $max ) {
+			$max = $min;
+		}
+		if ( null !== $min && null !== $max && $min > $max ) {
+			$tmp = $min;
+			$min = $max;
+			$max = $tmp;
+		}
+
+		$result = array(
+			'min' => $min,
+			'max' => $max,
+		);
+
+		/**
+		 * Позволяет переопределить или дополнить парсер срока для конкретной WC-ставки.
+		 *
+		 * @param array{min: ?int, max: ?int} $result     Текущий результат парсинга.
+		 * @param \WC_Shipping_Rate           $rate       Объект WC-ставки.
+		 * @param array<string, string>       $meta       Очищенная мета ставки.
+		 * @param string                      $method_id  ID метода доставки.
+		 */
+		$filtered = apply_filters( 'mp_custom_checkout_wc_shipping_rate_eta_days', $result, $rate, $meta, $method_id );
+		if ( ! is_array( $filtered ) ) {
+			return $result;
+		}
+		$out_min = isset( $filtered['min'] ) && is_numeric( $filtered['min'] ) ? (int) $filtered['min'] : null;
+		$out_max = isset( $filtered['max'] ) && is_numeric( $filtered['max'] ) ? (int) $filtered['max'] : null;
+		if ( null !== $out_min && $out_min < 1 ) {
+			$out_min = null;
+		}
+		if ( null !== $out_max && $out_max < 1 ) {
+			$out_max = null;
+		}
+		if ( null === $out_min && null !== $out_max ) {
+			$out_min = $out_max;
+		}
+		if ( null !== $out_min && null === $out_max ) {
+			$out_max = $out_min;
+		}
+
+		return array(
+			'min' => $out_min,
+			'max' => $out_max,
+		);
+	}
+
+	/**
+	 * Парсит первое положительное целое число из строки. Например, "3", "3 дня", "до 5".
+	 *
+	 * @param string $raw
+	 *
+	 * @return int|null
+	 */
+	private static function parse_first_positive_int( string $raw ) {
+		if ( '' === $raw ) {
+			return null;
+		}
+		if ( preg_match( '/\d+/', $raw, $m ) ) {
+			$n = (int) $m[0];
+			if ( $n >= 1 ) {
+				return $n;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Парсит диапазон дней из одной строки вида "3-5", "3—5", "3..5", "от 3 до 5" и т.п.
+	 *
+	 * @param string $raw
+	 *
+	 * @return array{min: ?int, max: ?int}
+	 */
+	private static function parse_days_range_string( string $raw ): array {
+		$result = array(
+			'min' => null,
+			'max' => null,
+		);
+		if ( '' === $raw ) {
+			return $result;
+		}
+		if ( preg_match_all( '/\d+/', $raw, $matches ) ) {
+			$nums = array_map( 'intval', $matches[0] );
+			$nums = array_values( array_filter( $nums, static function ( $n ) { return $n >= 1; } ) );
+			if ( ! empty( $nums ) ) {
+				$result['min'] = (int) $nums[0];
+				$result['max'] = isset( $nums[1] ) ? (int) $nums[1] : $result['min'];
+			}
+		}
+		return $result;
+	}
+
+	/**
+	 * Парсит срок из подписи WC-ставки. Срабатывает ТОЛЬКО когда число(а) стоят рядом со словом
+	 * "дн" (день/дня/дней/дн.) или "day(s)" — чтобы не зацепить лишние цифры (вес, коды и пр.).
+	 *
+	 * @param string $label
+	 *
+	 * @return array{min: ?int, max: ?int}
+	 */
+	private static function parse_days_from_label( string $label ): array {
+		$result = array(
+			'min' => null,
+			'max' => null,
+		);
+		if ( '' === $label ) {
+			return $result;
+		}
+		if ( preg_match( '/(\d+)\s*[\-–—]\s*(\d+)\s*(?:дн|day)/iu', $label, $m ) ) {
+			$lo = (int) $m[1];
+			$hi = (int) $m[2];
+			if ( $lo >= 1 ) {
+				$result['min'] = $lo;
+			}
+			if ( $hi >= 1 ) {
+				$result['max'] = $hi;
+			}
+			return $result;
+		}
+		if ( preg_match( '/(\d+)\s*(?:дн|day)/iu', $label, $m ) ) {
+			$n = (int) $m[1];
+			if ( $n >= 1 ) {
+				$result['min'] = $n;
+				$result['max'] = $n;
+			}
+		}
+		return $result;
+	}
+
+	/**
+	 * Ключ хранения снимка ставок WC в WC_Session. Снимок обновляется на каждый
+	 * `woocommerce_after_calculate_totals` (это момент, когда WC уже пересчитал packages и
+	 * cart->shipping_total согласован). При сборке контекста чекаута мы читаем именно отсюда,
+	 * чтобы не дёргать calculate_shipping() самостоятельно и не ломать cart_totals.
+	 */
+	private const WC_SHIPPING_RATES_SNAPSHOT_SESSION_KEY = 'mp_cc_wc_shipping_rates_snapshot';
+
+	/**
+	 * Регистрирует слушатель момента пересчёта корзины. Вызывается из PluginHooksRegistrar
+	 * после готовности интеграции с WooCommerce.
+	 */
+	public static function register_shipping_snapshot_capture(): void {
+		add_action( 'woocommerce_after_calculate_totals', array( __CLASS__, 'capture_wc_shipping_rates_snapshot' ), 20 );
+		add_action( 'woocommerce_shipping_method_chosen', array( __CLASS__, 'capture_wc_shipping_rates_snapshot' ), 20 );
+	}
+
+	/**
+	 * Callback на стандартные WC-экшены. Сохраняет в WC_Session текущий снимок ставок,
+	 * не дёргая никаких пересчётов сам. WC к этому моменту уже всё посчитал.
+	 */
+	public static function capture_wc_shipping_rates_snapshot(): void {
+		if ( ! function_exists( 'WC' ) ) {
+			return;
+		}
+		$session = WC()->session;
+		if ( ! ( $session instanceof \WC_Session ) ) {
+			return;
+		}
+		try {
+			$rows = self::collect_wc_shipping_rates_snapshot_raw();
+			if ( ! empty( $rows ) && is_callable( array( $session, 'set' ) ) ) {
+				$session->set(
+					self::WC_SHIPPING_RATES_SNAPSHOT_SESSION_KEY,
+					array(
+						'time'  => time(),
+						'rates' => $rows,
+					)
+				);
+			}
+		} catch ( \Throwable $e ) {
+			return;
+		}
+	}
+
+	/**
+	 * Плоский список ставок WC для текущего адреса корзины.
+	 * Сначала пытается прочитать снимок из WC_Session (он обновляется на woocommerce_after_calculate_totals).
+	 * Если снимка нет — пробуем прочитать пакеты «как есть» в текущем процессе.
+	 *
+	 * @return array<int, array{id: string, label: string, cost: float, method_id: string, meta: array<string, string>, eta_days: array{min: ?int, max: ?int}}>
 	 */
 	private static function collect_wc_shipping_rates_snapshot(): array {
+		if ( function_exists( 'WC' ) && WC()->session instanceof \WC_Session ) {
+			$cached = WC()->session->get( self::WC_SHIPPING_RATES_SNAPSHOT_SESSION_KEY );
+			if ( is_array( $cached ) && isset( $cached['rates'] ) && is_array( $cached['rates'] ) && ! empty( $cached['rates'] ) ) {
+				return $cached['rates'];
+			}
+		}
+		return self::collect_wc_shipping_rates_snapshot_raw();
+	}
+
+	/**
+	 * Чистое чтение packages WC без принудительных пересчётов и без чтения сессионного кеша.
+	 * Если packages пуст в текущем процессе — вернём пустой массив (это нормально для AJAX до синка).
+	 *
+	 * @return array<int, array<string, mixed>>
+	 */
+	private static function collect_wc_shipping_rates_snapshot_raw(): array {
 		if ( ! function_exists( 'WC' ) || ! WC()->cart instanceof \WC_Cart ) {
 			return array();
 		}
@@ -384,12 +649,14 @@ final class CheckoutRouteContext {
 				$decimals   = function_exists( 'wc_get_price_decimals' ) ? (int) wc_get_price_decimals() : 2;
 				$method_id  = is_callable( array( $rate, 'get_method_id' ) ) ? (string) $rate->get_method_id() : '';
 				$meta_clean = self::wc_shipping_rate_meta_for_snapshot( $rate );
+				$eta_days   = self::extract_wc_shipping_rate_eta_days( $meta_clean, $rate, $method_id );
 				$row        = array(
 					'id'         => $id,
 					'label'      => wp_strip_all_tags( (string) $rate->get_label() ),
 					'cost'       => (float) wc_format_decimal( max( 0.0, $cost ), $decimals ),
 					'method_id'  => $method_id,
 					'meta'       => $meta_clean,
+					'eta_days'   => $eta_days,
 				);
 				/**
 				 * Одна ставка в снимке (расширение под конкретный плагин СДЭК / другое).

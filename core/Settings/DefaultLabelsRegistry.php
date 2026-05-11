@@ -149,6 +149,13 @@ final class DefaultLabelsRegistry {
 				'payment_success' => 'Способ оплаты обновлён.',
 				'payment_error_switch' => 'Не удалось переключить способ оплаты.',
 			),
+			'delivery' => array(
+				'eta_days_one'    => 'день',
+				'eta_days_few'    => 'дня',
+				'eta_days_many'   => 'дней',
+				'eta_days_single' => '{value} {plural}',
+				'eta_days_range'  => '{min}–{max} {plural}',
+			),
 			'coupon' => array(
 				'apply'   => 'Применить',
 				'success' => 'Код применён',

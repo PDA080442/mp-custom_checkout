@@ -15,6 +15,7 @@ use MP\CustomCheckout\Checkout\Routing\CheckoutSessionService;
 use MP\CustomCheckout\Checkout\Routing\CheckoutSuccessController;
 use MP\CustomCheckout\Checkout\Routing\CheckoutSuccessOrderReceivedRedirect;
 use MP\CustomCheckout\Checkout\Routing\CheckoutSuccessRouteHooks;
+use MP\CustomCheckout\Routing\CheckoutRouteContext;
 use MP\CustomCheckout\Admin\Hooks\AdminAssetsHooks;
 use MP\CustomCheckout\Admin\Hooks\AdminMenuHooks;
 use MP\CustomCheckout\Frontend\Hooks\CheckoutEntryFrontendHooks;
@@ -70,5 +71,6 @@ final class PluginHooksRegistrar {
 		CheckoutSessionService::register();
 		OrderMetaHooks::register();
 		EmailHooks::register();
+		CheckoutRouteContext::register_shipping_snapshot_capture();
 	}
 }

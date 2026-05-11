@@ -1313,6 +1313,12 @@
 	color: var(--mp-cc-color-text-muted);
 }
 
+.mp-cc-summary-card__shipping-eta {
+	color: var(--mp-cc-color-text-muted);
+	font-weight: 400;
+	white-space: nowrap;
+}
+
 .mp-cc-summary-card__scenario--final-review {
 	background: color-mix(in srgb, var(--mp-cc-color-accent) 8%, #fff);
 	border: 1px solid color-mix(in srgb, var(--mp-cc-color-accent) 20%, var(--mp-cc-color-border));
