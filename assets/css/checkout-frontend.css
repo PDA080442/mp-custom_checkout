@@ -1554,8 +1554,12 @@
 		background: var(--mp-cc-summary-receipt-bg, #f3f4f6);
 	}
 
-	/* На мобилке в липком блоке оставляем финансы + сводку промо + mini-review оплаты. */
-	.mp-cc-summary-card__scenario:not(.mp-cc-summary-card__scenario--final-review):not([data-summary-financials='1']):not([data-final-review-financials='1']):not([data-final-review-breakdown='1']) {
+	/* На мобилке в липком блоке скрываем промежуточные scenario-карточки нефинальных шагов,
+	   но НА ШАГЕ «Детали заказа» (confirm) показываем все блоки финального обзора:
+	   шапку-лид, контакты, mini-review оплаты, состав заказа, способ получения/ПВЗ и итоги.
+	   Раньше скрывались data-final-review-contact / -cart / -scenario, поэтому на телефоне
+	   пользователь видел только финансы и думал, что «не все детали заказа показаны». */
+	.mp-cc-summary-card__scenario:not(.mp-cc-summary-card__scenario--final-review):not([data-summary-financials='1']):not([data-final-review-block='1']):not([data-final-review-contact='1']):not([data-final-review-breakdown='1']):not([data-final-review-cart='1']):not([data-final-review-financials='1']):not([data-final-review-scenario='1']) {
 		display: none;
 	}
 
@@ -1581,6 +1585,28 @@
 		background:
 			radial-gradient(circle at 50% 0, transparent 5px, var(--mp-cc-summary-receipt-bg, #f3f4f6) 6px) 0 0 / 12px 100% repeat-x;
 		pointer-events: none;
+	}
+
+	/* Шаг «Детали заказа» (confirm): сводка раскрыта на финальный обзор и слишком высокая,
+	   чтобы держать её в липком блоке с внутренним скроллом — пользователь не может
+	   пролистать страницу вверх, потому что overscroll-behavior:contain «съедает» жест.
+	   На confirm на мобиле/планшете кладём сводку в обычный поток: страница скроллится
+	   единым полотном, видны все блоки (контакты, оплата, состав, ПВЗ, итоги), а отдельный
+	   внутренний скролл больше не блокирует «верх» страницы. */
+	.mp-cc-summary-card--confirm {
+		position: static;
+		bottom: auto;
+		max-height: none;
+		overflow: visible;
+		overscroll-behavior: auto;
+		box-shadow: none;
+		border-radius: var(--mp-cc-radius-md);
+	}
+
+	/* Зубчатого «чека» сверху на confirm тоже не нужно — там липкости нет, граница с
+	   контентом выше выглядит чище без отрицательного margin / маски. */
+	.mp-cc-summary-card--confirm.mp-cc-summary-card--mobile-receipt::before {
+		display: none;
 	}
 }
 

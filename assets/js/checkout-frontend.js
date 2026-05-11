@@ -2644,6 +2644,58 @@
 		};
 	}
 
+	/**
+	 * Готовит payload `answers` для AJAX `session_set_answers` на шаге «Адрес и доставка»,
+	 * относящийся к выбору способа/тарифа доставки.
+	 *
+	 * Из `state.frontendStore.fulfillment.date` намеренно вырезаются `selected_date` /
+	 * `calendar_month`: на шаге адреса пользователь дату не выбирает (она живёт в
+	 * `date_conditions`), а её авто-fill через `ensureDateSelection` иначе уходит в payload
+	 * и заставляет бэкенд гонять `validate_date_answers_payload` на КАЖДОЕ сохранение тарифа.
+	 * После смены сценария/метода (особенно на медленной мобильной сети) клиентская дата
+	 * может временно не входить в `available_dates` нового сценария — и сервер отвечает 422,
+	 * фронт показывает ложную ошибку «Не удалось сохранить тариф доставки», хотя сам тариф
+	 * валиден. `array_replace_recursive` на бэке сохраняет существующий `selected_date`
+	 * из `date_conditions`, поэтому ничего не теряется.
+	 */
+	function buildShippingAnswersFromState(state) {
+		var dateBox = state && state.frontendStore && state.frontendStore.fulfillment
+			? (state.frontendStore.fulfillment.date || {})
+			: {};
+		var payload = $.extend({}, dateBox);
+		delete payload.selected_date;
+		delete payload.calendar_month;
+		return payload;
+	}
+
+	/**
+	 * Извлекает из failed jqXHR код ошибки и сообщение от бэкенда (если он явно сказал, что не так).
+	 * Возвращает один из «человеческих» текстов:
+	 * — для invalid_shipping_method / invalid_date_selection — сервеные сообщения,
+	 * — для stale_context — null (там есть отдельный `recoverFromInvalidSessionState`),
+	 * — для прочих ошибок — `defaultMessage`.
+	 */
+	function resolveShippingFailMessage(xhr, defaultMessage) {
+		var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
+		var code = String(payload.code || '');
+		if (code === 'stale_context') {
+			return null;
+		}
+		if (code === 'invalid_shipping_method') {
+			return trimNonEmpty(payload.message) || getShippingErrorCopy().methodUnavailable;
+		}
+		if (code === 'invalid_date_selection') {
+			return trimNonEmpty(payload.message) || getUiText('step_3.copy.errors.invalid_date', 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.');
+		}
+		if (code === 'pvz_required') {
+			return trimNonEmpty(payload.message) || getUiText('order_review.pvz_required', 'Выберите пункт выдачи (ПВЗ), чтобы продолжить.');
+		}
+		if (code === 'pvz_rate_unavailable') {
+			return trimNonEmpty(payload.message) || getUiText('order_review.pvz_rate_unavailable', 'Ставка доставки ПВЗ недоступна. Обновите страницу или выберите другой способ доставки.');
+		}
+		return defaultMessage;
+	}
+
 	function applyShippingSelectionToState(state, selection) {
 		if (!selection) {
 			return;
@@ -7038,7 +7090,19 @@
 		}
 		if (storageKey === 'step_one') {
 			if (state && state.currentStepId === 'address_delivery' && state.frontendStore && state.frontendStore.fulfillment) {
-				return $.extend(true, {}, state.frontendStore.fulfillment.date || {});
+				var stepOnePayload = $.extend(true, {}, state.frontendStore.fulfillment.date || {});
+				// На шаге «Адрес и доставка» пользователь не выбирает дату — она живёт в
+				// `date_conditions`. `ensureDateSelection` авто-заполняет `selected_date` для UI
+				// календаря на шаге 3, но при сохранении step_one этот auto-fill уходит в payload
+				// и бэк-валидация `validate_date_answers_payload` срабатывает на КАЖДЫЙ
+				// save_draft / save_method / save_tariff. На медленной мобильной сети это легко
+				// даёт 422 (после смены сценария/метода дата ещё не пересобрана для нового
+				// каталога) и пользователь видит «Не удалось сохранить тариф доставки», хотя
+				// фактический тариф вполне валиден. Сервер всё равно держит `selected_date`
+				// в `date_conditions` и не теряет её, если client не прислал поле явно.
+				delete stepOnePayload.selected_date;
+				delete stepOnePayload.calendar_month;
+				return stepOnePayload;
 			}
 			return state.frontendStore.cart.snapshot || {};
 		}
@@ -7972,7 +8036,17 @@
 			: null;
 		var html = '';
 
-		html += '<section class="mp-cc-summary-card mp-cc-summary-card--mobile-receipt" aria-label="Order summary panel">';
+		// На шаге «Детали заказа» (confirm) сводка раскрыта на ВЕСЬ финальный обзор: контакты,
+		// способ оплаты, состав заказа, ПВЗ, итоги. На мобиле это много блоков, и липкий
+		// «чек» снизу со своим overflow:auto + overscroll-behavior:contain ловил скролл —
+		// внутри картинки можно листать вниз, но вверх по странице вернуться нельзя (пальцу
+		// просто некуда «зацепиться»). На confirm на мобиле делаем сводку обычным блоком
+		// в потоке (CSS-override через модификатор --confirm).
+		var summaryCardClasses = 'mp-cc-summary-card mp-cc-summary-card--mobile-receipt';
+		if (state && state.currentStepId === 'confirm') {
+			summaryCardClasses += ' mp-cc-summary-card--confirm';
+		}
+		html += '<section class="' + summaryCardClasses + '" aria-label="Order summary panel">';
 		html += '<h3 class="mp-cc-summary-card__title">' + escapeHtml(getStepOneLabel(state, 'summary_title', 'order_review.title', 'Order Summary')) + '</h3>';
 		html += '<p class="mp-cc-summary-card__meta mp-cc-summary-card__meta--step">' + escapeHtml(formatCheckoutStepMeta(stepProg.cur, stepProg.total)) + '</p>';
 		if (showPlaceholders) {
@@ -8989,7 +9063,7 @@
 				return postCheckout('session_set_answers', {
 					step_id: 'address_delivery',
 					context_id: state.flowContextId,
-					answers: state.frontendStore.fulfillment.date || {}
+					answers: buildShippingAnswersFromState(state)
 				});
 			}).then(function () {
 				// Подтягиваем актуальные WC rates / cart totals после пересчёта на бэке —
@@ -8998,8 +9072,11 @@
 				if (state && state.currentStepId === 'address_delivery') {
 					return syncStoreWithBackend(state, $app, { force: true });
 				}
-			}).fail(function () {
-				notify('Не удалось сохранить шаг доставки.', 'error');
+			}).fail(function (xhr) {
+				var msg = resolveShippingFailMessage(xhr, 'Не удалось сохранить шаг доставки.');
+				if (msg) {
+					notify(msg, 'error');
+				}
 				// При ошибке восстанавливаем состояние из бэкенда, чтобы UI не остался рассинхронизированным.
 				syncStoreWithBackend(state, $app, { force: true });
 			}).always(function () {
@@ -9010,8 +9087,11 @@
 			});
 		} else {
 			// Метод требует выбора тарифа — ждём клика по тарифу, ничего больше не отправляем.
-			scenarioRequest.fail(function () {
-				notify('Не удалось сохранить способ доставки.', 'error');
+			scenarioRequest.fail(function (xhr) {
+				var msg = resolveShippingFailMessage(xhr, 'Не удалось сохранить способ доставки.');
+				if (msg) {
+					notify(msg, 'error');
+				}
 				syncStoreWithBackend(state, $app, { force: true });
 			}).always(function () {
 				release();
@@ -9046,7 +9126,7 @@
 		postCheckout('session_set_answers', {
 			step_id: 'address_delivery',
 			context_id: state.flowContextId,
-			answers: state.frontendStore.fulfillment.date || {}
+			answers: buildShippingAnswersFromState(state)
 		}).then(function () {
 			// Подтянуть актуальные WC rates / cart totals после пересчёта на бэке.
 			// Без этого фронт остаётся с ценами из bootstrap'а (для прошлого города), и при смене
@@ -9055,8 +9135,11 @@
 			if (state && state.currentStepId === 'address_delivery') {
 				return syncStoreWithBackend(state, $app, { force: true });
 			}
-		}).fail(function () {
-			notify('Не удалось сохранить тариф доставки.', 'error');
+		}).fail(function (xhr) {
+			var msg = resolveShippingFailMessage(xhr, 'Не удалось сохранить тариф доставки.');
+			if (msg) {
+				notify(msg, 'error');
+			}
 			syncStoreWithBackend(state, $app, { force: true });
 		}).always(function () {
 			shippingMutationInFlight = false;
