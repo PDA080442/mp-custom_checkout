@@ -9058,15 +9058,40 @@
 						try { render(state, $app); } catch (_pvzRenderErr) {}
 						// setTimeout(0): дождаться `.always()` обёртки cdek_set_office (там снимается
 						// shippingMutationInFlight и отрабатывает flushPendingShippingMutation), а уже
-						// потом без debounce сохранить новый contact_billing+step_one и форсированно
-						// подтянуть свежий cart.summary с пересчитанной ценой ПВЗ под новый город.
+						// потом форсированно подтянуть свежий cart.summary с пересчитанной ценой ПВЗ
+						// под новый город (saveCurrentStepDraft уже зашит preflight'ом внутри
+						// syncStoreWithBackend для шага `address_delivery`).
 						window.setTimeout(function () {
-							saveCurrentStepDraft(state)
-								.then(function () {
-									syncStoreWithBackend(state, $app, { force: true });
-								})
+							// 1) Если flushPendingShippingMutation в .always() уже отыграл клик
+							//    пользователя по тарифу/методу, который он сделал во время выбора
+							//    ПВЗ — сейчас в полёте отдельная мутация (shippingMutationInFlight=true).
+							//    Она сама сделает финальный syncStoreWithBackend({force:true}) с
+							//    актуальным тарифом, поэтому второй sync здесь не нужен — и более
+							//    того ВРЕДЕН: его saveCurrentStepDraft-preflight отправит stale-snapshot
+							//    fulfillment.date (со старым тарифом), а PHP session-lock сериализует
+							//    его *после* свежего session_set_answers тарифа → последний writer
+							//    перетрёт только что выбранный пользователем тариф. Это и есть
+							//    исходный «пиздец в ценах» после смены Express ↔ Standard сразу
+							//    после выбора ПВЗ на карте.
+							if (shippingMutationInFlight) {
+								return;
+							}
+							// 2) Захватываем флаг сами: тогда клик по тарифу/методу прямо во время
+							//    нашего sync встаёт в pendingShippingTariffChoice (см. applyShipping
+							//    TariffUserChoice → if (shippingMutationInFlight) { … return; }) и
+							//    безопасно отыгрывается из flushPendingShippingMutation в .always
+							//    ниже — уже с актуальным state, без гонки snapshot'ов в PHP.
+							shippingMutationInFlight = true;
+							setShippingRatesLoadingOverlay(true, $app);
+							syncStoreWithBackend(state, $app, { force: true })
 								.fail(function () {
 									notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
+								})
+								.always(function () {
+									shippingMutationInFlight = false;
+									setShippingRatesLoadingOverlay(false, $app);
+									flashShippingAmountInSummary();
+									flushPendingShippingMutation(state, $app, '');
 								});
 						}, 0);
 					} catch (_pvzPatchErr) {
