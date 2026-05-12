@@ -413,12 +413,91 @@ final class FrontendAssetsHooks {
 		$config = SafeSettingsResolver::get_section( 'step_4' );
 		$config = is_array( $config ) ? $config : array();
 		$config['available_gateways'] = self::available_payment_gateways_for_runtime();
+		if ( ! isset( $config['payment_block'] ) || ! is_array( $config['payment_block'] ) ) {
+			$config['payment_block'] = array();
+		}
+		$config['payment_block']['discount_toggles'] = self::discount_toggles_runtime_config();
 		return $config;
+	}
+
+	/**
+	 * Готовит рантайм-конфиг тогглов промокода и подарочной карты на шаге оплаты.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private static function discount_toggles_runtime_config(): array {
+		$step_four = SafeSettingsResolver::get_section( 'step_4' );
+		$payment_block = is_array( $step_four ) && isset( $step_four['payment_block'] ) && is_array( $step_four['payment_block'] )
+			? $step_four['payment_block']
+			: array();
+		$raw = isset( $payment_block['discount_toggles'] ) && is_array( $payment_block['discount_toggles'] )
+			? $payment_block['discount_toggles']
+			: array();
+		return array(
+			'coupon_in_step'      => isset( $raw['coupon_in_step'] ) ? (bool) $raw['coupon_in_step'] : true,
+			'gift_card_in_step'   => isset( $raw['gift_card_in_step'] ) ? (bool) $raw['gift_card_in_step'] : true,
+			'coupon_in_summary'   => isset( $raw['coupon_in_summary'] ) ? (bool) $raw['coupon_in_summary'] : false,
+			'gift_card_in_summary'=> isset( $raw['gift_card_in_summary'] ) ? (bool) $raw['gift_card_in_summary'] : false,
+			'coupon_icon_url'     => '',
+			'gift_card_icon_url'  => '',
+		);
 	}
 
 	private static function delivery_config(): array {
 		$config = SafeSettingsResolver::get_section( 'delivery' );
 		return is_array( $config ) ? $config : array();
+	}
+
+	/**
+	 * URL статики оплаты из каталога плагина (`assets/images/payment-defaults/`).
+	 */
+	private static function payment_default_asset_url( string $filename ): string {
+		$filename = ltrim( $filename, '/' );
+		$abs      = MP_CUSTOM_CHECKOUT_PATH . 'assets/images/payment-defaults/' . $filename;
+		$ver      = ( is_readable( $abs ) ) ? (string) filemtime( $abs ) : MP_CUSTOM_CHECKOUT_VERSION;
+		$base     = trailingslashit( (string) MP_CUSTOM_CHECKOUT_URL ) . 'assets/images/payment-defaults/' . $filename;
+		return esc_url_raw( $base . '?v=' . rawurlencode( $ver ) );
+	}
+
+	/**
+	 * Иконка способа оплаты: фиксированные PNG по подписи и id шлюза.
+	 */
+	private static function default_payment_gateway_icon_url( string $gateway_id, string $display_title ): string {
+		$id    = strtolower( $gateway_id );
+		$plain = wp_strip_all_tags( $display_title );
+		if ( function_exists( 'mb_strtolower' ) ) {
+			$title = mb_strtolower( $plain, 'UTF-8' );
+		} else {
+			$title = strtolower( $plain );
+		}
+
+		// По id шлюза — раньше эвристик по заголовку: в подписи часто есть «картой»,
+		// из‑за чего ветка «карт» перехватывала ЮKassa раньше, чем срабатывала привязка к sbp.png.
+		if ( false !== strpos( $id, 'robokassa' ) ) {
+			return self::payment_default_asset_url( 'split.png' );
+		}
+		if ( false !== strpos( $id, 'yookassa' ) || false !== strpos( $id, 'yoomoney' ) || false !== strpos( $id, 'yandex_kassa' ) || false !== strpos( $id, 'yandex-kassa' ) ) {
+			return self::payment_default_asset_url( 'sbp.png' );
+		}
+		if ( false !== strpos( $id, 'stripe' ) || false !== strpos( $id, 'paypal' ) ) {
+			return self::payment_default_asset_url( 'bank_cart.png' );
+		}
+
+		if ( false !== strpos( $title, 'сплит' ) || false !== strpos( $title, 'split' ) ) {
+			return self::payment_default_asset_url( 'split.png' );
+		}
+		if ( false !== strpos( $title, 'сбп' ) || false !== strpos( $title, 'sbp' ) ) {
+			return self::payment_default_asset_url( 'sbp.png' );
+		}
+		// Частая опечатка: латинская «p» вместо кириллической «п» в «СБП» (например «сpб»).
+		if ( preg_match( '/с(?:п|p)б/ui', $title ) ) {
+			return self::payment_default_asset_url( 'sbp.png' );
+		}
+		if ( false !== strpos( $title, 'карт' ) || false !== strpos( $title, 'card' ) || false !== strpos( $title, 'банк' ) ) {
+			return self::payment_default_asset_url( 'bank_cart.png' );
+		}
+
+		return self::payment_default_asset_url( 'bank_cart.png' );
 	}
 
 	private static function available_payment_gateways_for_runtime(): array {
@@ -455,10 +534,13 @@ final class FrontendAssetsHooks {
 			$gid = sanitize_key( (string) $gateway->id );
 			$wc_title = wp_strip_all_tags( (string) $gateway->get_title() );
 			$override = isset( $title_overrides[ $gid ] ) ? trim( wp_strip_all_tags( (string) $title_overrides[ $gid ] ) ) : '';
+			$title    = '' !== $override ? $override : $wc_title;
+			$icon     = self::default_payment_gateway_icon_url( $gid, $title );
 			$result[] = array(
 				'id'          => $gid,
-				'title'       => '' !== $override ? $override : $wc_title,
+				'title'       => $title,
 				'description' => wp_strip_all_tags( (string) $gateway->get_description() ),
+				'icon'        => $icon,
 			);
 		}
 		return $result;

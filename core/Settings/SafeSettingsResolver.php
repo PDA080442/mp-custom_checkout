@@ -530,6 +530,14 @@ final class SafeSettingsResolver {
 						'intro' => 'Выберите удобный способ оплаты.',
 						'gateway_order' => array(),
 						'gateway_titles' => array(),
+						'gateway_icons' => array(),
+						'rows_layout' => true,
+						'discount_toggles' => array(
+							'coupon_in_step'      => true,
+							'gift_card_in_step'   => true,
+							'coupon_in_summary'   => false,
+							'gift_card_in_summary'=> false,
+						),
 						'card_surface' => 'visual',
 						'auto_classic_on_empty_gateway_fields' => true,
 						'decorative_card_fields' => true,
@@ -1001,6 +1009,23 @@ final class SafeSettingsResolver {
 	}
 
 	/**
+	 * Удаляет устаревшие ключи `payment_block` (виртуальная строка «карта» больше не используется).
+	 *
+	 * @param array<string, mixed> $merged
+	 * @return array<string, mixed>
+	 */
+	private static function normalize_merged_step4_payment_block( array $merged ): array {
+		if ( ! isset( $merged[ OptionKeys::SECTION_STEP_4 ] ) || ! is_array( $merged[ OptionKeys::SECTION_STEP_4 ] ) ) {
+			return $merged;
+		}
+		$s4 = &$merged[ OptionKeys::SECTION_STEP_4 ];
+		if ( isset( $s4['payment_block'] ) && is_array( $s4['payment_block'] ) ) {
+			unset( $s4['payment_block']['card_row'] );
+		}
+		return $merged;
+	}
+
+	/**
 	 * Слияние сохранённых настроек с дефолтами (пользователь перекрывает дефолты).
 	 *
 	 * @return array<string, mixed>
@@ -1018,6 +1043,7 @@ final class SafeSettingsResolver {
 		$defaults       = self::get_defaults_tree();
 		self::$merged_cache = array_replace_recursive( $defaults, $stored );
 		self::$merged_cache = self::normalize_merged_coupon_intro( self::$merged_cache );
+		self::$merged_cache = self::normalize_merged_step4_payment_block( self::$merged_cache );
 
 		return self::$merged_cache;
 	}

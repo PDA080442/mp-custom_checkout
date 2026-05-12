@@ -206,8 +206,61 @@ final class CheckoutRouteContext {
 			$requires_address_for_shipping = filter_var( $delivery_answers['shipping_requires_address'], FILTER_VALIDATE_BOOLEAN );
 		}
 		$shipping_method_chosen = '' !== trim( (string) ( $delivery_answers['shipping_method_id'] ?? '' ) );
+
+		// §29.4 fix: «Цена доставки пропадает после первого AJAX».
+		// Сценарий бага (особо ярко в Yandex.Browser, но логика общая):
+		//   * При первом рендере страницы flow ещё не создан, $current_step_id = '' →
+		//     suppress не срабатывает, и в сводке честно выводится строка «Доставка: 636 ₽»,
+		//     полученная из WC (auto-pick первого rate в пакете).
+		//   * После первого `session_get_state` flow уже инициализирован, $current_step_id =
+		//     'address_delivery', а пользователь физически ещё не кликал по методу, поэтому
+		//     $shipping_method_chosen = false и старый suppress зануляет строку доставки.
+		//   * Параллельно у `WC()->cart->get_shipping_total()` может быть 0 (устаревшие
+		//     cart_totals в сессии WC), даже если в `wc_shipping_rates` снапшоте уже
+		//     есть положительная ставка. Это даёт ситуацию «summary.shipping = '', но
+		//     wc_shipping_rates содержит cost: 636» — ровно то, что прислал пользователь.
+		//
+		// Чтобы строка «Доставка» не «мигала», аккуратно берём первую положительную
+		// ставку из снапшота как fallback. Снимок снят на woocommerce_after_calculate_totals,
+		// он отражает реальные пакеты текущей корзины (для случая, когда повторный
+		// calculate_totals для session_get_state не запускался). Сложный матчинг
+		// MP-метода ↔ WC-rate не делаем: в каталоге обычно несколько MP-методов и
+		// несколько WC-ставок, но при первой загрузке WC сам авто-выбирает «лучшую»
+		// ставку — её цена и есть та сумма, что пользователь видит и ожидает увидеть.
+		//
+		// ВАЖНО: НЕ перезаписываем $cart_shipping_total — он ниже используется для
+		// total_edit-арифметики в ветке `session_shipping_price_value > 0`
+		// (`$total_edit - $cart_shipping_total + $shipping_total`), и подмена сломала
+		// бы итог. Используем отдельный fallback-источник для строки summary.shipping
+		// и для условия «WC реально посчитал доставку».
+		$wc_first_positive_rate_cost = 0.0;
+		if ( $cart->needs_shipping() ) {
+			$wc_rates_for_fallback = self::collect_wc_shipping_rates_snapshot();
+			if ( ! empty( $wc_rates_for_fallback ) && is_array( $wc_rates_for_fallback ) ) {
+				foreach ( $wc_rates_for_fallback as $row ) {
+					if ( ! is_array( $row ) ) {
+						continue;
+					}
+					$c = isset( $row['cost'] ) ? (float) $row['cost'] : 0.0;
+					if ( $c > 0.0 ) {
+						$wc_first_positive_rate_cost = $c;
+						break;
+					}
+				}
+			}
+		}
+		$wc_has_positive_shipping = ScenarioStepRegistry::SCENARIO_PICKUP !== $scenario_for_shipping
+			&& ( $cart_shipping_total > 0.0 || $wc_first_positive_rate_cost > 0.0 );
+		// Если у WC в cart_totals доставки 0, но в снапшоте есть положительная ставка —
+		// показываем её в строке (только если фронт ещё не переопределил через каталог).
+		if ( $shipping_total <= 0.0 && $cart_shipping_total <= 0.0
+			&& $wc_first_positive_rate_cost > 0.0
+			&& ScenarioStepRegistry::SCENARIO_PICKUP !== $scenario_for_shipping ) {
+			$shipping_total = $wc_first_positive_rate_cost;
+		}
+
 		// Почта/курьер с адресом: в answers часто shipping_price=0 до синка с фронта, но WC уже пересчитал пакеты — показываем сумму из корзины.
-		$wc_address_shipping_ready = $shipping_method_chosen && $requires_address_for_shipping && $cart_shipping_total > 0.0;
+		$wc_address_shipping_ready = $shipping_method_chosen && $requires_address_for_shipping && $wc_has_positive_shipping;
 		$session_shipping_price_chosen = ( null !== $session_shipping_price_value && $session_shipping_price_value > 0.0 )
 			|| (
 				null !== $session_shipping_price_value
@@ -230,9 +283,10 @@ final class CheckoutRouteContext {
 		if ( $cart->needs_shipping() ) {
 			if ( ScenarioStepRegistry::SCENARIO_PICKUP === $scenario_for_shipping ) {
 				$suppress_shipping_in_summary = true;
-			} elseif ( ! $woocommerce_pricing && '' !== $current_step_id && in_array( $current_step_id, $steps_pre_payment, true ) && ! $session_shipping_price_chosen ) {
-				// Пока покупатель на шаге 1 ещё не выбрал тариф (нет shipping_price в answers.step_one
-				// и WC не посчитал rate по адресу), не подмешиваем «чужую» WC-доставку в строки и итог.
+			} elseif ( ! $woocommerce_pricing && '' !== $current_step_id && in_array( $current_step_id, $steps_pre_payment, true ) && ! $session_shipping_price_chosen && ! $wc_has_positive_shipping ) {
+				// Пока покупатель на шаге 1 ещё не выбрал тариф (нет shipping_price в answers.step_one,
+				// WC не посчитал rate по адресу, и в снапшоте wc_shipping_rates нет положительной
+				// ставки) — не подмешиваем «чужую» WC-доставку в строки и итог.
 				$suppress_shipping_in_summary = true;
 			}
 		}
@@ -258,6 +312,11 @@ final class CheckoutRouteContext {
 		}
 		$total_tax_display = (float) $cart->get_total_tax();
 		$total_edit        = (float) $cart->get_total( 'edit' );
+		// Реальная сумма доставки, уже учтённая WC в cart->get_total('edit').
+		// Если она 0, а в строке summary мы показали fallback из wc_shipping_rates —
+		// эту сумму нужно прибавить к итогу вручную, иначе строка «Доставка» и
+		// «Итого» расходятся (см. блок про $wc_first_positive_rate_cost выше).
+		$wc_cart_shipping_with_tax = (float) $cart->get_shipping_total() + (float) $cart->get_shipping_tax();
 		if ( $suppress_shipping_in_summary ) {
 			$ship_tax = (float) $cart->get_shipping_tax();
 			$ship_amt = (float) $cart->get_shipping_total();
@@ -265,6 +324,11 @@ final class CheckoutRouteContext {
 			$total_edit        = max( 0.0, $total_edit - $ship_tax - $ship_amt );
 		} elseif ( ! $woocommerce_pricing && null !== $session_shipping_price_value && $session_shipping_price_value > 0.0 ) {
 			$total_edit = max( 0.0, $total_edit - $cart_shipping_total + $shipping_total );
+		} elseif ( ! $woocommerce_pricing && $wc_cart_shipping_with_tax <= 0.0 && $shipping_total > 0.0 ) {
+			// Fallback из wc_shipping_rates: WC cart->get_total('edit') ещё не знает
+			// про эту ставку (chosen_shipping_methods устарел или не auto-pickнулся),
+			// добавляем доставку в итог, чтобы он совпадал со строкой «Доставка».
+			$total_edit = $total_edit + $shipping_total;
 		}
 		$result['summary']['tax']   = (string) wc_price( $total_tax_display );
 		$result['summary']['total'] = (string) wc_price( $total_edit );

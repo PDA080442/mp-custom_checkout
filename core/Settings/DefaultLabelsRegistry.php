@@ -148,6 +148,8 @@ final class DefaultLabelsRegistry {
 				'payment_loading' => 'Сохраняем выбранный способ оплаты...',
 				'payment_success' => 'Способ оплаты обновлён.',
 				'payment_error_switch' => 'Не удалось переключить способ оплаты.',
+				'discount_coupon_toggle_label' => 'Промокод',
+				'discount_gift_card_toggle_label' => 'Подарочная карта',
 			),
 			'delivery' => array(
 				'eta_days_one'    => 'день',

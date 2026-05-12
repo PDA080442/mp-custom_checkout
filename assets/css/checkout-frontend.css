@@ -1554,8 +1554,12 @@
 		background: var(--mp-cc-summary-receipt-bg, #f3f4f6);
 	}
 
-	/* На мобилке в липком блоке оставляем финансы + сводку промо + mini-review оплаты. */
-	.mp-cc-summary-card__scenario:not(.mp-cc-summary-card__scenario--final-review):not([data-summary-financials='1']):not([data-final-review-financials='1']):not([data-final-review-breakdown='1']) {
+	/* На мобилке в липком блоке скрываем промежуточные scenario-карточки нефинальных шагов,
+	   но НА ШАГЕ «Детали заказа» (confirm) показываем все блоки финального обзора:
+	   шапку-лид, контакты, mini-review оплаты, состав заказа, способ получения/ПВЗ и итоги.
+	   Раньше скрывались data-final-review-contact / -cart / -scenario, поэтому на телефоне
+	   пользователь видел только финансы и думал, что «не все детали заказа показаны». */
+	.mp-cc-summary-card__scenario:not(.mp-cc-summary-card__scenario--final-review):not([data-summary-financials='1']):not([data-final-review-block='1']):not([data-final-review-contact='1']):not([data-final-review-breakdown='1']):not([data-final-review-cart='1']):not([data-final-review-financials='1']):not([data-final-review-scenario='1']) {
 		display: none;
 	}
 
@@ -1581,6 +1585,28 @@
 		background:
 			radial-gradient(circle at 50% 0, transparent 5px, var(--mp-cc-summary-receipt-bg, #f3f4f6) 6px) 0 0 / 12px 100% repeat-x;
 		pointer-events: none;
+	}
+
+	/* Шаг «Детали заказа» (confirm): сводка раскрыта на финальный обзор и слишком высокая,
+	   чтобы держать её в липком блоке с внутренним скроллом — пользователь не может
+	   пролистать страницу вверх, потому что overscroll-behavior:contain «съедает» жест.
+	   На confirm на мобиле/планшете кладём сводку в обычный поток: страница скроллится
+	   единым полотном, видны все блоки (контакты, оплата, состав, ПВЗ, итоги), а отдельный
+	   внутренний скролл больше не блокирует «верх» страницы. */
+	.mp-cc-summary-card--confirm {
+		position: static;
+		bottom: auto;
+		max-height: none;
+		overflow: visible;
+		overscroll-behavior: auto;
+		box-shadow: none;
+		border-radius: var(--mp-cc-radius-md);
+	}
+
+	/* Зубчатого «чека» сверху на confirm тоже не нужно — там липкости нет, граница с
+	   контентом выше выглядит чище без отрицательного margin / маски. */
+	.mp-cc-summary-card--confirm.mp-cc-summary-card--mobile-receipt::before {
+		display: none;
 	}
 }
 
@@ -4707,6 +4733,78 @@ body.mp-custom-checkout form.checkout.woocommerce-checkout {
 	margin-bottom: 0.35rem;
 }
 
+/* Лоадер на кнопке «Выбрать пункт на карте», пока инициализируется виджет СДЭК. */
+.mp-cc-address-form__edit[aria-busy='true'],
+.mp-cc-address-form__edit[data-loading='1'],
+.mp-cc-pvz-card__map[aria-busy='true'],
+.mp-cc-pvz-card__map[data-loading='1'] {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.5rem;
+	opacity: 0.78;
+	cursor: wait;
+	pointer-events: none;
+}
+
+.mp-cc-address-form__edit[aria-busy='true']::before,
+.mp-cc-address-form__edit[data-loading='1']::before,
+.mp-cc-pvz-card__map[aria-busy='true']::before,
+.mp-cc-pvz-card__map[data-loading='1']::before {
+	content: '';
+	width: 0.85rem;
+	height: 0.85rem;
+	border-radius: 50%;
+	border: 2px solid currentColor;
+	border-right-color: transparent;
+	flex: 0 0 auto;
+	animation: mp-cc-spin-rotate 0.8s linear infinite;
+}
+
+/* Полу-прозрачный оверлей со спиннером «Загружаем карту…» — пока виджет инициализируется. */
+.mp-cc-cdek-loading-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 100040;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 1rem;
+	box-sizing: border-box;
+	background: rgba(15, 15, 20, 0.45);
+}
+
+.mp-cc-cdek-loading-overlay__panel {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.7rem;
+	padding: 0.85rem 1.15rem;
+	background: var(--mp-cc-color-background, #ffffff);
+	color: var(--mp-cc-color-text, #1a1a1a);
+	border-radius: 12px;
+	box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
+	font-size: 0.98rem;
+	font-weight: 500;
+	max-width: calc(100vw - 2rem);
+}
+
+.mp-cc-cdek-loading-overlay__spinner {
+	width: 1.1rem;
+	height: 1.1rem;
+	border-radius: 50%;
+	border: 2px solid rgba(17, 17, 17, 0.18);
+	border-right-color: var(--mp-cc-color-text, #111111);
+	flex: 0 0 auto;
+	animation: mp-cc-spin-rotate 0.8s linear infinite;
+}
+
+.mp-cc-cdek-loading-overlay__text {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
 .mp-cc-pvz-card__actions {
 	display: flex;
 	flex-wrap: wrap;
@@ -4814,4 +4912,293 @@ body.mp-cc-cdek-modal-open {
 		height: 100%;
 		border-radius: 0;
 	}
+}
+
+/* ==========================================================================
+   Payment rows layout (step 4)
+   ========================================================================== */
+
+.mp-cc-payment--rows .mp-cc-payment__rows {
+	display: flex;
+	flex-direction: column;
+}
+
+.mp-cc-payment-row {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 0.95rem 0.25rem;
+	cursor: pointer;
+	transition: background-color 0.15s ease;
+}
+
+.mp-cc-payment-row:hover {
+	background-color: rgba(0, 0, 0, 0.02);
+}
+
+.mp-cc-payment-row__radio {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	white-space: nowrap;
+}
+
+.mp-cc-payment-row__radio-mark {
+	flex: 0 0 auto;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	border: 1.5px solid var(--mp-cc-color-text, #1a1a1a);
+	background: transparent;
+	position: relative;
+	transition: border-color 0.15s ease;
+}
+
+.mp-cc-payment-row__radio-mark::before {
+	content: "";
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background-color: var(--mp-cc-color-text, #1a1a1a);
+	transform: translate(-50%, -50%) scale(0);
+	transition: transform 0.15s ease;
+}
+
+.mp-cc-payment-row.is-active .mp-cc-payment-row__radio-mark::before,
+.mp-cc-payment-row__radio:checked + .mp-cc-payment-row__radio-mark::before {
+	transform: translate(-50%, -50%) scale(1);
+}
+
+.mp-cc-payment-row__radio:focus-visible + .mp-cc-payment-row__radio-mark {
+	outline: 2px solid var(--mp-cc-color-rail, #2563eb);
+	outline-offset: 2px;
+}
+
+.mp-cc-payment-row__title {
+	flex: 1 1 auto;
+	font-size: 1rem;
+	font-weight: 500;
+	color: var(--mp-cc-color-text, #1a1a1a);
+}
+
+.mp-cc-payment-row__icon {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+	justify-content: flex-end;
+	min-width: 56px;
+	height: 24px;
+}
+
+.mp-cc-payment-row__icon img {
+	max-height: 24px;
+	max-width: 80px;
+	object-fit: contain;
+}
+
+.mp-cc-payment-row__icon--empty {
+	min-width: 0;
+}
+
+.mp-cc-payment-row__radio.is-invalid + .mp-cc-payment-row__radio-mark {
+	border-color: var(--mp-cc-color-error, #b91c1c);
+}
+
+/* Visual divider between payment methods and discount toggles */
+.mp-cc-payment-divider {
+	height: 1.25rem;
+}
+
+/* Discount toggles (Промокод, Подарочная карта) */
+.mp-cc-discount-toggles {
+	display: flex;
+	flex-direction: column;
+}
+
+.mp-cc-toggle-row__head {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 0.95rem 0.25rem;
+	cursor: pointer;
+}
+
+.mp-cc-toggle-row__title {
+	flex: 1 1 auto;
+	font-size: 1rem;
+	font-weight: 500;
+	color: var(--mp-cc-color-text, #1a1a1a);
+}
+
+.mp-cc-toggle-row__icon {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	height: 24px;
+	min-width: 24px;
+}
+
+.mp-cc-toggle-row__icon img {
+	max-height: 24px;
+	max-width: 56px;
+	object-fit: contain;
+}
+
+.mp-cc-toggle__input {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	white-space: nowrap;
+}
+
+.mp-cc-toggle {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+}
+
+.mp-cc-toggle__track {
+	display: inline-flex;
+	align-items: center;
+	width: 38px;
+	height: 22px;
+	border-radius: 11px;
+	background: #e5e5e5;
+	border: 1px solid var(--mp-cc-color-border, #e5e5e5);
+	transition: background-color 0.15s ease, border-color 0.15s ease;
+	position: relative;
+}
+
+.mp-cc-toggle__thumb {
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	background: #fff;
+	border: 1px solid var(--mp-cc-color-text, #1a1a1a);
+	transform: translateX(1px);
+	transition: transform 0.18s ease, background-color 0.15s ease;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.mp-cc-toggle__input:checked + .mp-cc-toggle .mp-cc-toggle__track,
+.mp-cc-toggle-row.is-open .mp-cc-toggle__track {
+	background: var(--mp-cc-color-text, #1a1a1a);
+	border-color: var(--mp-cc-color-text, #1a1a1a);
+}
+
+.mp-cc-toggle__input:checked + .mp-cc-toggle .mp-cc-toggle__thumb,
+.mp-cc-toggle-row.is-open .mp-cc-toggle__thumb {
+	transform: translateX(16px);
+	background: #fff;
+	border-color: #fff;
+}
+
+.mp-cc-toggle__input:focus-visible + .mp-cc-toggle .mp-cc-toggle__track {
+	outline: 2px solid var(--mp-cc-color-rail, #2563eb);
+	outline-offset: 2px;
+}
+
+.mp-cc-toggle-row__body {
+	padding: 0.4rem 0 1rem;
+}
+
+.mp-cc-toggle-row__body[hidden] {
+	display: none;
+}
+
+.mp-cc-toggle-row__form,
+.mp-cc-toggle-row__chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.6rem;
+	align-items: center;
+}
+
+.mp-cc-toggle-row__form input[type="text"] {
+	flex: 1 1 200px;
+	padding: 0.55rem 0.7rem;
+	border: 1px solid var(--mp-cc-color-border, #e5e5e5);
+	border-radius: 8px;
+}
+
+.mp-cc-toggle-row__chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	padding: 0.25rem 0.55rem;
+	border-radius: 999px;
+	background: rgba(0, 0, 0, 0.05);
+	font-size: 0.9rem;
+}
+
+.mp-cc-toggle-row__chip-remove {
+	border: none;
+	background: transparent;
+	cursor: pointer;
+	font-size: 1rem;
+	line-height: 1;
+	color: var(--mp-cc-color-text-muted, #666);
+	padding: 0 0.15rem;
+}
+
+.mp-cc-toggle-row__chip-remove:hover {
+	color: var(--mp-cc-color-text, #1a1a1a);
+}
+
+.mp-cc-toggle-row__hint {
+	margin: 0.45rem 0 0;
+	font-size: 0.88rem;
+	color: var(--mp-cc-color-text-muted, #666);
+}
+
+.mp-cc-toggle-row__hint--error {
+	color: var(--mp-cc-color-error, #b91c1c);
+}
+
+.mp-cc-toggle-row__hint--success {
+	color: var(--mp-cc-color-success, #15803d);
+}
+
+.mp-cc-toggle-row__notice {
+	margin: 0;
+	font-size: 0.88rem;
+	color: var(--mp-cc-color-text-muted, #666);
+}
+
+/* Промокод в тоггле шага оплаты — тот же «лёгкий» блок, что и подарочная карта (без рамки-карточки). */
+.mp-cc-coupon--payment-toggle {
+	border: none;
+	padding: 0;
+	background: transparent;
+	box-shadow: none;
+	margin: 0;
+}
+
+.mp-cc-coupon--payment-toggle.mp-cc-coupon--success,
+.mp-cc-coupon--payment-toggle.mp-cc-coupon--error,
+.mp-cc-coupon--payment-toggle.mp-cc-coupon--default {
+	border-color: transparent;
+}
+
+.mp-cc-coupon--payment-toggle .mp-cc-toggle-row__chips {
+	margin-top: 0.5rem;
+}
+
+.mp-cc-coupon--payment-toggle .mp-cc-toggle-row__chips--nested-gift {
+	margin-top: 0.35rem;
+}
+
+/* Summary chips-only coupon block (when form is moved to payment step). */
+.mp-cc-coupon--chips-only .mp-cc-coupon__title,
+.mp-cc-coupon--chips-only .mp-cc-coupon__intro,
+.mp-cc-coupon--chips-only .mp-cc-coupon__row {
+	display: none;
 }
