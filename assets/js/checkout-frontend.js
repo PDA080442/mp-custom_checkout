@@ -2703,13 +2703,23 @@
 		var dateBox = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
 			? state.frontendStore.fulfillment.date
 			: {};
+		var prevMethodId = String(dateBox.shipping_method_id || '');
+		var prevTariffId = String(dateBox.shipping_tariff_id || '');
+		var summary = state.frontendStore.cart && state.frontendStore.cart.summary && typeof state.frontendStore.cart.summary === 'object'
+			? state.frontendStore.cart.summary
+			: {};
+		var prevShipTotal = typeof summary.shipping_total === 'number' && !Number.isNaN(summary.shipping_total)
+			? summary.shipping_total
+			: 0;
+		var prevShipText = trimNonEmpty(summary.shipping) ? String(summary.shipping) : '';
 		// Не затираем cdek_office_code здесь — syncFromFlow после выбора ПВЗ иначе «съедает» чип (§29.3).
 		// Локальная очистка офиса только при явной смене метода с pvz (applyShippingMethodUserChoice).
 		dateBox.shipping_method_id = String(selection.method_id || '');
 		dateBox.shipping_method_title = String(selection.method_title || '');
 		dateBox.shipping_tariff_id = String(selection.tariff_id || '');
 		dateBox.shipping_tariff_title = String(selection.tariff_title || '');
-		dateBox.shipping_price = Number(selection.price || 0);
+		var selPrice = Number(selection.price || 0);
+		dateBox.shipping_price = selPrice;
 		dateBox.shipping_eta = String(selection.eta || '');
 		dateBox.shipping_requires_address = selection.requires_address !== false;
 		state.frontendStore.fulfillment.date = dateBox;
@@ -2741,11 +2751,45 @@
 		}
 		state.frontendStore.form.contact = contact;
 
-		var summary = state.frontendStore.cart && state.frontendStore.cart.summary && typeof state.frontendStore.cart.summary === 'object'
-			? state.frontendStore.cart.summary
-			: {};
-		summary.shipping_total = Number(dateBox.shipping_price || 0);
-		summary.shipping = summary.shipping_total > 0 ? String(summary.shipping_total.toFixed(0)) + ' ₽' : '';
+		// После session_get_state / syncFromFlow в summary уже лежат пересчитанные WC суммы.
+		// resolveShippingSelection + каталог часто дают price=0, пока wc_shipping_rates не
+		// сматчились или overlay ещё не подставил ставку — и мы затирали shipping в сводке
+		// и shipping_price в dateBox. Визуально: на первом кадре (bootstrap) всё есть, после
+		// первого sync строка «Доставка» и подсказки сроков в списке методов «пропадают».
+		// Не затираем доставку в сводке, если пользователь не менял слот (метод+тариф) и в
+		// корзине уже была ненулевая доставка с сервера. Смена метода/тарифа — прежняя логика.
+		var methodUnchanged = prevMethodId === '' || String(selection.method_id || '') === prevMethodId;
+		var tariffUnchanged = String(selection.tariff_id || '') === prevTariffId;
+		var slotUnchanged = methodUnchanged && tariffUnchanged;
+		var preserveServerShipping = slotUnchanged && selPrice <= 0 && (prevShipTotal > 0 || trimNonEmpty(prevShipText));
+		if (preserveServerShipping) {
+			var preservedTotal = prevShipTotal;
+			if (preservedTotal <= 0 && trimNonEmpty(prevShipText)) {
+				var digits = String(prevShipText).replace(/[^\d]/g, '');
+				var parsed = digits ? parseInt(digits, 10) : 0;
+				if (!Number.isNaN(parsed) && parsed > 0) {
+					preservedTotal = parsed;
+				}
+			}
+			if (preservedTotal > 0) {
+				dateBox.shipping_price = preservedTotal;
+				summary.shipping_total = preservedTotal;
+				if (!trimNonEmpty(prevShipText)) {
+					summary.shipping = String(Math.round(preservedTotal)) + ' ₽';
+				} else {
+					summary.shipping = prevShipText;
+				}
+			} else {
+				summary.shipping = prevShipText;
+			}
+			state.frontendStore.fulfillment.date = dateBox;
+		} else if (selPrice > 0) {
+			summary.shipping_total = selPrice;
+			summary.shipping = String(selPrice.toFixed(0)) + ' ₽';
+		} else {
+			summary.shipping_total = 0;
+			summary.shipping = '';
+		}
 		state.frontendStore.cart.summary = summary;
 	}
 
