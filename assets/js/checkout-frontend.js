@@ -31,6 +31,22 @@
 	var draftSaveTimer = null;
 	/** Debounce session_get_state после правок адреса (иначе на каждый символ — отдельный AJAX). */
 	var addressRatesSyncTimer = null;
+	/**
+	 * Debounce пересчёта WC-ставок по индексу на шаге «Адрес и доставка». Запускается отдельно,
+	 * минуя guard `address_delivery` в `scheduleAddressRatesBackendSync`: индекс — единственное
+	 * поле адреса, от которого реально зависит стоимость Почты России / СДЭК, и без пересчёта
+	 * фронт не сможет узнать, что индекс невалиден (RPAEFW отдаёт cost=0 + ошибочный label).
+	 */
+	var postcodeRecalcTimer = null;
+	var lastPostcodeRecalculated = '';
+	var postcodeRecalcInFlight = false;
+	/**
+	 * Какой индекс мы уже подсветили красным «недоступно по индексу X». Нужно, чтобы не
+	 * крутить notify на каждый session_get_state, пока пользователь смотрит на эту ошибку
+	 * и ещё не правил поле. Сбрасывается при изменении индекса, способа доставки или при
+	 * успешном пересчёте.
+	 */
+	var lastPostcodeNotifiedAsInvalid = '';
 	var isClientErrorLoggingBound = false;
 	var stepTransitionTimer = 0;
 	var qtyInputDebounceTimers = {};
@@ -55,9 +71,6 @@
 	var pendingCdekOfficeDetails = null;
 	/** Deferred для очереди office-save: резолвится только после реального AJAX (модал карты не закрывается на «фейковом» resolve). */
 	var pendingCdekOfficeDeferred = null;
-	/** Пока идёт «Рассчитать доставку» — не даём render() убрать кнопку из-за гонки с черновиком / get_state. */
-	var shippingRecalcPending = false;
-
 	function getUiText(path, fallback) {
 		var source = (window.mpCcCheckout && window.mpCcCheckout.uiText) ? window.mpCcCheckout.uiText : {};
 		var parts = String(path || '').split('.');
@@ -142,9 +155,7 @@
 					city_empty_hint: '',
 					change_button: '',
 					method_row: '',
-					tariff_intro: '',
-					office_row: '',
-					office_not_set: ''
+					tariff_intro: ''
 				}
 			},
 			product_meta_visibility: {
@@ -620,6 +631,8 @@
 					address_region: '',
 					address_city: '',
 					address_postcode: '',
+					address_postcode_format: '',
+					address_postcode_unavailable: '',
 					step_blocked: '',
 					conditions_required: ''
 				},
@@ -664,6 +677,13 @@
 				title: '',
 				intro: '',
 				gateway_order: [],
+				rows_layout: true,
+				discount_toggles: {
+					coupon_in_step: true,
+					gift_card_in_step: true,
+					coupon_in_summary: false,
+					gift_card_in_summary: false
+				},
 				card_surface: 'visual',
 				decorative_card_fields: true,
 				auto_classic_on_empty_gateway_fields: true,
@@ -1363,7 +1383,8 @@
 			normalized.push({
 				id: id,
 				title: trimNonEmpty(row.title) || id,
-				description: trimNonEmpty(row.description) || ''
+				description: trimNonEmpty(row.description) || '',
+				icon: trimNonEmpty(row.icon) || ''
 			});
 		}
 		if (!order.length) {
@@ -1594,11 +1615,16 @@
 
 	function recoverFromStepAjaxFailure(state, $app, fallbackMessage) {
 		setRuntimeFlag(state, 'blocked', false);
-		syncStoreWithBackend(state, $app, { force: true }).always(function () {
-			if (fallbackMessage) {
-				notify(fallbackMessage, 'error');
-			}
-		});
+		// Раньше тут был syncStoreWithBackend({force:true}) — он на транзитной ошибке
+		// (500/timeout/конфликт WC-сессии) забирал серверный flow.current_step (мог быть
+		// stale из-за гонки session_set_answers/session_set_step) и через
+		// applySessionGetStateResponse откидывал пользователя на ранний шаг.
+		// Безопаснее показать ошибку и оставить состояние; настоящий stale_context
+		// поднимет recoverFromInvalidSessionState на следующем запросе.
+		render(state, $app);
+		if (fallbackMessage) {
+			notify(fallbackMessage, 'error');
+		}
 	}
 
 	function recoverFromInvalidSessionState(state, $app) {
@@ -1877,17 +1903,30 @@
 		return screen && screen.legacyStep ? String(screen.legacyStep) : 'confirm';
 	}
 
+	function findV2ScreenIndexByLegacyStep(screens, legacyStepId) {
+		if (!Array.isArray(screens) || !legacyStepId) {
+			return -1;
+		}
+		var i;
+		for (i = 0; i < screens.length; i += 1) {
+			if (screens[i] && String(screens[i].legacyStep || '') === String(legacyStepId)) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
 	function ensureV2ScreenState(state) {
 		if (!isV2CheckoutUiEnabled(state)) {
 			return;
 		}
 		state.v2Screens = getV2StepScreens(state);
 		if (typeof state.v2CurrentIndex !== 'number' || state.v2CurrentIndex < 0 || state.v2CurrentIndex >= state.v2Screens.length) {
-			if (state.currentStepId === 'confirm') {
-				state.v2CurrentIndex = 1;
-			} else {
-				state.v2CurrentIndex = 0;
-			}
+			// Маппинг по фактическому currentStepId: иначе после reload/recovery
+			// session_get_state приходит с current_step='recipient'/'payment',
+			// а v2CurrentIndex=undefined → пользователь оказывается на 0-м экране.
+			var mappedIdx = findV2ScreenIndexByLegacyStep(state.v2Screens, state.currentStepId);
+			state.v2CurrentIndex = mappedIdx >= 0 ? mappedIdx : 0;
 		}
 		if (typeof state.v2MaxReachedIndex !== 'number' || state.v2MaxReachedIndex < 0) {
 			state.v2MaxReachedIndex = state.v2CurrentIndex;
@@ -1964,6 +2003,74 @@
 			}
 		}
 		return map;
+	}
+
+	function buildWcShippingRateMap(rates) {
+		var map = {};
+		if (!Array.isArray(rates)) {
+			return map;
+		}
+		var i;
+		for (i = 0; i < rates.length; i += 1) {
+			var r = rates[i] || {};
+			var rid = String(r.id || '');
+			if (rid) {
+				map[rid] = r;
+			}
+		}
+		return map;
+	}
+
+	function pluralizeRuDaysWord(n) {
+		var num = Math.abs(Math.round(Number(n) || 0));
+		var mod10 = num % 10;
+		var mod100 = num % 100;
+		if (num === 1 || (mod10 === 1 && mod100 !== 11)) {
+			return getUiText('delivery.eta_days_one', 'день');
+		}
+		if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+			return getUiText('delivery.eta_days_few', 'дня');
+		}
+		return getUiText('delivery.eta_days_many', 'дней');
+	}
+
+	function formatEtaDaysRange(min, max) {
+		var lo = Number(min);
+		var hi = Number(max);
+		var loOk = Number.isFinite(lo) && lo >= 1;
+		var hiOk = Number.isFinite(hi) && hi >= 1;
+		if (!loOk && !hiOk) {
+			return '';
+		}
+		if (loOk && !hiOk) { hi = lo; hiOk = true; }
+		if (!loOk && hiOk) { lo = hi; loOk = true; }
+		lo = Math.round(lo);
+		hi = Math.round(hi);
+		if (lo > hi) {
+			var tmp = lo; lo = hi; hi = tmp;
+		}
+		if (lo === hi) {
+			var single = getUiText('delivery.eta_days_single', '{value} {plural}');
+			return String(single)
+				.replace(/\{value\}/g, String(lo))
+				.replace(/\{plural\}/g, pluralizeRuDaysWord(lo));
+		}
+		var rng = getUiText('delivery.eta_days_range', '{min}–{max} {plural}');
+		return String(rng)
+			.replace(/\{min\}/g, String(lo))
+			.replace(/\{max\}/g, String(hi))
+			.replace(/\{plural\}/g, pluralizeRuDaysWord(hi));
+	}
+
+	function formatEtaDaysFromRate(rate) {
+		if (!rate || typeof rate !== 'object') {
+			return '';
+		}
+		var eta = rate.eta_days && typeof rate.eta_days === 'object' ? rate.eta_days : null;
+		if (!eta) {
+			return '';
+		}
+		return formatEtaDaysRange(eta.min, eta.max);
 	}
 
 	function wcMethodAnchorPattern(methodId) {
@@ -2235,6 +2342,7 @@
 		if (!Object.keys(costById).length) {
 			return methods;
 		}
+		var rateById = buildWcShippingRateMap(rates);
 		var dateBox = state.frontendStore.fulfillment && state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
 			? state.frontendStore.fulfillment.date
 			: {};
@@ -2247,12 +2355,21 @@
 			var m = methods[mi] || {};
 			var m2 = $.extend({}, m);
 			var wr = String(m.wc_rate_id || '');
+			var pickedRateId = '';
 			if (wr && Object.prototype.hasOwnProperty.call(costById, wr)) {
 				m2.price = wcOverlayPriceOrCatalog(costById[wr], m2.price);
+				pickedRateId = wr;
 			} else if (!Array.isArray(m.tariffs) || !m.tariffs.length) {
 				var singleId = wcBestRateForMethodOnly(m.id, m.title, rates, costById);
 				if (singleId) {
 					m2.price = wcOverlayPriceOrCatalog(costById[singleId], m2.price);
+					pickedRateId = singleId;
+				}
+			}
+			if (pickedRateId && Object.prototype.hasOwnProperty.call(rateById, pickedRateId)) {
+				var newEta = formatEtaDaysFromRate(rateById[pickedRateId]);
+				if (newEta) {
+					m2.eta = newEta;
 				}
 			}
 			if (Array.isArray(m.tariffs) && m.tariffs.length) {
@@ -2265,10 +2382,19 @@
 					var tr = String(t.wc_rate_id || '');
 					var autoRid = String(assign[String(t.id || '')] || '');
 					var catP = Number(t.price || 0);
+					var pickedTariffRateId = '';
 					if (tr && Object.prototype.hasOwnProperty.call(costById, tr)) {
 						row.price = wcOverlayPriceOrCatalog(costById[tr], catP);
+						pickedTariffRateId = tr;
 					} else if (autoRid && Object.prototype.hasOwnProperty.call(costById, autoRid)) {
 						row.price = wcOverlayPriceOrCatalog(costById[autoRid], catP);
+						pickedTariffRateId = autoRid;
+					}
+					if (pickedTariffRateId && Object.prototype.hasOwnProperty.call(rateById, pickedTariffRateId)) {
+						var tariffEta = formatEtaDaysFromRate(rateById[pickedTariffRateId]);
+						if (tariffEta) {
+							row.eta = tariffEta;
+						}
 					}
 					if (
 						selPrice > 0 &&
@@ -2323,6 +2449,20 @@
 			return false;
 		}
 		return !isKrasnoyarskCityLabel(cy);
+	}
+
+	/** Когда город Красноярск, общероссийские методы (Почта России / ПВЗ / курьер) недоступны. */
+	function shouldHideNonKrasnoyarskMethods(state) {
+		var cy = getStepOneContactCity(state);
+		if (!cy) {
+			return false;
+		}
+		return isKrasnoyarskCityLabel(cy);
+	}
+
+	function isNonKrasnoyarskShippingMethodId(methodId) {
+		var id = String(methodId || '');
+		return id === 'post_russia' || id === 'pvz' || id === 'courier';
 	}
 
 	/** §29.5: нормализация города для сравнения до/после (регистронезависимо), как на сервере. */
@@ -2395,6 +2535,9 @@
 			if (shouldHideKrasnoyarskLocalMethods(state) && (methodId === 'pickup' || methodId === 'krasnoyarsk_delivery')) {
 				continue;
 			}
+			if (shouldHideNonKrasnoyarskMethods(state) && isNonKrasnoyarskShippingMethodId(methodId)) {
+				continue;
+			}
 			var normalized = {
 				id: methodId,
 				title: String(raw.title || methodId),
@@ -2458,6 +2601,16 @@
 			}
 			methods = filteredMethods;
 		}
+		if (shouldHideNonKrasnoyarskMethods(state)) {
+			var filteredKrsk = [];
+			for (var fk = 0; fk < methods.length; fk += 1) {
+				if (isNonKrasnoyarskShippingMethodId(methods[fk].id)) {
+					continue;
+				}
+				filteredKrsk.push(methods[fk]);
+			}
+			methods = filteredKrsk;
+		}
 		return overlayWcShippingCatalogPrices(methods, state);
 	}
 
@@ -2509,6 +2662,58 @@
 		};
 	}
 
+	/**
+	 * Готовит payload `answers` для AJAX `session_set_answers` на шаге «Адрес и доставка»,
+	 * относящийся к выбору способа/тарифа доставки.
+	 *
+	 * Из `state.frontendStore.fulfillment.date` намеренно вырезаются `selected_date` /
+	 * `calendar_month`: на шаге адреса пользователь дату не выбирает (она живёт в
+	 * `date_conditions`), а её авто-fill через `ensureDateSelection` иначе уходит в payload
+	 * и заставляет бэкенд гонять `validate_date_answers_payload` на КАЖДОЕ сохранение тарифа.
+	 * После смены сценария/метода (особенно на медленной мобильной сети) клиентская дата
+	 * может временно не входить в `available_dates` нового сценария — и сервер отвечает 422,
+	 * фронт показывает ложную ошибку «Не удалось сохранить тариф доставки», хотя сам тариф
+	 * валиден. `array_replace_recursive` на бэке сохраняет существующий `selected_date`
+	 * из `date_conditions`, поэтому ничего не теряется.
+	 */
+	function buildShippingAnswersFromState(state) {
+		var dateBox = state && state.frontendStore && state.frontendStore.fulfillment
+			? (state.frontendStore.fulfillment.date || {})
+			: {};
+		var payload = $.extend({}, dateBox);
+		delete payload.selected_date;
+		delete payload.calendar_month;
+		return payload;
+	}
+
+	/**
+	 * Извлекает из failed jqXHR код ошибки и сообщение от бэкенда (если он явно сказал, что не так).
+	 * Возвращает один из «человеческих» текстов:
+	 * — для invalid_shipping_method / invalid_date_selection — сервеные сообщения,
+	 * — для stale_context — null (там есть отдельный `recoverFromInvalidSessionState`),
+	 * — для прочих ошибок — `defaultMessage`.
+	 */
+	function resolveShippingFailMessage(xhr, defaultMessage) {
+		var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
+		var code = String(payload.code || '');
+		if (code === 'stale_context') {
+			return null;
+		}
+		if (code === 'invalid_shipping_method') {
+			return trimNonEmpty(payload.message) || getShippingErrorCopy().methodUnavailable;
+		}
+		if (code === 'invalid_date_selection') {
+			return trimNonEmpty(payload.message) || getUiText('step_3.copy.errors.invalid_date', 'Выбранная дата недоступна. Обновите шаг и выберите другую дату.');
+		}
+		if (code === 'pvz_required') {
+			return trimNonEmpty(payload.message) || getUiText('order_review.pvz_required', 'Выберите пункт выдачи (ПВЗ), чтобы продолжить.');
+		}
+		if (code === 'pvz_rate_unavailable') {
+			return trimNonEmpty(payload.message) || getUiText('order_review.pvz_rate_unavailable', 'Ставка доставки ПВЗ недоступна. Обновите страницу или выберите другой способ доставки.');
+		}
+		return defaultMessage;
+	}
+
 	function applyShippingSelectionToState(state, selection) {
 		if (!selection) {
 			return;
@@ -2516,13 +2721,23 @@
 		var dateBox = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
 			? state.frontendStore.fulfillment.date
 			: {};
+		var prevMethodId = String(dateBox.shipping_method_id || '');
+		var prevTariffId = String(dateBox.shipping_tariff_id || '');
+		var summary = state.frontendStore.cart && state.frontendStore.cart.summary && typeof state.frontendStore.cart.summary === 'object'
+			? state.frontendStore.cart.summary
+			: {};
+		var prevShipTotal = typeof summary.shipping_total === 'number' && !Number.isNaN(summary.shipping_total)
+			? summary.shipping_total
+			: 0;
+		var prevShipText = trimNonEmpty(summary.shipping) ? String(summary.shipping) : '';
 		// Не затираем cdek_office_code здесь — syncFromFlow после выбора ПВЗ иначе «съедает» чип (§29.3).
 		// Локальная очистка офиса только при явной смене метода с pvz (applyShippingMethodUserChoice).
 		dateBox.shipping_method_id = String(selection.method_id || '');
 		dateBox.shipping_method_title = String(selection.method_title || '');
 		dateBox.shipping_tariff_id = String(selection.tariff_id || '');
 		dateBox.shipping_tariff_title = String(selection.tariff_title || '');
-		dateBox.shipping_price = Number(selection.price || 0);
+		var selPrice = Number(selection.price || 0);
+		dateBox.shipping_price = selPrice;
 		dateBox.shipping_eta = String(selection.eta || '');
 		dateBox.shipping_requires_address = selection.requires_address !== false;
 		state.frontendStore.fulfillment.date = dateBox;
@@ -2554,11 +2769,45 @@
 		}
 		state.frontendStore.form.contact = contact;
 
-		var summary = state.frontendStore.cart && state.frontendStore.cart.summary && typeof state.frontendStore.cart.summary === 'object'
-			? state.frontendStore.cart.summary
-			: {};
-		summary.shipping_total = Number(dateBox.shipping_price || 0);
-		summary.shipping = summary.shipping_total > 0 ? String(summary.shipping_total.toFixed(0)) + ' ₽' : '';
+		// После session_get_state / syncFromFlow в summary уже лежат пересчитанные WC суммы.
+		// resolveShippingSelection + каталог часто дают price=0, пока wc_shipping_rates не
+		// сматчились или overlay ещё не подставил ставку — и мы затирали shipping в сводке
+		// и shipping_price в dateBox. Визуально: на первом кадре (bootstrap) всё есть, после
+		// первого sync строка «Доставка» и подсказки сроков в списке методов «пропадают».
+		// Не затираем доставку в сводке, если пользователь не менял слот (метод+тариф) и в
+		// корзине уже была ненулевая доставка с сервера. Смена метода/тарифа — прежняя логика.
+		var methodUnchanged = prevMethodId === '' || String(selection.method_id || '') === prevMethodId;
+		var tariffUnchanged = String(selection.tariff_id || '') === prevTariffId;
+		var slotUnchanged = methodUnchanged && tariffUnchanged;
+		var preserveServerShipping = slotUnchanged && selPrice <= 0 && (prevShipTotal > 0 || trimNonEmpty(prevShipText));
+		if (preserveServerShipping) {
+			var preservedTotal = prevShipTotal;
+			if (preservedTotal <= 0 && trimNonEmpty(prevShipText)) {
+				var digits = String(prevShipText).replace(/[^\d]/g, '');
+				var parsed = digits ? parseInt(digits, 10) : 0;
+				if (!Number.isNaN(parsed) && parsed > 0) {
+					preservedTotal = parsed;
+				}
+			}
+			if (preservedTotal > 0) {
+				dateBox.shipping_price = preservedTotal;
+				summary.shipping_total = preservedTotal;
+				if (!trimNonEmpty(prevShipText)) {
+					summary.shipping = String(Math.round(preservedTotal)) + ' ₽';
+				} else {
+					summary.shipping = prevShipText;
+				}
+			} else {
+				summary.shipping = prevShipText;
+			}
+			state.frontendStore.fulfillment.date = dateBox;
+		} else if (selPrice > 0) {
+			summary.shipping_total = selPrice;
+			summary.shipping = String(selPrice.toFixed(0)) + ' ₽';
+		} else {
+			summary.shipping_total = 0;
+			summary.shipping = '';
+		}
 		state.frontendStore.cart.summary = summary;
 	}
 
@@ -3827,7 +4076,258 @@
 		return b === 'bank' || b === 'robokassa' || b === 'yookassa';
 	}
 
+	function getPaymentBlockCfg() {
+		var cfg = getStepFourConfig();
+		return cfg.payment_block && typeof cfg.payment_block === 'object' ? cfg.payment_block : {};
+	}
+
+	function isPaymentRowsLayoutEnabled() {
+		var pb = getPaymentBlockCfg();
+		if (Object.prototype.hasOwnProperty.call(pb, 'rows_layout')) {
+			return !!pb.rows_layout;
+		}
+		return true;
+	}
+
+	function getDiscountTogglesConfig() {
+		var pb = getPaymentBlockCfg();
+		var raw = pb.discount_toggles && typeof pb.discount_toggles === 'object' ? pb.discount_toggles : {};
+		return {
+			coupon_in_step: Object.prototype.hasOwnProperty.call(raw, 'coupon_in_step') ? !!raw.coupon_in_step : true,
+			gift_card_in_step: Object.prototype.hasOwnProperty.call(raw, 'gift_card_in_step') ? !!raw.gift_card_in_step : true,
+			coupon_in_summary: Object.prototype.hasOwnProperty.call(raw, 'coupon_in_summary') ? !!raw.coupon_in_summary : false,
+			gift_card_in_summary: Object.prototype.hasOwnProperty.call(raw, 'gift_card_in_summary') ? !!raw.gift_card_in_summary : false,
+			coupon_icon: trimNonEmpty(raw.coupon_icon_url),
+			gift_card_icon: trimNonEmpty(raw.gift_card_icon_url)
+		};
+	}
+
+	function buildPaymentRowHtml(gatewayId, title, iconUrl, isActive, errPayment, extraClass) {
+		var html = '';
+		var labelClass = 'mp-cc-payment-row';
+		if (extraClass) {
+			labelClass += ' ' + extraClass;
+		}
+		if (isActive) {
+			labelClass += ' is-active';
+		}
+		var inputAttrs = ' name="mp_cc_payment_gateway" value="' + escapeHtml(gatewayId) + '" data-payment-gateway="1" data-payment-row-id="' + escapeHtml(gatewayId) + '"';
+		if (isActive) {
+			inputAttrs += ' checked';
+		}
+		if (errPayment) {
+			inputAttrs += ' aria-invalid="true" aria-describedby="mp-cc-payment-gateway-err"';
+		}
+		html += '<label class="' + labelClass + '" data-payment-row="' + escapeHtml(gatewayId) + '">';
+		html += '<input type="radio" class="mp-cc-payment-row__radio' + (errPayment ? ' is-invalid' : '') + '"' + inputAttrs + ' />';
+		html += '<span class="mp-cc-payment-row__radio-mark" aria-hidden="true"></span>';
+		html += '<span class="mp-cc-payment-row__title">' + escapeHtml(title) + '</span>';
+		if (iconUrl) {
+			html += '<span class="mp-cc-payment-row__icon" aria-hidden="true"><img src="' + escapeHtml(iconUrl) + '" alt="" /></span>';
+		} else {
+			html += '<span class="mp-cc-payment-row__icon mp-cc-payment-row__icon--empty" aria-hidden="true"></span>';
+		}
+		html += '</label>';
+		return html;
+	}
+
+	function isCouponToggleOpen(state) {
+		if (!state || !state.frontendStore) {
+			return false;
+		}
+		if (state.frontendStore.__mpCcCouponToggleOpen === true) {
+			return true;
+		}
+		var cartSummary = state.frontendStore.cart && state.frontendStore.cart.summary && typeof state.frontendStore.cart.summary === 'object'
+			? state.frontendStore.cart.summary
+			: {};
+		var applied = Array.isArray(cartSummary.applied_coupons) ? cartSummary.applied_coupons : [];
+		return applied.length > 0;
+	}
+
+	function isGiftCardToggleOpen(state) {
+		if (!state || !state.frontendStore) {
+			return false;
+		}
+		if (state.frontendStore.__mpCcGiftCardToggleOpen === true) {
+			return true;
+		}
+		var cartSummary = state.frontendStore.cart && state.frontendStore.cart.summary && typeof state.frontendStore.cart.summary === 'object'
+			? state.frontendStore.cart.summary
+			: {};
+		var applied = Array.isArray(cartSummary.applied_gift_cards) ? cartSummary.applied_gift_cards : [];
+		return applied.length > 0;
+	}
+
+	function buildDiscountToggleRowHtml(opts) {
+		opts = opts || {};
+		var isOpen = !!opts.isOpen;
+		var label = String(opts.label || '');
+		var iconUrl = String(opts.icon || '');
+		var dataKey = String(opts.key || '');
+		var bodyHtml = String(opts.body || '');
+		var html = '';
+		html += '<div class="mp-cc-toggle-row' + (isOpen ? ' is-open' : '') + '" data-discount-toggle="' + escapeHtml(dataKey) + '">';
+		html += '<label class="mp-cc-toggle-row__head">';
+		html += '<span class="mp-cc-toggle-row__title">' + escapeHtml(label) + '</span>';
+		if (iconUrl) {
+			html += '<span class="mp-cc-toggle-row__icon" aria-hidden="true"><img src="' + escapeHtml(iconUrl) + '" alt="" /></span>';
+		}
+		html += '<input type="checkbox" class="mp-cc-toggle__input" data-discount-toggle-input="' + escapeHtml(dataKey) + '"' + (isOpen ? ' checked' : '') + ' />';
+		html += '<span class="mp-cc-toggle" aria-hidden="true"><span class="mp-cc-toggle__track"><span class="mp-cc-toggle__thumb"></span></span></span>';
+		html += '</label>';
+		html += '<div class="mp-cc-toggle-row__body"' + (isOpen ? '' : ' hidden') + ' data-discount-toggle-body="' + escapeHtml(dataKey) + '">';
+		html += bodyHtml;
+		html += '</div>';
+		html += '</div>';
+		return html;
+	}
+
+	function buildGiftCardToggleBodyHtml(state) {
+		ensureDiscountDefaults(state);
+		var copy = getGiftCardPeerCopy();
+		var pwOk = isGiftCardPwRuntimeAvailable();
+		var cartSummary = state.frontendStore && state.frontendStore.cart && state.frontendStore.cart.summary && typeof state.frontendStore.cart.summary === 'object'
+			? state.frontendStore.cart.summary
+			: {};
+		var appliedGiftCards = Array.isArray(cartSummary.applied_gift_cards) ? cartSummary.applied_gift_cards : [];
+		var rt = state.frontendStore && state.frontendStore.discounts && state.frontendStore.discounts.gift_card_runtime
+			? state.frontendStore.discounts.gift_card_runtime
+			: { code: '', state: 'empty', message: '' };
+		var code = String(rt.code || '');
+		var runtimeState = String(rt.state || 'empty');
+		var msg = trimNonEmpty(rt.message);
+		var hasApplied = appliedGiftCards.length > 0;
+		var html = '';
+		html += '<div class="mp-cc-toggle-row__gift-card" data-gift-peer-card="1">';
+		if (!pwOk) {
+			html += '<p class="mp-cc-toggle-row__notice">' + escapeHtml(copy.unavailableMessage || getUiText('step_4.gift_card_peer_unavailable', 'Подарочные карты на этом сайте сейчас недоступны.')) + '</p>';
+			html += '</div>';
+			return html;
+		}
+		if (hasApplied) {
+			html += '<div class="mp-cc-toggle-row__chips" data-gift-card-list="1">';
+			for (var gi = 0; gi < appliedGiftCards.length; gi += 1) {
+				var gc = String(appliedGiftCards[gi] || '');
+				if (!gc) {
+					continue;
+				}
+				html += '<span class="mp-cc-toggle-row__chip">';
+				html += '<span>' + escapeHtml(gc) + '</span>';
+				if (isGiftCardRemoveAllowed()) {
+					html += '<button type="button" class="mp-cc-toggle-row__chip-remove" data-gift-card-remove="1" data-code="' + escapeHtml(gc) + '" aria-label="' + escapeHtml(getUiText('step_4.gift_card_remove', 'Снять подарочную карту')) + '">×</button>';
+				}
+				html += '</span>';
+			}
+			html += '</div>';
+		} else {
+			var busyAttr = runtimeState === 'loading' ? ' disabled' : '';
+			html += '<div class="mp-cc-toggle-row__form">';
+			html += '<label class="mp-cc-visually-hidden" for="mp-cc-gift-card-toggle-code">' + escapeHtml(copy.inputLabel || getUiText('step_4.gift_card_input_label', 'Номер подарочной карты')) + '</label>';
+			html += '<input type="text" class="mp-cc-input' + (runtimeState === 'error' ? ' is-invalid' : '') + '" id="mp-cc-gift-card-toggle-code" data-gift-card-peer-code="1" value="' + escapeHtml(code) + '" placeholder="' + escapeHtml(copy.placeholder || getUiText('step_4.gift_card_placeholder', 'Например, GIFT-123')) + '" autocomplete="off"' + busyAttr + ' />';
+			html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--next" data-gift-card-peer-apply="1"' + busyAttr + '>' + escapeHtml(copy.applyLabel || getUiText('step_4.gift_card_apply', 'Применить')) + '</button>';
+			html += '</div>';
+		}
+		if (msg) {
+			html += '<p class="mp-cc-toggle-row__hint mp-cc-toggle-row__hint--' + escapeHtml(runtimeState) + '" data-gift-card-peer-message="1">' + escapeHtml(msg) + '</p>';
+		} else if (hasApplied && runtimeState !== 'error') {
+			html += '<p class="mp-cc-toggle-row__hint mp-cc-toggle-row__hint--success" data-gift-card-peer-message="1">' + escapeHtml(copy.successMessage || getUiText('step_4.gift_card_success', 'Подарочная карта применена.')) + '</p>';
+		}
+		html += '</div>';
+		return html;
+	}
+
+	function buildDiscountTogglesHtml(state) {
+		var dtCfg = getDiscountTogglesConfig();
+		if (!dtCfg.coupon_in_step && !dtCfg.gift_card_in_step) {
+			return '';
+		}
+		var html = '';
+		html += '<div class="mp-cc-payment-divider" aria-hidden="true"></div>';
+		html += '<div class="mp-cc-discount-toggles">';
+		if (dtCfg.coupon_in_step) {
+			var couponLabel = getUiText('step_4.discount_coupon_toggle_label', 'Промокод');
+			var couponBody = buildCouponBlockHtml(state, { paymentToggle: true });
+			html += buildDiscountToggleRowHtml({
+				key: 'coupon',
+				label: couponLabel,
+				icon: dtCfg.coupon_icon,
+				isOpen: isCouponToggleOpen(state),
+				body: couponBody
+			});
+		}
+		if (dtCfg.gift_card_in_step) {
+			var giftLabel = getUiText('step_4.discount_gift_card_toggle_label', 'Подарочная карта');
+			var giftBody = buildGiftCardToggleBodyHtml(state);
+			html += buildDiscountToggleRowHtml({
+				key: 'gift_card',
+				label: giftLabel,
+				icon: dtCfg.gift_card_icon,
+				isOpen: isGiftCardToggleOpen(state),
+				body: giftBody
+			});
+		}
+		html += '</div>';
+		return html;
+	}
+
+	function buildPaymentRowsLayoutHtml(state) {
+		var pb = getPaymentBlockCfg();
+		var gateways = getAvailablePaymentGateways();
+		var selectedGateway = trimNonEmpty(state.frontendStore && state.frontendStore.payment ? state.frontendStore.payment.gateway : '');
+		var errPayment = getContactFieldError(state, 'payment_gateway');
+		var a11ySection = getUiText('step_4.payment_method_group_label', 'Выбор способа оплаты');
+		var messages = pb.messages && typeof pb.messages === 'object' ? pb.messages : {};
+		var paymentState = state.frontendStore && state.frontendStore.payment ? String(state.frontendStore.payment.state || 'idle') : 'idle';
+		var stateClass = paymentState === 'success' ? ' mp-cc-payment--state-success' : (paymentState === 'error' ? ' mp-cc-payment--state-error' : '');
+		var errClass = errPayment ? ' mp-cc-payment--has-field-error' : '';
+		var loadingClass = paymentState === 'syncing' ? ' is-loading' : '';
+
+		if (!gateways.length) {
+			var emptyMsg = getUiText('step_4.payment_gateways_empty', 'Способы оплаты не настроены в WooCommerce или недоступны для этой корзины. Проверьте раздел «Платежи» и условия шлюзов.');
+			var htmlEmpty = '<section class="mp-cc-payment mp-cc-payment--rows mp-cc-payment--empty' + stateClass + errClass + '" aria-label="' + escapeHtml(a11ySection) + '">';
+			htmlEmpty += '<p class="mp-cc-field-error" role="alert">' + escapeHtml(emptyMsg) + '</p>';
+			htmlEmpty += '</section>';
+			return htmlEmpty;
+		}
+
+		var html = '';
+		html += '<section class="mp-cc-payment mp-cc-payment--rows' + stateClass + errClass + loadingClass + '" aria-label="' + escapeHtml(a11ySection) + '">';
+		if (errPayment) {
+			html += '<p class="mp-cc-field-error" id="mp-cc-payment-gateway-err" role="alert">' + escapeHtml(getUiText('step_4.payment_error_required', 'Выберите способ оплаты.')) + '</p>';
+		}
+		html += '<div class="mp-cc-payment__rows" role="radiogroup" aria-label="' + escapeHtml(getUiText('step_4.payment_method_group_label', 'Выбор способа оплаты')) + '">';
+		var gi;
+		for (gi = 0; gi < gateways.length; gi += 1) {
+			var g = gateways[gi];
+			var isActive = String(selectedGateway) === String(g.id);
+			html += buildPaymentRowHtml(g.id, g.title, g.icon, isActive, errPayment, '');
+		}
+		html += '</div>';
+
+		html += buildPaymentGatewayFieldsBlock(state, selectedGateway, 'visual', 'below_grid');
+
+		// Discount toggles (coupon / gift card).
+		html += buildDiscountTogglesHtml(state);
+
+		if (paymentState === 'syncing') {
+			html += '<p class="mp-cc-payment__state mp-cc-payment__state--loading">' + escapeHtml(trimNonEmpty(messages.loading) || getUiText('step_4.payment_loading', 'Сохраняем выбранный способ оплаты...')) + '</p>';
+		} else if (paymentState === 'success') {
+			html += '<p class="mp-cc-payment__state mp-cc-payment__state--success">' + escapeHtml(trimNonEmpty(messages.success) || getUiText('step_4.payment_success', 'Способ оплаты обновлён.')) + '</p>';
+		} else if (paymentState === 'error') {
+			html += '<p class="mp-cc-payment__state mp-cc-payment__state--error">' + escapeHtml(trimNonEmpty(messages.error) || getUiText('step_4.payment_error_switch', 'Не удалось переключить способ оплаты.')) + '</p>';
+		}
+		if (errPayment) {
+			html += '<p class="mp-cc-field-error" role="alert">' + escapeHtml(trimNonEmpty(pb.error_message) || getUiText('step_4.payment_error_required', 'Выберите способ оплаты.')) + '</p>';
+		}
+		html += '</section>';
+		return html;
+	}
+
 	function buildPaymentGatewaysHtml(state) {
+		if (isPaymentRowsLayoutEnabled()) {
+			return buildPaymentRowsLayoutHtml(state);
+		}
 		var cfg = getStepFourConfig();
 		var pb = cfg.payment_block && typeof cfg.payment_block === 'object' ? cfg.payment_block : {};
 		var gateways = getAvailablePaymentGateways();
@@ -4170,18 +4670,46 @@
 				continue;
 			}
 			if (key === 'postcode') {
-				var pcMsg = err === 'postcode'
-					? (trimNonEmpty(vm.address_postcode) || getUiText('step_4.address_error_postcode', 'Слишком длинный индекс.'))
-					: (trimNonEmpty(vm.address_required) || getUiText('step_4.address_error_required', 'Заполните это поле.'));
-				html += '<div class="mp-cc-address__field mp-cc-address__field--postcode">';
+				var pcMsg;
+				if (err === 'rpaefw_unavailable') {
+					pcMsg = trimNonEmpty(vm.address_postcode_unavailable)
+						|| getUiText(
+							'step_4.address_error_postcode_unavailable',
+							'Доставка Почтой России по этому индексу недоступна. Проверьте индекс или выберите другой способ доставки.'
+						);
+				} else if (err === 'format' || err === 'postcode') {
+					pcMsg = trimNonEmpty(vm.address_postcode_format)
+						|| trimNonEmpty(vm.address_postcode)
+						|| getUiText(
+							'step_4.address_error_postcode_format',
+							'Введите 6 цифр почтового индекса.'
+						);
+				} else {
+					pcMsg = trimNonEmpty(vm.address_required)
+						|| getUiText('step_4.address_error_required', 'Заполните это поле.');
+				}
+				var pcRuntime = state.frontendStore && state.frontendStore.runtime ? state.frontendStore.runtime : {};
+				var pcChecking = pcRuntime.postcode_checking === true;
+				var pcFieldClass = 'mp-cc-address__field mp-cc-address__field--postcode' + (pcChecking ? ' is-checking' : '');
+				html += '<div class="' + pcFieldClass + '">';
 				html += '<label class="mp-cc-field-label" for="mp-cc-address-postcode">' + escapeHtml(getAddressLabel('postcode')) + '</label>';
-				html += '<input type="text" class="mp-cc-input' + (err ? ' is-invalid' : '') + '" id="mp-cc-address-postcode" name="postcode" autocomplete="postal-code" inputmode="text" ';
+				html += '<div class="mp-cc-postcode-input-wrap">';
+				// Принудительно цифровая клавиатура на мобильных, ограничение 6 символов на уровне браузера,
+				// pattern для нативной валидации и подсказок autofill. Сам ввод дополнительно фильтруется
+				// в обработчике [data-contact-field] (см. ниже) — strip non-digits.
+				html += '<input type="text" class="mp-cc-input' + (err ? ' is-invalid' : '') + '" id="mp-cc-address-postcode" name="postcode" autocomplete="postal-code" inputmode="numeric" maxlength="6" pattern="\\d{6}" ';
 				html += 'value="' + escapeHtml(String(contact.postcode || '')) + '" ';
 				html += 'data-contact-field="postcode" aria-required="true"';
 				html += err ? ' aria-invalid="true"' : '';
 				html += '/>';
+				html += '<span class="mp-cc-postcode-spinner" aria-hidden="true"></span>';
+				html += '</div>';
 				if (err) {
 					html += '<p class="mp-cc-field-error" id="mp-cc-address-postcode-err" role="alert">' + escapeHtml(pcMsg) + '</p>';
+				}
+				if (pcChecking) {
+					var pcHintText = getUiText('step_4.postcode_checking_hint', 'Проверяем индекс…');
+					html += '<p class="mp-cc-postcode-checking-hint" role="status" aria-live="polite">' + escapeHtml(pcHintText) + '</p>';
 				}
 				html += '</div>';
 				continue;
@@ -4291,7 +4819,15 @@
 		opts = opts || {};
 		var cartStep = opts.cartStep === true;
 		var inSummary = opts.inSummary === true;
-		var couponInputId = inSummary ? 'mp-cc-coupon-code-summary' : (cartStep ? 'mp-cc-coupon-code-cart' : 'mp-cc-coupon-code');
+		var paymentToggle = opts.paymentToggle === true;
+		var hideInputRow = false;
+		if (inSummary && isPaymentRowsLayoutEnabled()) {
+			var dtCfg = getDiscountTogglesConfig();
+			if (!dtCfg.coupon_in_summary) {
+				hideInputRow = true;
+			}
+		}
+		var couponInputId = paymentToggle ? 'mp-cc-coupon-code-payment-toggle' : (inSummary ? 'mp-cc-coupon-code-summary' : (cartStep ? 'mp-cc-coupon-code-cart' : 'mp-cc-coupon-code'));
 		var copy = getCouponCopy();
 		var cfg = getStepFourConfig();
 		var styles = cfg.discount_block_styles || {};
@@ -4305,58 +4841,130 @@
 			? cartSummary.applied_coupons
 			: (state.frontendStore && state.frontendStore.discounts && Array.isArray(state.frontendStore.discounts.coupons) ? state.frontendStore.discounts.coupons : []);
 		var appliedGiftCards = Array.isArray(cartSummary.applied_gift_cards) ? cartSummary.applied_gift_cards : [];
-		var hideGiftInCoupon = shouldHideGiftChipsInCouponBlock(state, opts);
+		// In summary mode without form: also avoid duplicate gift card chips — they will be rendered by their own gift-card block.
+		var hideGiftInCoupon = shouldHideGiftChipsInCouponBlock(state, opts) || (inSummary && hideInputRow);
+		// В правой панели «Итоги» (inSummary) намеренно НЕ дублируем чип уже
+		// применённого купона — он рендерится в блоке «Промокод» на шаге 4,
+		// в сводке оставляем только финансовые строки (Скидка, Итого и т.п.).
+		// Подарочную карту это не затрагивает: peer-блок управляется отдельным
+		// `buildGiftCardPeerCardHtml`, а вторичные gift-чипы здесь и так
+		// прикрыты `hideGiftInCoupon`.
+		var hideAppliedCouponChips = inSummary;
 		var allowGiftRm = isGiftCardRemoveAllowed();
 		var allowCouponRm = isCouponRemoveAllowed();
 		var code = String(rt.code || '');
 		var runtimeState = String(rt.state || 'empty');
 		var msg = trimNonEmpty(rt.message);
+		// In summary mode without form: if no applied coupons (или их чипы
+		// скрыты по флагу выше) и нет gift-чипов для рендера — ничего не выводим.
+		if (inSummary && hideInputRow && (hideAppliedCouponChips || !appliedCoupons.length) && (hideGiftInCoupon || !appliedGiftCards.length)) {
+			return '';
+		}
 		var html = '';
 		var stateClass = runtimeState === 'success' ? String(styles.state_success || 'success') : (runtimeState === 'error' ? String(styles.state_error || 'error') : String(styles.state_empty || 'default'));
-		html += '<article class="mp-cc-coupon mp-cc-coupon--' + escapeHtml(stateClass) + (inSummary ? ' mp-cc-coupon--in-summary' : '') + '" data-coupon-block="1"' + buildCouponStylesAttr(state, inSummary) + '>';
-		html += '<h4 class="mp-cc-coupon__title">' + escapeHtml(copy.title) + '</h4>';
-		if (copy.intro) {
-			html += '<p class="mp-cc-coupon__intro">' + escapeHtml(copy.intro) + '</p>';
+		var rootClass = 'mp-cc-coupon mp-cc-coupon--' + stateClass;
+		if (inSummary) {
+			rootClass += ' mp-cc-coupon--in-summary';
 		}
-		html += '<div class="mp-cc-coupon__row">';
-		html += '<label class="mp-cc-field-label" for="' + escapeHtml(couponInputId) + '">' + escapeHtml(copy.inputLabel) + '</label>';
-		html += '<input type="text" class="mp-cc-input' + (runtimeState === 'error' ? ' is-invalid' : '') + '" id="' + escapeHtml(couponInputId) + '" data-coupon-code="1" value="' + escapeHtml(code) + '" placeholder="' + escapeHtml(copy.placeholder) + '" />';
-		html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--next mp-cc-coupon__apply" data-coupon-apply="1">' + escapeHtml(copy.applyLabel) + '</button>';
-		html += '</div>';
-		if (msg) {
-			html += '<p class="mp-cc-field-hint' + (runtimeState === 'error' ? ' mp-cc-field-error' : '') + '" data-coupon-message="1">' + escapeHtml(msg) + '</p>';
+		if (hideInputRow) {
+			rootClass += ' mp-cc-coupon--chips-only';
 		}
-		if (appliedCoupons.length) {
-			html += '<div class="mp-cc-coupon__applied" data-coupon-list="1">';
-			for (var i = 0; i < appliedCoupons.length; i += 1) {
-				var cp = String(appliedCoupons[i] || '');
-				if (!cp) {
-					continue;
+		if (paymentToggle) {
+			rootClass += ' mp-cc-coupon--payment-toggle';
+		}
+		var usePaymentToggleFieldUi = paymentToggle;
+		html += '<article class="' + escapeHtml(rootClass) + '" data-coupon-block="1"' + buildCouponStylesAttr(state, inSummary) + '>';
+		if (!hideInputRow) {
+			if (usePaymentToggleFieldUi) {
+				html += '<div class="mp-cc-toggle-row__form">';
+				html += '<label class="mp-cc-visually-hidden" for="' + escapeHtml(couponInputId) + '">' + escapeHtml(copy.inputLabel) + '</label>';
+				html += '<input type="text" class="mp-cc-input' + (runtimeState === 'error' ? ' is-invalid' : '') + '" id="' + escapeHtml(couponInputId) + '" data-coupon-code="1" value="' + escapeHtml(code) + '" placeholder="' + escapeHtml(copy.placeholder) + '" autocomplete="off" />';
+				html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--next mp-cc-coupon__apply" data-coupon-apply="1">' + escapeHtml(copy.applyLabel) + '</button>';
+				html += '</div>';
+				if (msg) {
+					var couponHintMod = runtimeState === 'error' ? 'error' : (runtimeState === 'success' ? 'success' : '');
+					html += '<p class="mp-cc-toggle-row__hint' + (couponHintMod ? ' mp-cc-toggle-row__hint--' + couponHintMod : '') + '" data-coupon-message="1">' + escapeHtml(msg) + '</p>';
 				}
-				html += '<span class="mp-cc-coupon__chip">';
-				html += '<span>' + escapeHtml(cp) + '</span>';
-				if (allowCouponRm) {
-					html += '<button type="button" class="mp-cc-coupon__chip-remove" data-coupon-remove="1" data-code="' + escapeHtml(cp) + '" aria-label="' + escapeHtml(getUiText('step_4.coupon_remove', 'Снять купон')) + '">×</button>';
+			} else {
+				html += '<h4 class="mp-cc-coupon__title">' + escapeHtml(copy.title) + '</h4>';
+				if (copy.intro) {
+					html += '<p class="mp-cc-coupon__intro">' + escapeHtml(copy.intro) + '</p>';
 				}
-				html += '</span>';
+				html += '<div class="mp-cc-coupon__row">';
+				html += '<label class="mp-cc-field-label" for="' + escapeHtml(couponInputId) + '">' + escapeHtml(copy.inputLabel) + '</label>';
+				html += '<input type="text" class="mp-cc-input' + (runtimeState === 'error' ? ' is-invalid' : '') + '" id="' + escapeHtml(couponInputId) + '" data-coupon-code="1" value="' + escapeHtml(code) + '" placeholder="' + escapeHtml(copy.placeholder) + '" />';
+				html += '<button type="button" class="mp-cc-nav__btn mp-cc-nav__btn--next mp-cc-coupon__apply" data-coupon-apply="1">' + escapeHtml(copy.applyLabel) + '</button>';
+				html += '</div>';
+				if (msg) {
+					html += '<p class="mp-cc-field-hint' + (runtimeState === 'error' ? ' mp-cc-field-error' : '') + '" data-coupon-message="1">' + escapeHtml(msg) + '</p>';
+				}
 			}
-			html += '</div>';
+		}
+		if (appliedCoupons.length && !hideAppliedCouponChips) {
+			if (usePaymentToggleFieldUi) {
+				html += '<div class="mp-cc-toggle-row__chips" data-coupon-list="1">';
+				for (var i = 0; i < appliedCoupons.length; i += 1) {
+					var cp = String(appliedCoupons[i] || '');
+					if (!cp) {
+						continue;
+					}
+					html += '<span class="mp-cc-toggle-row__chip">';
+					html += '<span>' + escapeHtml(cp) + '</span>';
+					if (allowCouponRm) {
+						html += '<button type="button" class="mp-cc-toggle-row__chip-remove" data-coupon-remove="1" data-code="' + escapeHtml(cp) + '" aria-label="' + escapeHtml(getUiText('step_4.coupon_remove', 'Снять купон')) + '">×</button>';
+					}
+					html += '</span>';
+				}
+				html += '</div>';
+			} else {
+				html += '<div class="mp-cc-coupon__applied" data-coupon-list="1">';
+				for (var i2 = 0; i2 < appliedCoupons.length; i2 += 1) {
+					var cp2 = String(appliedCoupons[i2] || '');
+					if (!cp2) {
+						continue;
+					}
+					html += '<span class="mp-cc-coupon__chip">';
+					html += '<span>' + escapeHtml(cp2) + '</span>';
+					if (allowCouponRm) {
+						html += '<button type="button" class="mp-cc-coupon__chip-remove" data-coupon-remove="1" data-code="' + escapeHtml(cp2) + '" aria-label="' + escapeHtml(getUiText('step_4.coupon_remove', 'Снять купон')) + '">×</button>';
+					}
+					html += '</span>';
+				}
+				html += '</div>';
+			}
 		}
 		if (!hideGiftInCoupon && appliedGiftCards.length) {
-			html += '<div class="mp-cc-coupon__applied mp-cc-coupon__applied--gift" data-gift-card-list="1">';
-			for (var gi = 0; gi < appliedGiftCards.length; gi += 1) {
-				var gc = String(appliedGiftCards[gi] || '');
-				if (!gc) {
-					continue;
+			if (usePaymentToggleFieldUi) {
+				html += '<div class="mp-cc-toggle-row__chips mp-cc-toggle-row__chips--nested-gift" data-gift-card-list="1">';
+				for (var gi = 0; gi < appliedGiftCards.length; gi += 1) {
+					var gc = String(appliedGiftCards[gi] || '');
+					if (!gc) {
+						continue;
+					}
+					html += '<span class="mp-cc-toggle-row__chip">';
+					html += '<span>' + escapeHtml(gc) + '</span>';
+					if (allowGiftRm) {
+						html += '<button type="button" class="mp-cc-toggle-row__chip-remove" data-gift-card-remove="1" data-code="' + escapeHtml(gc) + '" aria-label="' + escapeHtml(getUiText('step_4.gift_card_remove', 'Снять подарочную карту')) + '">×</button>';
+					}
+					html += '</span>';
 				}
-				html += '<span class="mp-cc-coupon__chip mp-cc-coupon__chip--gift">';
-				html += '<span>' + escapeHtml(gc) + '</span>';
-				if (allowGiftRm) {
-					html += '<button type="button" class="mp-cc-coupon__chip-remove" data-gift-card-remove="1" data-code="' + escapeHtml(gc) + '" aria-label="' + escapeHtml(getUiText('step_4.gift_card_remove', 'Снять подарочную карту')) + '">×</button>';
+				html += '</div>';
+			} else {
+				html += '<div class="mp-cc-coupon__applied mp-cc-coupon__applied--gift" data-gift-card-list="1">';
+				for (var gi2 = 0; gi2 < appliedGiftCards.length; gi2 += 1) {
+					var gc2 = String(appliedGiftCards[gi2] || '');
+					if (!gc2) {
+						continue;
+					}
+					html += '<span class="mp-cc-coupon__chip mp-cc-coupon__chip--gift">';
+					html += '<span>' + escapeHtml(gc2) + '</span>';
+					if (allowGiftRm) {
+						html += '<button type="button" class="mp-cc-coupon__chip-remove" data-gift-card-remove="1" data-code="' + escapeHtml(gc2) + '" aria-label="' + escapeHtml(getUiText('step_4.gift_card_remove', 'Снять подарочную карту')) + '">×</button>';
+					}
+					html += '</span>';
 				}
-				html += '</span>';
+				html += '</div>';
 			}
-			html += '</div>';
 		}
 		html += '</article>';
 		return html;
@@ -4448,6 +5056,44 @@
 				trimNonEmpty(o.region) ||
 				trimNonEmpty(o.country_code)
 		);
+	}
+
+	/**
+	 * Строит патч для блока адреса (contact_billing) из нормализованного объекта ПВЗ.
+	 * Возвращает только непустые поля + country='Россия'. address_2 не трогаем.
+	 */
+	function buildAddressPatchFromCdekOffice(officeDetails) {
+		var o = officeDetails && typeof officeDetails === 'object' ? officeDetails : {};
+		var patch = { country: 'Россия' };
+		var stateRaw = trimNonEmpty(o.region);
+		if (stateRaw) {
+			patch.state = stateRaw;
+		}
+		var cityRaw = trimNonEmpty(o.city);
+		if (cityRaw) {
+			patch.city = cityRaw;
+		}
+		var addrRaw = trimNonEmpty(o.address);
+		if (addrRaw) {
+			var line = addrRaw;
+			if (cityRaw) {
+				var cityNorm = normalizeCityNameForMatch(cityRaw);
+				var firstComma = line.indexOf(',');
+				var head = firstComma === -1 ? line : line.slice(0, firstComma);
+				if (cityNorm && normalizeCityNameForMatch(head) === cityNorm) {
+					line = firstComma === -1 ? '' : line.slice(firstComma + 1);
+				}
+			}
+			line = line.replace(/^[\s,]+/, '').replace(/\s+/g, ' ').trim();
+			if (line) {
+				patch.address_1 = line;
+			}
+		}
+		var pcRaw = trimNonEmpty(o.postal_code);
+		if (pcRaw) {
+			patch.postcode = pcRaw;
+		}
+		return patch;
 	}
 
 	function getConditionsCopyRoot() {
@@ -5311,7 +5957,8 @@
 				dirty: false,
 				lastSyncAt: Date.now(),
 				summaryHydrated: false,
-				paymentSubmitting: false
+				paymentSubmitting: false,
+				postcode_checking: false
 			},
 			meta: {
 				contextId: flow.context_id || '',
@@ -5866,6 +6513,12 @@
 		if (flowPayload === undefined || flowPayload === null) {
 			return;
 		}
+		// Если параллельно идёт setCurrentStep / step transition, сервер мог вернуть
+		// stale current_step (свежий session_set_step ещё в полёте). Не перезаписываем
+		// локальный currentStepId более ранним значением — иначе пользователя «откидывает»
+		// назад во время typing/навигации на следующем шаге.
+		var preservedStepId = state.currentStepId;
+		var transitionInFlight = !!(state.isTransitioning || (criticalRequestLocks && criticalRequestLocks.stepTransition));
 		syncFromFlow(state, flowPayload, response.data.cart || {}, paymentFieldPayloadFromAjaxData(response.data));
 		var mergedPaymentFields = state.frontendStore && state.frontendStore.payment ? {
 			fieldsHtml: state.frontendStore.payment.fieldsHtml,
@@ -5875,7 +6528,13 @@
 		} : null;
 		var rehydrated = buildState(state.context);
 		state.visibleSteps = rehydrated.visibleSteps;
-		state.currentStepId = rehydrated.currentStepId;
+		var preservedIdx = getStepIndex(rehydrated.visibleSteps, preservedStepId);
+		var serverIdx = getStepIndex(rehydrated.visibleSteps, rehydrated.currentStepId);
+		if (transitionInFlight && preservedIdx >= 0 && serverIdx >= 0 && preservedIdx > serverIdx) {
+			state.currentStepId = preservedStepId;
+		} else {
+			state.currentStepId = rehydrated.currentStepId;
+		}
 		state.maxReachedIndex = Math.max(state.maxReachedIndex, rehydrated.maxReachedIndex);
 		applyContextCartToFrontendStore(rehydrated.frontendStore, state.context);
 		state.frontendStore = rehydrated.frontendStore;
@@ -5900,7 +6559,39 @@
 			flushContactFormFromDom(state, $app);
 			ensureContactDefaults(state);
 		}
+		// После каждого пересчёта проверяем: вернула ли Почта России (RPAEFW) ошибку расчёта
+		// по введённому индексу. Если да — ставим штамп на поле postcode, чтобы render показал
+		// инлайн-сообщение и блокировал переход на следующий шаг.
+		refreshPostcodeShippingErrorMarker(state);
+		var contactErrAfterRecalc = state.frontendStore && state.frontendStore.form && state.frontendStore.form.errors
+			? (state.frontendStore.form.errors.contact || {})
+			: {};
+		var currentPcAfterRecalc = state.frontendStore && state.frontendStore.form
+			? String((state.frontendStore.form.contact || {}).postcode || '').trim()
+			: '';
+		var shouldFlashRpaefwError = (
+			contactErrAfterRecalc.postcode === 'rpaefw_unavailable'
+			&& currentPcAfterRecalc
+			&& currentPcAfterRecalc !== lastPostcodeNotifiedAsInvalid
+		);
+		if (contactErrAfterRecalc.postcode !== 'rpaefw_unavailable') {
+			// Индекс исправили/сменили способ — забываем «уже уведомлённый».
+			lastPostcodeNotifiedAsInvalid = '';
+		}
 		render(state, $app);
+		if (shouldFlashRpaefwError) {
+			lastPostcodeNotifiedAsInvalid = currentPcAfterRecalc;
+			setStepInvalidState(state, 'address_delivery', true);
+			setV2StepInvalidState(state, 'delivery_screen', true);
+			notify(
+				getUiText(
+					'step_4.address_error_postcode_unavailable',
+					'Доставка Почтой России по этому индексу недоступна. Проверьте индекс или выберите другой способ доставки.'
+				),
+				'error'
+			);
+			scrollToFirstInvalidField($app);
+		}
 	}
 
 	function syncStoreWithBackend(state, $app, opts) {
@@ -6022,6 +6713,9 @@
 				state.maxReachedIndex = Math.max(state.maxReachedIndex, targetIndex);
 				setRuntimeFlag(state, 'blocked', false);
 				render(state, $app);
+				// Успешный переход — старые валидационные ошибки предыдущего шага
+				// (например, «Выберите пункт выдачи (ПВЗ)…») больше неактуальны.
+				clearNotifications();
 				scrollToStepTop();
 
 				document.dispatchEvent(
@@ -6068,6 +6762,15 @@
 				}
 				if (httpStatus === 422) {
 					notify(payload.message || getUiText('common.error_generic', 'Произошла ошибка. Попробуйте ещё раз.'), 'error');
+				} else if (code === 'invalid_step_navigation') {
+					// Сервер отверг конкретный target. Это типично гонка с session_set_answers
+					// (его сбой не повышает current_step). Сервер сам делает catch-up на 1 шаг,
+					// поэтому 99% таких — уже реальная блокировка перехода (например, нет ПВЗ
+					// для официальной СДЭК). Не сбрасываем шаг и не просим обновлять страницу:
+					// просто восстанавливаем UI на том же шаге и просим юзера повторить.
+					setRuntimeFlag(state, 'blocked', false);
+					render(state, $app);
+					notify(payload.message || getUiText('common.error_generic', 'Произошла ошибка. Попробуйте ещё раз.'), 'error');
 				} else {
 					recoverFromStepAjaxFailure(state, $app, getStepFourAjaxMessage('step_sync_failed', 'step_4.contact_ajax_step_sync_failed', 'Не удалось синхронизировать шаг. Обновите страницу.'));
 				}
@@ -6088,6 +6791,8 @@
 			state.v2CurrentIndex = targetIndex;
 			state.v2MaxReachedIndex = Math.max(state.v2MaxReachedIndex, targetIndex);
 			render(state, $app);
+			// Успешный переход на следующий/предыдущий V2-экран — старая ошибка предыдущего экрана не должна висеть.
+			clearNotifications();
 			scrollToStepTop();
 			document.dispatchEvent(
 				new CustomEvent('mp_cc_v2_step_changed', {
@@ -6174,14 +6879,6 @@
 						scrollToFirstInvalidField($app);
 						return;
 					}
-					if (isPostRussiaRecalcRequired(state)) {
-						setShippingRatesLoadingOverlay(false, $app);
-						setV2StepInvalidState(state, currentScreen.id, true);
-						logValidationFailure(state, 'delivery_screen', { post_russia_recalc: 'required' });
-						notify(getPostRussiaRecalcRequiredMessage(), 'error');
-						render(state, $app);
-						return;
-					}
 					setV2StepInvalidState(state, currentScreen.id, false);
 					saveCurrentStepDraft(state).always(function () {
 						setCurrentV2Screen(state, $app, v2Idx + 1).always(function () {
@@ -6205,8 +6902,16 @@
 					return;
 				}
 				setV2StepInvalidState(state, currentScreen.id, false);
-				saveCurrentStepDraft(state);
-				setCurrentV2Screen(state, $app, v2Idx + 1);
+				// Гасим debounced черновик: иначе session_set_answers и session_set_step летят
+				// параллельно, конфликтуют по WC-сессии и второй валится с ошибкой —
+				// recoverFromStepAjaxFailure откидывает пользователя обратно на шаг 1.
+				if (draftSaveTimer) {
+					window.clearTimeout(draftSaveTimer);
+					draftSaveTimer = null;
+				}
+				saveCurrentStepDraft(state).always(function () {
+					setCurrentV2Screen(state, $app, v2Idx + 1);
+				});
 				return;
 			}
 			if (currentScreen.id === 'payment_screen') {
@@ -6222,12 +6927,20 @@
 					return;
 				}
 				setV2StepInvalidState(state, currentScreen.id, false);
+				if (draftSaveTimer) {
+					window.clearTimeout(draftSaveTimer);
+					draftSaveTimer = null;
+				}
 				saveCurrentStepDraft(state).always(function () {
 					setCurrentV2Screen(state, $app, v2Idx + 1);
 				});
 				return;
 			}
 			if (currentScreen.id === 'confirm_screen') {
+				if (draftSaveTimer) {
+					window.clearTimeout(draftSaveTimer);
+					draftSaveTimer = null;
+				}
 				saveCurrentStepDraft(state).always(function () {
 					submitFinalPayment(state, $app);
 				});
@@ -6298,16 +7011,6 @@
 					notify(getStepOneLabel(state, 'pvz_required', 'step_1.errors.pvz_required', 'Выберите пункт выдачи (ПВЗ), чтобы продолжить.'), 'error');
 					render(state, $app);
 					scrollToFirstInvalidField($app);
-					return;
-				}
-				if (isPostRussiaRecalcRequired(state)) {
-					if (step1ForwardLoadingOverlay) {
-						setShippingRatesLoadingOverlay(false, $app);
-					}
-					setStepInvalidState(state, 'address_delivery', true);
-					logValidationFailure(state, 'address_delivery', { post_russia_recalc: 'required' });
-					notify(getPostRussiaRecalcRequiredMessage(), 'error');
-					render(state, $app);
 					return;
 				}
 				state.frontendStore.form.errors = state.frontendStore.form.errors || {};
@@ -6487,11 +7190,142 @@
 	}
 
 	/**
+	 * Пересчёт ставок WC по изменению почтового индекса.
+	 *
+	 * Существующий `scheduleAddressRatesBackendSync` намеренно пропускает шаг `address_delivery`,
+	 * чтобы при наборе адреса не дёргать корзину на каждый input. Но для индекса это правило
+	 * нам не подходит: RPAEFW (Почта России) и СДЭК считают цену именно по индексу, и пока
+	 * пересчёт не произойдёт, фронт не узнает, валидный ли индекс на стороне Почты.
+	 *
+	 * Стратегия гибридного триггера (см. согласованный план):
+	 *  1. На `input` с валидным `^\d{6}$` → дебаунс 400мс (даём допечатать все 6 цифр и снять руку).
+	 *  2. На `blur` / `paste` / `Enter` → мгновенный запуск, без паузы.
+	 *
+	 * Защита от лишних запросов:
+	 *  - Не запускаем для индекса, не прошедшего regex `^\d{6}$` (короткие/обрывочные числа).
+	 *  - Если индекс не менялся с прошлого успешного пересчёта — skip.
+	 *  - Если есть in-flight пересчёт — не запускаем второй (он добьёт state в .always()).
+	 *  - Перед самим запуском повторно сверяем актуальный `contact.postcode` со снимком на
+	 *    момент schedule: если пользователь успел дописать/удалить цифру за debounce — отменяем
+	 *    запуск, новое значение пришлёт следующий schedule.
+	 */
+	function cancelPostcodeShippingRecalc() {
+		if (postcodeRecalcTimer) {
+			window.clearTimeout(postcodeRecalcTimer);
+			postcodeRecalcTimer = null;
+		}
+	}
+
+	/**
+	 * Обновляет визуальное состояние «индекс проверяется»: спиннер внутри поля + подсказка
+	 * «Проверяем индекс…». Делаем без полного render() — иначе на каждом нажатии цифры будет
+	 * мерцать вся форма. Полный render всё равно случится после AJAX-ответа (рисует свежие
+	 * цены доставки), а на это время класс перерисуется в `buildAddressBlockHtml` через
+	 * `runtime.postcode_checking`. Включается также во время debounce (400 мс), чтобы дать
+	 * мгновенный визуальный отклик «мы знаем, что ты ввёл, ждём ещё цифру».
+	 */
+	function refreshPostcodeCheckingUi(state, $app) {
+		// «Проверка идёт» ON в любой из ситуаций:
+		//  - запланирован debounce-таймер пересчёта;
+		//  - сейчас летит AJAX-пересчёт;
+		//  - в поле уже что-то введено, но это значение ещё не прошло успешный пересчёт
+		//    (партиальный ввод 1–5 цифр или новые цифры после уже верифицированных).
+		// Этот хелпер вызывается из schedulePostcodeShippingRecalc, cancelPostcodeShippingRecalc
+		// и из самих хендлеров ввода, поэтому отражает реальное «висит ли pending-проверка».
+		var pcNow = state && state.frontendStore && state.frontendStore.form
+			? String((state.frontendStore.form.contact || {}).postcode || '').trim()
+			: '';
+		var verifiedForCurrent = !!pcNow && /^\d{6}$/.test(pcNow) && pcNow === lastPostcodeRecalculated && !postcodeRecalcInFlight && !postcodeRecalcTimer;
+		var active = !!postcodeRecalcTimer || !!postcodeRecalcInFlight || (pcNow.length > 0 && !verifiedForCurrent);
+		setRuntimeFlag(state, 'postcode_checking', active);
+		var $scope = ($app && $app.length) ? $app : $(selectors.app);
+		if (!$scope || !$scope.length) {
+			return;
+		}
+		var $field = $scope.find('.mp-cc-address__field--postcode');
+		if (!$field.length) {
+			return;
+		}
+		$field.toggleClass('is-checking', active);
+		var $hint = $field.find('.mp-cc-postcode-checking-hint');
+		if (active) {
+			if (!$hint.length) {
+				var hintText = getUiText('step_4.postcode_checking_hint', 'Проверяем индекс…');
+				$field.append('<p class="mp-cc-postcode-checking-hint" role="status" aria-live="polite">' + escapeHtml(hintText) + '</p>');
+			}
+			// На случай, если поле было отрендерено в старой структуре (без обёртки), добавим
+			// спиннер-span налету. После следующего полного render структура нормализуется
+			// через buildAddressBlockHtml.
+			if (!$field.find('.mp-cc-postcode-spinner').length) {
+				var $inp = $field.find('#mp-cc-address-postcode');
+				if ($inp.length && !$inp.parent().is('.mp-cc-postcode-input-wrap')) {
+					$inp.wrap('<div class="mp-cc-postcode-input-wrap"></div>');
+					$inp.after('<span class="mp-cc-postcode-spinner" aria-hidden="true"></span>');
+				}
+			}
+		} else {
+			$hint.remove();
+		}
+	}
+
+	function schedulePostcodeShippingRecalc(state, $app, opts) {
+		opts = opts && typeof opts === 'object' ? opts : {};
+		var immediate = opts.immediate === true;
+		if (!state || !state.frontendStore || !state.frontendStore.form) {
+			return;
+		}
+		var contact = state.frontendStore.form.contact || {};
+		var pc = String(contact.postcode || '').trim();
+		if (!/^\d{6}$/.test(pc)) {
+			cancelPostcodeShippingRecalc();
+			refreshPostcodeCheckingUi(state, $app);
+			return;
+		}
+		if (pc === lastPostcodeRecalculated && !immediate && !postcodeRecalcInFlight) {
+			refreshPostcodeCheckingUi(state, $app);
+			return;
+		}
+		cancelPostcodeShippingRecalc();
+		var run = function () {
+			postcodeRecalcTimer = null;
+			if (postcodeRecalcInFlight) {
+				refreshPostcodeCheckingUi(state, $app);
+				return;
+			}
+			var fresh = state.frontendStore && state.frontendStore.form
+				? String((state.frontendStore.form.contact || {}).postcode || '').trim()
+				: '';
+			if (fresh !== pc) {
+				refreshPostcodeCheckingUi(state, $app);
+				return;
+			}
+			postcodeRecalcInFlight = true;
+			refreshPostcodeCheckingUi(state, $app);
+			$.when(syncStoreWithBackend(state, $app, { force: true }))
+				.done(function () {
+					// Маркируем «верифицировано» только при успешном ответе.
+					// На failure следующий schedule отработает заново и снова покажет спиннер.
+					lastPostcodeRecalculated = pc;
+				})
+				.always(function () {
+					postcodeRecalcInFlight = false;
+					refreshPostcodeCheckingUi(state, $app);
+				});
+		};
+		if (immediate) {
+			run();
+		} else {
+			postcodeRecalcTimer = window.setTimeout(run, 400);
+			refreshPostcodeCheckingUi(state, $app);
+		}
+	}
+
+	/**
 	 * Принудительный пересчёт ставок WC после смены city/region/country на шаге «Адрес и доставка».
 	 *
 	 * Обычный sync на этом шаге не идёт (см. `syncStoreWithBackend` guard), иначе любая правка адреса
 	 * дёргала бы корзину. Но при смене города ранее выбранный ПВЗ/тариф невалиден, и без force=true
-	 * корзина зависает на 0₽ или старых ценах до ручного «Рассчитать доставку».
+	 * корзина зависает на 0₽ или старых ценах до принудительного sync с бэкендом.
 	 */
 	function scheduleAddressForcedRatesSync(state, $app) {
 		if (addressRatesSyncTimer) {
@@ -6518,7 +7352,19 @@
 		}
 		if (storageKey === 'step_one') {
 			if (state && state.currentStepId === 'address_delivery' && state.frontendStore && state.frontendStore.fulfillment) {
-				return $.extend(true, {}, state.frontendStore.fulfillment.date || {});
+				var stepOnePayload = $.extend(true, {}, state.frontendStore.fulfillment.date || {});
+				// На шаге «Адрес и доставка» пользователь не выбирает дату — она живёт в
+				// `date_conditions`. `ensureDateSelection` авто-заполняет `selected_date` для UI
+				// календаря на шаге 3, но при сохранении step_one этот auto-fill уходит в payload
+				// и бэк-валидация `validate_date_answers_payload` срабатывает на КАЖДЫЙ
+				// save_draft / save_method / save_tariff. На медленной мобильной сети это легко
+				// даёт 422 (после смены сценария/метода дата ещё не пересобрана для нового
+				// каталога) и пользователь видит «Не удалось сохранить тариф доставки», хотя
+				// фактический тариф вполне валиден. Сервер всё равно держит `selected_date`
+				// в `date_conditions` и не теряет её, если client не прислал поле явно.
+				delete stepOnePayload.selected_date;
+				delete stepOnePayload.calendar_month;
+				return stepOnePayload;
 			}
 			return state.frontendStore.cart.snapshot || {};
 		}
@@ -6562,16 +7408,30 @@
 		if (!items.length) {
 			return '';
 		}
+		var config = state.stepOneConfig || {};
+		var quantityControls = config.quantity_controls || {};
+		var qtyEnabled = quantityControls.enabled !== false;
+		var qtyShowDecrement = quantityControls.show_decrement !== false;
+		var qtyShowIncrement = quantityControls.show_increment !== false;
+		var qtyAllowManualInput = quantityControls.allow_manual_input !== false;
 		var html = '';
 		html += '<ul class="mp-cc-parcel-head-list" role="list">';
 		for (var i = 0; i < items.length; i += 1) {
 			var item = items[i] && typeof items[i] === 'object' ? items[i] : {};
+			var itemKey = String(item.key || 'item-' + i);
+			var productId = Number(item.product_id || 0);
+			var variationId = Number(item.variation_id || 0);
 			var title = trimNonEmpty(item.name) || getUiText('step_1.title', 'Товар');
 			var qty = Number(item.quantity || 0);
-			var qtyLabel = qty > 0 ? String(qty) + ' шт' : '';
+			var minQty = Number(item.min_quantity || 1);
+			var maxQty = Number(item.max_quantity || 9999);
 			var imageUrl = item.image_url ? String(item.image_url) : '';
 			html += '<li class="mp-cc-parcel-head-list__item">';
-			html += '<article class="mp-cc-parcel-head">';
+			html += '<article class="mp-cc-parcel-head"';
+			html += ' data-cart-item-key="' + escapeHtml(itemKey) + '"';
+			html += ' data-product-id="' + escapeHtml(productId) + '"';
+			html += ' data-variation-id="' + escapeHtml(variationId) + '"';
+			html += '>';
 			html += '<div class="mp-cc-parcel-head__media" aria-hidden="true">';
 			if (imageUrl) {
 				html += '<img class="mp-cc-parcel-head__img" src="' + escapeHtml(imageUrl) + '" alt="" loading="lazy" decoding="async" />';
@@ -6581,8 +7441,26 @@
 			html += '</div>';
 			html += '<div class="mp-cc-parcel-head__body">';
 			html += '<h3 class="mp-cc-parcel-head__title">' + escapeHtml(title) + '</h3>';
-			if (qtyLabel) {
-				html += '<p class="mp-cc-parcel-head__meta">' + escapeHtml(qtyLabel) + '</p>';
+			if (qtyEnabled) {
+				// Используем те же data-cart-* атрибуты, что и в legacy buildCartItemsHtml,
+				// чтобы applyQuantityChange / applyRemoveItem работали без изменений
+				// (обработчики дополнительно навешиваются на $parcel в bindHandlers).
+				html += '<div class="mp-cc-parcel-head__controls">';
+				html += '<div class="mp-cc-parcel-head__qty-controls" role="group" aria-label="' + escapeHtml(getUiText('step_1.positions_count', 'Количество')) + '">';
+				if (qtyShowDecrement) {
+					html += '<button type="button" class="mp-cc-qty-btn" data-qty-action="decrease" data-cart-qty-btn="-1" aria-label="' + escapeHtml(getUiText('common.decrease_quantity', 'Уменьшить количество')) + '"' + (qty <= minQty ? ' disabled' : '') + '>−</button>';
+				}
+				if (qtyAllowManualInput) {
+					html += '<input class="mp-cc-qty-input" type="number" inputmode="numeric" min="' + escapeHtml(minQty) + '" max="' + escapeHtml(maxQty) + '" step="1" value="' + escapeHtml(qty) + '" data-cart-qty-input="1" aria-label="' + escapeHtml(getUiText('step_1.positions_count', 'Количество')) + '" />';
+				} else {
+					html += '<span class="mp-cc-qty-static">' + escapeHtml(qty) + '</span>';
+				}
+				if (qtyShowIncrement) {
+					html += '<button type="button" class="mp-cc-qty-btn" data-qty-action="increase" data-cart-qty-btn="+1" aria-label="' + escapeHtml(getUiText('common.increase_quantity', 'Увеличить количество')) + '"' + (qty >= maxQty ? ' disabled' : '') + '>+</button>';
+				}
+				html += '</div>';
+				html += '<button type="button" class="mp-cc-parcel-head__remove mp-cc-qty-btn mp-cc-qty-btn--remove" data-cart-remove="1" aria-label="' + escapeHtml(getUiText('common.remove', 'Удалить')) + '">×</button>';
+				html += '</div>';
 			}
 			html += '</div>';
 			html += '</article>';
@@ -6594,12 +7472,15 @@
 
 	function buildConfirmationScreenHtml(state) {
 		var payment = state.frontendStore && state.frontendStore.payment ? state.frontendStore.payment : {};
-		var gateway = trimNonEmpty(payment.gateway) || getUiText('step_4.payment_title', 'способ оплаты');
+		var gatewayLabel = getSelectedGatewayTitle(state);
+		if (!gatewayLabel) {
+			gatewayLabel = trimNonEmpty(payment.gateway) || getUiText('step_4.payment_title', 'способ оплаты');
+		}
 		var html = '';
 		html += '<section class="mp-cc-confirm-screen" aria-labelledby="mp-cc-confirm-title">';
 		html += '<h3 id="mp-cc-confirm-title">' + escapeHtml(getUiText('common.confirm', 'Подтверждение')) + '</h3>';
 		html += '<p class="mp-cc-step-panel__hint">' + escapeHtml(getUiText('order_review.final_hint', 'Проверьте данные справа и нажмите кнопку оформления заказа.')) + '</p>';
-		html += '<p class="mp-cc-step-panel__hint">' + escapeHtml(getUiText('order_review.selected_gateway', 'Выбранный способ оплаты') + ': ' + gateway) + '</p>';
+		html += '<p class="mp-cc-step-panel__hint">' + escapeHtml(getUiText('order_review.selected_gateway', 'Выбранный способ оплаты') + ': ' + gatewayLabel) + '</p>';
 		html += '</section>';
 		return html;
 	}
@@ -6811,35 +7692,6 @@
 	}
 
 	/**
-	 * Проверяет, что для выбранной «Почты России» обязательное подтверждение через
-	 * «Рассчитать доставку» ещё не выполнено в этой сессии.
-	 *
-	 * Флаг `post_russia_recalc_confirmed` хранится в step_one (`fulfillment.date`) и:
-	 *  - сбрасывается при выборе post_russia после другого метода;
-	 *  - сбрасывается при смене города/региона/страны;
-	 *  - выставляется в true перед reload, который инициирует кнопка «Рассчитать доставку».
-	 *
-	 * Используется как дополнительный gate в moveForward (legacy + V2): пока пользователь
-	 * не нажал «Рассчитать доставку», на следующий шаг checkout не пускаем.
-	 */
-	function isPostRussiaRecalcRequired(state) {
-		var dateBox = state && state.frontendStore && state.frontendStore.fulfillment ? (state.frontendStore.fulfillment.date || {}) : {};
-		var methodId = String(dateBox.shipping_method_id || '');
-		if (methodId !== 'post_russia') {
-			return false;
-		}
-		var confirmedRaw = dateBox.post_russia_recalc_confirmed;
-		if (confirmedRaw === true || confirmedRaw === 1 || confirmedRaw === '1' || confirmedRaw === 'true') {
-			return false;
-		}
-		return true;
-	}
-
-	function getPostRussiaRecalcRequiredMessage() {
-		return 'Нажмите «Рассчитать доставку», чтобы подтвердить стоимость для «Почты России».';
-	}
-
-	/**
 	 * Проверяет обязательные адресные поля шага «Адрес и доставка».
 	 *
 	 * Раньше адресный блок дублировался на шаге «Получатель», и валидация адреса жила там.
@@ -6850,6 +7702,70 @@
 	 * Возвращает map { fieldKey: 'required' } по пустым обязательным полям.
 	 * Поле `address_2` (квартира/корпус) не считаем обязательным — оно в любом случае опционально.
 	 */
+	/**
+	 * Ищет в `wc_shipping_rates` ставку с пометкой `is_error` от RPAEFW (плагина «Почта России»).
+	 * Бэк ставит её, если запрос в API Почты России вернул ошибку (например, индекс не существует
+	 * в их справочнике). Если такая ставка есть — фронт не должен показывать её цену в сводке
+	 * и не должен пропускать пользователя дальше с выбранным методом `post_russia`.
+	 *
+	 * @return {object|null}
+	 */
+	function getRpaefwUnavailableRate(state) {
+		var rates = state && state.frontendStore && state.frontendStore.cart
+			? state.frontendStore.cart.wc_shipping_rates
+			: null;
+		if (!Array.isArray(rates) || !rates.length) {
+			return null;
+		}
+		var i;
+		for (i = 0; i < rates.length; i += 1) {
+			var r = rates[i] || {};
+			if (r.is_error !== true) {
+				continue;
+			}
+			var mid = String(r.method_id || '').toLowerCase();
+			var rid = String(r.id || '').toLowerCase();
+			if (mid.indexOf('rpaefw') === 0 || rid.indexOf('rpaefw') === 0) {
+				return r;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Помечает / очищает поле postcode маркером 'rpaefw_unavailable' в зависимости от того,
+	 * вернула ли последняя пересчитанная корзина ошибку RPAEFW для текущего индекса.
+	 * Помечаем только если пользователь выбрал именно `post_russia` — для других методов
+	 * (СДЭК, курьер, ПВЗ) ошибка RPAEFW не имеет значения и не должна мешать переходу.
+	 */
+	function refreshPostcodeShippingErrorMarker(state) {
+		if (!state || !state.frontendStore) {
+			return;
+		}
+		state.frontendStore.form = state.frontendStore.form || {};
+		state.frontendStore.form.errors = state.frontendStore.form.errors || {};
+		state.frontendStore.form.errors.contact = state.frontendStore.form.errors.contact || {};
+		var contactErrors = state.frontendStore.form.errors.contact;
+		var prevMark = contactErrors.postcode;
+		var dateBox = state.frontendStore.fulfillment && state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+			? state.frontendStore.fulfillment.date
+			: {};
+		var selectedMethodId = String(dateBox.shipping_method_id || '');
+		var contact = state.frontendStore.form.contact || {};
+		var pc = String(contact.postcode || '').trim();
+		var hasValidPostcode = /^\d{6}$/.test(pc);
+		var errRate = getRpaefwUnavailableRate(state);
+		if (selectedMethodId === 'post_russia' && hasValidPostcode && errRate) {
+			contactErrors.postcode = 'rpaefw_unavailable';
+			return;
+		}
+		// Снимаем штамп при любом из условий: пользователь сменил способ доставки, исправил индекс,
+		// или RPAEFW вернул положительную ставку. Чужие маркеры (format / required) не трогаем.
+		if (prevMark === 'rpaefw_unavailable') {
+			delete contactErrors.postcode;
+		}
+	}
+
 	function validateStepOneAddressFields(state) {
 		var contact = state && state.frontendStore && state.frontendStore.form
 			? (state.frontendStore.form.contact || {})
@@ -6873,8 +7789,15 @@
 			if (!shouldRenderAddressSubfield(key, contact)) {
 				continue;
 			}
-			if (!trimNonEmpty(contact[key])) {
+			var rawVal = trimNonEmpty(contact[key]);
+			if (!rawVal) {
 				errors[key] = 'required';
+				continue;
+			}
+			// Российский почтовый индекс — ровно 6 цифр. Маска ввода уже фильтрует non-digits,
+			// но валидация нужна для случая, когда пользователь начал и ушёл с поля (3-5 цифр).
+			if (key === 'postcode' && !/^\d{6}$/.test(rawVal)) {
+				errors[key] = 'format';
 			}
 		}
 		return errors;
@@ -6888,8 +7811,7 @@
 	 * Раннее блокирующее условие на переходах вперёд для шага «Адрес и доставка».
 	 *
 	 * Возвращает true и показывает соответствующий notify, если:
-	 *  - выбран метод `pvz`, но не выбран ПВЗ на карте (см. isPvzMissingOfficeRequired);
-	 *  - выбран `post_russia`, но «Рассчитать доставку» не нажата (isPostRussiaRecalcRequired).
+	 *  - выбран метод `pvz`, но не выбран ПВЗ на карте (см. isPvzMissingOfficeRequired).
 	 *
 	 * Используем его до `saveCurrentStepDraft` в обработчиках continue/next/v2-next, чтобы:
 	 *  - не сохранять промежуточный draft с невалидным state;
@@ -6914,13 +7836,6 @@
 			scrollToFirstInvalidField($app);
 			return true;
 		}
-		if (isPostRussiaRecalcRequired(state)) {
-			setStepInvalidState(state, 'address_delivery', true);
-			setV2StepInvalidState(state, 'delivery_screen', true);
-			notify(getPostRussiaRecalcRequiredMessage(), 'error');
-			render(state, $app);
-			return true;
-		}
 		// Перенесённая со 2-го шага валидация адреса. Адресный блок теперь живёт только на шаге 1,
 		// поэтому пустые обязательные адресные поля должны блокировать переход именно отсюда —
 		// иначе пользователь упадёт на шаге «Получатель» в ошибку «не все обязательные поля заполнены»,
@@ -6937,10 +7852,41 @@
 			state.frontendStore.form.errors.contact = $.extend({}, prevContactErrors, addressErrors);
 			setStepInvalidState(state, 'address_delivery', true);
 			setV2StepInvalidState(state, 'delivery_screen', true);
-			notify(getStepOneAddressMissingMessage(), 'error');
+			var addrErrMsg = getStepOneAddressMissingMessage();
+			if (addressErrors.postcode === 'format' && addressErrorKeys.length === 1) {
+				addrErrMsg = getUiText('step_4.address_error_postcode_format', 'Введите 6 цифр почтового индекса.');
+			}
+			notify(addrErrMsg, 'error');
 			render(state, $app);
 			scrollToFirstInvalidField($app);
 			return true;
+		}
+		// Почта России: если по введённому индексу плагин RPAEFW вернул ошибку расчёта,
+		// сумма доставки неизвестна — нельзя пропускать пользователя на шаг «Дата».
+		// Маркер `rpaefw_unavailable` уже выставлен в applySessionGetStateResponse через
+		// refreshPostcodeShippingErrorMarker; здесь мы только подсвечиваем поле и notify.
+		var dateBoxForGuard = state && state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+			? state.frontendStore.fulfillment.date
+			: {};
+		if (String(dateBoxForGuard.shipping_method_id || '') === 'post_russia') {
+			refreshPostcodeShippingErrorMarker(state);
+			var contactErrsGuard = state.frontendStore && state.frontendStore.form && state.frontendStore.form.errors
+				? (state.frontendStore.form.errors.contact || {})
+				: {};
+			if (contactErrsGuard.postcode === 'rpaefw_unavailable') {
+				setStepInvalidState(state, 'address_delivery', true);
+				setV2StepInvalidState(state, 'delivery_screen', true);
+				notify(
+					getUiText(
+						'step_4.address_error_postcode_unavailable',
+						'Доставка Почтой России по этому индексу недоступна. Проверьте индекс или выберите другой способ доставки.'
+					),
+					'error'
+				);
+				render(state, $app);
+				scrollToFirstInvalidField($app);
+				return true;
+			}
 		}
 		return false;
 	}
@@ -7008,9 +7954,11 @@
 		var inferredCity = savedCity || (point && point.city ? String(point.city) : '');
 		var cityEmptyHint = getStepOneLabel(state, 'address_form.city_empty_hint', '', 'Укажите населённый пункт');
 		var cityPlaceholder = getStepOneLabel(state, 'address_form.city_placeholder', '', 'Укажите город');
-		var officeNotSet = getStepOneLabel(state, 'address_form.office_not_set', '', 'Не выбран');
-		var pointAddress = point && point.address ? String(point.address) : officeNotSet;
-		var showPvzRow = selectedMethodId === 'pickup' || selectedMethodId === 'pvz';
+		// Статическая строка «адрес офиса» для самовывоза удалена по продуктовому решению:
+		// адрес ПВЗ магазина показывается под названием метода в списке «способ доставки»
+		// как hint, отдельная строка под списком методов больше не нужна. Для метода `pvz`
+		// (CDEK) строка остаётся — там не статическая надпись, а интерактивный выбор пункта.
+		var showPvzRow = selectedMethodId === 'pvz';
 		var cityEditMode = Boolean(runtime.step1_city_editing);
 		var pvzEditMode = Boolean(runtime.step1_pvz_editing);
 		var html = '';
@@ -7067,7 +8015,9 @@
 					methodHint = String(pickupPoints[0].address);
 				}
 			} else {
-				methodHint = trimNonEmpty(method.description) || trimNonEmpty(method.eta) || '';
+				var methodDescr = trimNonEmpty(method.description);
+				var methodEta = trimNonEmpty(method.eta);
+				methodHint = [methodDescr, methodEta].filter(function (s) { return !!s; }).join(' · ');
 			}
 			html += '<div class="mp-cc-ship-option-group' + (isMethodActive ? ' is-active' : '') + (hasTariffsForMethod ? ' has-tariffs' : '') + '">';
 			html += '<label class="mp-cc-ship-option' + (isMethodActive ? ' is-active' : '') + '">';
@@ -7099,21 +8049,32 @@
 			html += '</div>';
 		}
 		html += '</div>';
+		// Информационная плашка для Почты России: показывается всегда, пока выбран этот способ.
+		// Снимает у пользователя ожидание «увидеть цену сразу в карточке» — фактическая стоимость
+		// зависит от индекса и подтянется RPAEFW в строке «Доставка» сводки после ввода адреса.
+		if (selectedMethodId === 'post_russia') {
+			var postRussiaNoticeText = getUiText(
+				'step_4.post_russia_price_notice',
+				'Точная цена доставки Почтой России рассчитается после ввода почтового индекса в полях адреса ниже.'
+			);
+			html += '<p class="mp-cc-shipping-catalog__notice" role="note">';
+			html += '<span class="mp-cc-shipping-catalog__notice-icon" aria-hidden="true">i</span>';
+			html += '<span class="mp-cc-shipping-catalog__notice-text">' + escapeHtml(postRussiaNoticeText) + '</span>';
+			html += '</p>';
+		}
 		html += '</div>';
 
-		html += '<div class="mp-cc-address-form__row" data-row="pvz"' + (showPvzRow ? '' : ' hidden') + '>';
-		var officeRowLabelKey = selectedMethodId === 'pvz' ? 'address_form.pvz_row' : 'address_form.office_row';
-		var officeRowLabelDefault = selectedMethodId === 'pvz' ? 'адрес пвз' : 'адрес офиса';
-		html += '<span class="mp-cc-address-form__label">' + escapeHtml(getStepOneLabel(state, officeRowLabelKey, '', officeRowLabelDefault)) + '</span>';
-		html += '<div class="mp-cc-address-form__control">';
-		var pickupCfgRow = getPickupConfig();
-		var pointsRow = pickupCfgRow.points || [];
-		if (selectedMethodId === 'pvz') {
+		if (showPvzRow) {
+			html += '<div class="mp-cc-address-form__row" data-row="pvz">';
+			html += '<span class="mp-cc-address-form__label">' + escapeHtml(getStepOneLabel(state, 'address_form.pvz_row', '', 'адрес пвз')) + '</span>';
+			html += '<div class="mp-cc-address-form__control">';
+			var pickupCfgRow = getPickupConfig();
+			var pointsRow = pickupCfgRow.points || [];
 			var wcfgPvz = (typeof window.mpCcCdekWidget !== 'undefined' && window.mpCcCdekWidget) ? window.mpCcCdekWidget : {};
 			var cdekOffice = trimNonEmpty(dateBox.cdek_office_code);
 			var pvzStatusText = cdekOffice
 				? getStepOneLabel(state, 'address_form.pvz_cdek_selected', '', 'ПВЗ СДЭК') + ': ' + cdekOffice
-				: getStepOneLabel(state, 'address_form.pvz_cdek_not_set', '', officeNotSet);
+				: getStepOneLabel(state, 'address_form.pvz_cdek_not_set', '', 'Не выбран');
 			var rtPvzInv = runtime && typeof runtime === 'object' ? runtime : {};
 			var invMapV2Pvz = rtPvzInv.invalid_v2_steps && typeof rtPvzInv.invalid_v2_steps === 'object' ? rtPvzInv.invalid_v2_steps : {};
 			var invMapLegacyPvz = rtPvzInv.invalid_steps && typeof rtPvzInv.invalid_steps === 'object' ? rtPvzInv.invalid_steps : {};
@@ -7152,31 +8113,9 @@
 				html += '<button type="button" class="mp-cc-address-form__edit" data-pvz-edit>';
 				html += escapeHtml(getStepOneLabel(state, 'address_form.pvz_shop_list_button', '', 'Список точек магазина')) + '</button>';
 			}
-		} else if (pvzEditMode) {
-			if (pointsRow.length > 1) {
-				html += '<div class="mp-cc-address-form__pvz-list">';
-				for (i = 0; i < pointsRow.length; i += 1) {
-					var item = pointsRow[i] || {};
-					var itemId = String(item.id || '');
-					var isPointChecked = point && String(point.id || '') === itemId;
-					html += '<label class="mp-cc-address-form__pvz-item">';
-					html += '<input type="radio" name="mp-cc-pvz-point" data-pvz-point="' + escapeHtml(itemId) + '"' + (isPointChecked ? ' checked' : '') + '>';
-					html += '<span>' + escapeHtml(String(item.address || item.title || itemId)) + '</span>';
-					html += '</label>';
-				}
-				html += '</div>';
-			} else {
-				html += '<span class="mp-cc-address-form__value">' + escapeHtml(pointAddress) + '</span>';
-			}
-		} else {
-			html += '<span class="mp-cc-address-form__value">' + escapeHtml(pointAddress) + '</span>';
-			if (selectedMethodId === 'pickup' && pointsRow.length > 1) {
-				html += ' <button type="button" class="mp-cc-address-form__edit" data-pvz-edit>';
-				html += escapeHtml(getStepOneLabel(state, 'address_form.pickup_change_point', '', 'Изменить точку')) + '</button>';
-			}
+			html += '</div>';
+			html += '</div>';
 		}
-		html += '</div>';
-		html += '</div>';
 		html += '</section>';
 		return html;
 	}
@@ -7415,37 +8354,6 @@
 		return '';
 	}
 
-	function hasCartLinesForShippingRecalc(state) {
-		if (!state || !state.frontendStore) {
-			return false;
-		}
-		var sum = state.frontendStore.cart && state.frontendStore.cart.summary ? state.frontendStore.cart.summary : {};
-		var n = Number(sum.items_count || 0);
-		if (!n && state.frontendStore.cart && Array.isArray(state.frontendStore.cart.items)) {
-			n = state.frontendStore.cart.items.length;
-		}
-		return n > 0;
-	}
-
-	function shouldShowShippingRecalcButton(state) {
-		if (!state || !state.frontendStore) {
-			return false;
-		}
-		if (state.currentStepId !== 'address_delivery' && !shippingRecalcPending) {
-			return false;
-		}
-		var dateBox = state.frontendStore.fulfillment && state.frontendStore.fulfillment.date ? state.frontendStore.fulfillment.date : {};
-		var shipMethod = String(dateBox.shipping_method_id || '');
-		// Кнопку «Рассчитать доставку» показываем только для «Почта России»: для остальных методов
-		// (pvz / courier / pickup / krasnoyarsk_delivery) бэк автоматически пересчитывает rates после
-		// смены метода/тарифа/города (см. force-sync в applyShipping*UserChoice). У почты исторически
-		// расчёт может зависеть от ручной кнопки + reload, поэтому оставляем её именно для этого метода.
-		if (shipMethod !== 'post_russia') {
-			return false;
-		}
-		return hasCartLinesForShippingRecalc(state);
-	}
-
 	function buildSummaryHtml(state) {
 		var currentIndex = getStepIndex(state.visibleSteps, state.currentStepId);
 		var total = state.visibleSteps.length;
@@ -7480,6 +8388,13 @@
 		if (isPickup && shippingTotalNum <= 0) {
 			shippingText = '';
 		}
+		var shippingEtaText = '';
+		if (!isPickup) {
+			var dateBoxForEta = state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+				? state.frontendStore.fulfillment.date
+				: {};
+			shippingEtaText = trimNonEmpty(dateBoxForEta.shipping_eta);
+		}
 		var taxText = String(cartSummary.tax || '');
 		var feeLines = Array.isArray(cartSummary.fee_lines) ? cartSummary.fee_lines : [];
 		var shippingLabel = getStepOneLabel(state, 'shipping_label', 'order_review.shipping', 'Доставка');
@@ -7498,7 +8413,17 @@
 			: null;
 		var html = '';
 
-		html += '<section class="mp-cc-summary-card mp-cc-summary-card--mobile-receipt" aria-label="Order summary panel">';
+		// На шаге «Детали заказа» (confirm) сводка раскрыта на ВЕСЬ финальный обзор: контакты,
+		// способ оплаты, состав заказа, ПВЗ, итоги. На мобиле это много блоков, и липкий
+		// «чек» снизу со своим overflow:auto + overscroll-behavior:contain ловил скролл —
+		// внутри картинки можно листать вниз, но вверх по странице вернуться нельзя (пальцу
+		// просто некуда «зацепиться»). На confirm на мобиле делаем сводку обычным блоком
+		// в потоке (CSS-override через модификатор --confirm).
+		var summaryCardClasses = 'mp-cc-summary-card mp-cc-summary-card--mobile-receipt';
+		if (state && state.currentStepId === 'confirm') {
+			summaryCardClasses += ' mp-cc-summary-card--confirm';
+		}
+		html += '<section class="' + summaryCardClasses + '" aria-label="Order summary panel">';
 		html += '<h3 class="mp-cc-summary-card__title">' + escapeHtml(getStepOneLabel(state, 'summary_title', 'order_review.title', 'Order Summary')) + '</h3>';
 		html += '<p class="mp-cc-summary-card__meta mp-cc-summary-card__meta--step">' + escapeHtml(formatCheckoutStepMeta(stepProg.cur, stepProg.total)) + '</p>';
 		if (showPlaceholders) {
@@ -7510,13 +8435,10 @@
 				html += '<p class="mp-cc-summary-card__meta"><span class="mp-cc-summary-card__amount-label">' + escapeHtml(amountLabel) + ':</span> <span class="mp-cc-summary-card__amount" data-summary-amount="1">' + wcPriceHtmlFragment(displayAmount) + '</span></p>';
 			}
 		}
-		if (state.currentStepId === 'address_delivery' || shippingRecalcPending) {
+		if (state.currentStepId === 'address_delivery') {
 			html += '<div class="mp-cc-summary-card__actions">';
 			html += '<button type="button" class="mp-cc-summary-card__btn mp-cc-summary-card__btn--primary" data-summary-action="continue">' + escapeHtml(getStepOneLabel(state, 'continue_label', 'step_1.continue', 'Continue')) + '</button>';
 			html += '<a href="' + escapeHtml(returnUrl) + '" class="mp-cc-summary-card__btn mp-cc-summary-card__btn--ghost">' + escapeHtml(getStepOneLabel(state, 'return_label', 'step_1.return_to_shop', 'Return to shop')) + '</a>';
-			if (shouldShowShippingRecalcButton(state)) {
-				html += '<button type="button" class="mp-cc-summary-card__btn mp-cc-summary-card__btn--ghost" data-mp-cc-recalc-shipping="1">' + escapeHtml(getUiText('order_review.recalc_shipping', 'Рассчитать доставку')) + '</button>';
-			}
 			html += '</div>';
 		}
 		if (state.currentStepId !== 'confirm') {
@@ -7526,7 +8448,11 @@
 				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(subtotalLineLabel) + ': <span class="mp-cc-summary-card__amount--inline" data-summary-amount="1">' + wcPriceHtmlFragment(subtotalText) + '</span></p>';
 			}
 			if (trimNonEmpty(shippingText)) {
-				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(shippingLabel) + ': <span class="mp-cc-summary-card__amount--inline" data-summary-amount="1" data-summary-shipping-amount="1">' + wcPriceHtmlFragment(shippingText) + '</span></p>';
+				html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(shippingLabel) + ': <span class="mp-cc-summary-card__amount--inline" data-summary-amount="1" data-summary-shipping-amount="1">' + wcPriceHtmlFragment(shippingText) + '</span>';
+				if (shippingEtaText) {
+					html += ' <span class="mp-cc-summary-card__shipping-eta" data-summary-shipping-eta="1">· ' + escapeHtml(shippingEtaText) + '</span>';
+				}
+				html += '</p>';
 			}
 			for (var fi = 0; fi < feeLines.length; fi += 1) {
 				var feeRow = feeLines[fi] || {};
@@ -7550,7 +8476,7 @@
 		}
 		if (state.currentStepId === 'confirm') {
 			html += '<div class="mp-cc-summary-card__scenario mp-cc-summary-card__scenario--final-review" data-final-review-block="1">';
-			html += '<p class="mp-cc-summary-card__scenario-title"><strong>' + escapeHtml(getUiText('order_review.final_review_title', 'Сводка заказа')) + '</strong></p>';
+			html += '<p class="mp-cc-summary-card__scenario-title"><strong>' + escapeHtml(getUiText('order_review.final_review_title', 'Детали заказа')) + '</strong></p>';
 			html += '<p class="mp-cc-summary-card__scenario-meta">' + escapeHtml(getUiText('order_review.final_review_lead', 'Проверьте данные и нажмите кнопку оплаты.')) + '</p>';
 			html += '</div>';
 			var contact = state.frontendStore && state.frontendStore.form ? (state.frontendStore.form.contact || {}) : {};
@@ -7672,6 +8598,30 @@
 		var role = safeLevel === 'error' ? 'alert' : 'status';
 		var live = safeLevel === 'error' ? 'assertive' : 'polite';
 		container.innerHTML = '<div class="mp-cc-notice mp-cc-notice--' + safeLevel + '" role="' + role + '" aria-live="' + live + '" aria-atomic="true">' + safeMessage + '</div>';
+	}
+
+	/**
+	 * Снимает любое уведомление из `#mp-cc-notifications`.
+	 * Используется при успешных переходах между шагами и после исправления валидационных ошибок,
+	 * чтобы старая красная плашка (например «Выберите пункт выдачи (ПВЗ)…») не висела на следующих экранах.
+	 *
+	 * @param {string} [level] — если указан ('error'|'success'|'info'),
+	 *                          очищать только уведомления этого уровня.
+	 */
+	function clearNotifications(level) {
+		var container = document.querySelector(selectors.notifications);
+		if (!container) {
+			return;
+		}
+		if (!level) {
+			container.innerHTML = '';
+			return;
+		}
+		var sel = '.mp-cc-notice--' + (level === 'error' ? 'error' : (level === 'success' ? 'success' : 'info'));
+		var existing = container.querySelector(sel);
+		if (existing) {
+			container.innerHTML = '';
+		}
 	}
 
 	function focusStepHeading($app) {
@@ -8064,8 +9014,93 @@
 				if (savedOffice) {
 					setStepInvalidState(state, 'address_delivery', false);
 					setV2StepInvalidState(state, 'delivery_screen', false);
+					if (state.frontendStore.form && state.frontendStore.form.errors && state.frontendStore.form.errors.cdek_office_code) {
+						state.frontendStore.form.errors.cdek_office_code = '';
+					}
+					// Юзер исправил «pvz_required» — старое красное уведомление больше не актуально.
+					clearNotifications('error');
 				}
 				try { render(state, $app); } catch (_renderErr) {}
+				if (c !== '' && hasDetailsPayload) {
+					try {
+						var addrPatch = buildAddressPatchFromCdekOffice(normalizedDetails);
+						var contactSrc = state.frontendStore && state.frontendStore.form && state.frontendStore.form.contact
+							? state.frontendStore.form.contact
+							: {};
+						var contactNext = $.extend({}, contactSrc);
+						var pk;
+						for (pk in addrPatch) {
+							if (!Object.prototype.hasOwnProperty.call(addrPatch, pk)) {
+								continue;
+							}
+							contactNext[pk] = addrPatch[pk];
+							var $inp = $app.find('[data-contact-field="' + pk + '"]');
+							if ($inp.length) {
+								$inp.val(addrPatch[pk]);
+							}
+						}
+						state.frontendStore.form = state.frontendStore.form || {};
+						state.frontendStore.form.contact = contactNext;
+						if (state.frontendStore.form.errors && typeof state.frontendStore.form.errors === 'object') {
+							var errs = state.frontendStore.form.errors.contact && typeof state.frontendStore.form.errors.contact === 'object'
+								? $.extend({}, state.frontendStore.form.errors.contact)
+								: null;
+							if (errs) {
+								var ek;
+								for (ek in addrPatch) {
+									if (Object.prototype.hasOwnProperty.call(addrPatch, ek) && Object.prototype.hasOwnProperty.call(errs, ek)) {
+										delete errs[ek];
+									}
+								}
+								state.frontendStore.form.errors.contact = errs;
+							}
+						}
+						try { render(state, $app); } catch (_pvzRenderErr) {}
+						// setTimeout(0): дождаться `.always()` обёртки cdek_set_office (там снимается
+						// shippingMutationInFlight и отрабатывает flushPendingShippingMutation), а уже
+						// потом форсированно подтянуть свежий cart.summary с пересчитанной ценой ПВЗ
+						// под новый город (saveCurrentStepDraft уже зашит preflight'ом внутри
+						// syncStoreWithBackend для шага `address_delivery`).
+						window.setTimeout(function () {
+							// 1) Если flushPendingShippingMutation в .always() уже отыграл клик
+							//    пользователя по тарифу/методу, который он сделал во время выбора
+							//    ПВЗ — сейчас в полёте отдельная мутация (shippingMutationInFlight=true).
+							//    Она сама сделает финальный syncStoreWithBackend({force:true}) с
+							//    актуальным тарифом, поэтому второй sync здесь не нужен — и более
+							//    того ВРЕДЕН: его saveCurrentStepDraft-preflight отправит stale-snapshot
+							//    fulfillment.date (со старым тарифом), а PHP session-lock сериализует
+							//    его *после* свежего session_set_answers тарифа → последний writer
+							//    перетрёт только что выбранный пользователем тариф. Это и есть
+							//    исходный «пиздец в ценах» после смены Express ↔ Standard сразу
+							//    после выбора ПВЗ на карте.
+							if (shippingMutationInFlight) {
+								return;
+							}
+							// 2) Захватываем флаг сами: тогда клик по тарифу/методу прямо во время
+							//    нашего sync встаёт в pendingShippingTariffChoice (см. applyShipping
+							//    TariffUserChoice → if (shippingMutationInFlight) { … return; }) и
+							//    безопасно отыгрывается из flushPendingShippingMutation в .always
+							//    ниже — уже с актуальным state, без гонки snapshot'ов в PHP.
+							shippingMutationInFlight = true;
+							setShippingRatesLoadingOverlay(true, $app);
+							syncStoreWithBackend(state, $app, { force: true })
+								.fail(function () {
+									notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
+								})
+								.always(function () {
+									shippingMutationInFlight = false;
+									setShippingRatesLoadingOverlay(false, $app);
+									flashShippingAmountInSummary();
+									flushPendingShippingMutation(state, $app, '');
+								});
+						}, 0);
+					} catch (_pvzPatchErr) {
+						// Авто-заполнение адреса — best-effort: ошибки не превращаем в «Не удалось сохранить ПВЗ».
+						if (window.console && typeof window.console.warn === 'function') {
+							window.console.warn('[mp-cc] pvz address autofill warning:', _pvzPatchErr && _pvzPatchErr.message ? _pvzPatchErr.message : _pvzPatchErr);
+						}
+					}
+				}
 				return response;
 			}).fail(function () {
 				notify(getStepOneLabel(state, 'address_form.pvz_save_failed', '', 'Не удалось сохранить пункт ПВЗ. Попробуйте ещё раз.'), 'error');
@@ -8303,9 +9338,7 @@
 
 	/**
 	 * Включает/выключает оверлей «идёт пересчёт ставок» на блоке оформления.
-	 * Используется при автоматических пересчётах после смены метода/тарифа доставки —
-	 * визуально совпадает с поведением кнопки «Рассчитать доставку», чтобы пользователь
-	 * понимал, что данные подгружаются (особенно когда обновляются цены вариантов).
+	 * Используется при автоматических пересчётах после смены метода/тарифа доставки или адреса.
 	 */
 	function setShippingRatesLoadingOverlay(on, $app) {
 		var $checkoutRoot = $(selectors.root);
@@ -8383,15 +9416,6 @@
 				state.frontendStore.form.errors.cdek_office_code = '';
 			}
 		}
-		// Гейт «Рассчитать доставку» работает только для post_russia. При уходе с post_russia
-		// флаг становится неактуален; при свежем выборе post_russia требуем подтверждения заново.
-		if (state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object') {
-			if (methodId !== 'post_russia') {
-				delete state.frontendStore.fulfillment.date.post_russia_recalc_confirmed;
-			} else if (prevMethodIdForPvz !== 'post_russia') {
-				state.frontendStore.fulfillment.date.post_russia_recalc_confirmed = false;
-			}
-		}
 		var selectedMethod = null;
 		for (var mi = 0; mi < methods.length; mi += 1) {
 			if (String(methods[mi].id || '') === methodId) {
@@ -8441,7 +9465,7 @@
 				return postCheckout('session_set_answers', {
 					step_id: 'address_delivery',
 					context_id: state.flowContextId,
-					answers: state.frontendStore.fulfillment.date || {}
+					answers: buildShippingAnswersFromState(state)
 				});
 			}).then(function () {
 				// Подтягиваем актуальные WC rates / cart totals после пересчёта на бэке —
@@ -8450,8 +9474,11 @@
 				if (state && state.currentStepId === 'address_delivery') {
 					return syncStoreWithBackend(state, $app, { force: true });
 				}
-			}).fail(function () {
-				notify('Не удалось сохранить шаг доставки.', 'error');
+			}).fail(function (xhr) {
+				var msg = resolveShippingFailMessage(xhr, 'Не удалось сохранить шаг доставки.');
+				if (msg) {
+					notify(msg, 'error');
+				}
 				// При ошибке восстанавливаем состояние из бэкенда, чтобы UI не остался рассинхронизированным.
 				syncStoreWithBackend(state, $app, { force: true });
 			}).always(function () {
@@ -8462,8 +9489,11 @@
 			});
 		} else {
 			// Метод требует выбора тарифа — ждём клика по тарифу, ничего больше не отправляем.
-			scenarioRequest.fail(function () {
-				notify('Не удалось сохранить способ доставки.', 'error');
+			scenarioRequest.fail(function (xhr) {
+				var msg = resolveShippingFailMessage(xhr, 'Не удалось сохранить способ доставки.');
+				if (msg) {
+					notify(msg, 'error');
+				}
 				syncStoreWithBackend(state, $app, { force: true });
 			}).always(function () {
 				release();
@@ -8498,7 +9528,7 @@
 		postCheckout('session_set_answers', {
 			step_id: 'address_delivery',
 			context_id: state.flowContextId,
-			answers: state.frontendStore.fulfillment.date || {}
+			answers: buildShippingAnswersFromState(state)
 		}).then(function () {
 			// Подтянуть актуальные WC rates / cart totals после пересчёта на бэке.
 			// Без этого фронт остаётся с ценами из bootstrap'а (для прошлого города), и при смене
@@ -8507,8 +9537,11 @@
 			if (state && state.currentStepId === 'address_delivery') {
 				return syncStoreWithBackend(state, $app, { force: true });
 			}
-		}).fail(function () {
-			notify('Не удалось сохранить тариф доставки.', 'error');
+		}).fail(function (xhr) {
+			var msg = resolveShippingFailMessage(xhr, 'Не удалось сохранить тариф доставки.');
+			if (msg) {
+				notify(msg, 'error');
+			}
 			syncStoreWithBackend(state, $app, { force: true });
 		}).always(function () {
 			shippingMutationInFlight = false;
@@ -8584,11 +9617,6 @@
 			// Явная пустая строка, не delete: на бэке `set_step_answers` делает array_replace,
 			// и при отсутствии ключа в payload остался бы старый код от прошлого города.
 			state.frontendStore.fulfillment.date.cdek_office_code = '';
-			// Смена города/региона инвалидирует подтверждение «Рассчитать доставку» для post_russia —
-			// тариф почты завязан на регион, поэтому требуем повторного подтверждения.
-			if (String(state.frontendStore.fulfillment.date.shipping_method_id || '') === 'post_russia') {
-				state.frontendStore.fulfillment.date.post_russia_recalc_confirmed = false;
-			}
 			var summaryDd = state.frontendStore.cart && state.frontendStore.cart.summary && typeof state.frontendStore.cart.summary === 'object'
 				? state.frontendStore.cart.summary
 				: {};
@@ -8781,6 +9809,14 @@
 				if (data.flow || data.cart) {
 					syncFromFlow(state, data.flow || {}, data.cart || {});
 				}
+				ensureDiscountDefaults(state);
+				var discountsAfter = state.frontendStore.discounts || {};
+				var rtAfter = discountsAfter.coupon_runtime || { code: '', state: 'empty', message: '' };
+				rtAfter.state = 'success';
+				rtAfter.code = '';
+				rtAfter.message = trimNonEmpty(data.message) || getUiText('step_4.coupon_remove_success', 'Промокод успешно отменён.');
+				discountsAfter.coupon_runtime = rtAfter;
+				state.frontendStore.discounts = discountsAfter;
 				render(state, $app);
 			}).fail(function (xhr) {
 				var payload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
@@ -8877,74 +9913,6 @@
 			moveForward(state, $app);
 		});
 
-		$(selectors.summary).find('[data-mp-cc-recalc-shipping="1"]').off('click').on('click', function () {
-			var $btn = $(this);
-			if ($btn.prop('disabled')) {
-				return;
-			}
-			if (draftSaveTimer) {
-				window.clearTimeout(draftSaveTimer);
-				draftSaveTimer = null;
-			}
-			cancelAddressRatesBackendSync();
-			shippingRecalcPending = true;
-			var idleLabel = String($btn.text() || '');
-			$btn.attr('data-loading-label', idleLabel);
-			$btn.text(getUiText('order_review.recalc_shipping_loading', 'Рассчитываем...'));
-			$btn.prop('disabled', true).attr('aria-busy', 'true').addClass('is-loading');
-			var $checkoutRoot = $(selectors.root);
-			if ($checkoutRoot.length) {
-				$checkoutRoot.addClass('is-shipping-recalc-loading');
-			}
-			if ($app && $app.length) {
-				$app.addClass('is-shipping-recalc-loading');
-			}
-			var runSave = function () {
-				flushContactFormFromDom(state, $app);
-				// Подтверждаем «Рассчитать доставку» для post_russia: после reload session_get_state
-				// восстановит этот флаг, и moveForward не будет блокировать переход на следующий шаг.
-				state.frontendStore = state.frontendStore || {};
-				state.frontendStore.fulfillment = state.frontendStore.fulfillment || {};
-				state.frontendStore.fulfillment.date = state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
-					? state.frontendStore.fulfillment.date
-					: {};
-				if (String(state.frontendStore.fulfillment.date.shipping_method_id || '') === 'post_russia') {
-					state.frontendStore.fulfillment.date.post_russia_recalc_confirmed = true;
-				}
-				saveCurrentStepDraft(state).then(function () {
-					shippingRecalcPending = false;
-					window.location.reload();
-				}).fail(function (xhr) {
-					shippingRecalcPending = false;
-					if ($checkoutRoot.length) {
-						$checkoutRoot.removeClass('is-shipping-recalc-loading');
-					}
-					if ($app && $app.length) {
-						$app.removeClass('is-shipping-recalc-loading');
-					}
-					render(state, $app);
-					var payload422 = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};
-					var serverMsg = trimNonEmpty(payload422.message) ? String(payload422.message) : '';
-					var fallback = getUiText('order_review.recalc_shipping_failed', 'Не удалось сохранить адрес. Проверьте поля и попробуйте снова.');
-					var netHint = '';
-					var st = xhr && typeof xhr.status === 'number' ? xhr.status : 0;
-					if (st === 0) {
-						netHint = ' ' + getUiText('order_review.recalc_shipping_network', 'Проверьте соединение или отключите VPN и попробуйте снова.');
-					} else if (st === 504 || st === 524) {
-						netHint = ' ' + getUiText('order_review.recalc_shipping_gateway_timeout', 'Сервер долго отвечал (таймаут). Подождите минуту и повторите.');
-					}
-					notify(serverMsg || (fallback + netHint), 'error');
-				});
-			};
-			if (typeof window.requestAnimationFrame === 'function') {
-				window.requestAnimationFrame(function () {
-					window.requestAnimationFrame(runSave);
-				});
-			} else {
-				window.setTimeout(runSave, 0);
-			}
-		});
-
 		$progress.find('.mp-cc-progress__btn').off('click').on('click', function () {
 			if (isV2CheckoutUiEnabled(state)) {
 				var v2Index = Number($(this).attr('data-step-index'));
@@ -8994,7 +9962,11 @@
 			}
 		});
 
-		$app.find('[data-cart-qty-btn]').off('click').on('click', function () {
+		// Cart-style controls: ищем не только в $app, но и в parcel-header (он лежит вне $app),
+		// чтобы +/-/× работали и в верхнем «Оформление заказа», и в legacy cart-list.
+		var $parcelRoot = $(selectors.parcel);
+		var $cartScopes = $app.add($parcelRoot);
+		$cartScopes.find('[data-cart-qty-btn]').off('click').on('click', function () {
 			var $btn = $(this);
 			var $item = $btn.closest('[data-cart-item-key]');
 			if (!$item.length) {
@@ -9009,7 +9981,7 @@
 			applyQuantityChange(state, $app, $item, current + delta);
 		});
 
-		$app.find('[data-cart-qty-input]').off('change blur').on('change blur', function () {
+		$cartScopes.find('[data-cart-qty-input]').off('change blur').on('change blur', function () {
 			var $input = $(this);
 			var $item = $input.closest('[data-cart-item-key]');
 			if (!$item.length) {
@@ -9017,7 +9989,7 @@
 			}
 			applyQuantityChange(state, $app, $item, Number($input.val() || 0));
 		});
-		$app.find('[data-cart-qty-input]').off('input').on('input', function () {
+		$cartScopes.find('[data-cart-qty-input]').off('input').on('input', function () {
 			var $input = $(this);
 			var $item = $input.closest('[data-cart-item-key]');
 			var itemKey = String($item.data('cart-item-key') || '');
@@ -9030,7 +10002,7 @@
 			}, 220);
 		});
 
-		$app.find('[data-cart-remove]').off('click').on('click', function () {
+		$cartScopes.find('[data-cart-remove]').off('click').on('click', function () {
 			var $btn = $(this);
 			var $item = $btn.closest('[data-cart-item-key]');
 			if (!$item.length) {
@@ -9141,10 +10113,6 @@
 				// Явная пустая строка (см. afterDadataContactGeocode) — иначе array_replace
 				// в session_set_answers оставит старый код от прошлого города.
 				state.frontendStore.fulfillment.date.cdek_office_code = '';
-				// Смена города инвалидирует подтверждение «Рассчитать доставку» для post_russia.
-				if (String(state.frontendStore.fulfillment.date.shipping_method_id || '') === 'post_russia') {
-					state.frontendStore.fulfillment.date.post_russia_recalc_confirmed = false;
-				}
 				invalidateV2DownstreamFrom(state, 0);
 				var summaryCity = state.frontendStore.cart && state.frontendStore.cart.summary && typeof state.frontendStore.cart.summary === 'object'
 					? state.frontendStore.cart.summary
@@ -9199,7 +10167,7 @@
 					shippingMutationInFlight = false;
 					flushPendingShippingMutation(state, $app, '');
 					// На шаге 1 после смены города принудительно пересчитываем ставки и cart, иначе цены
-					// не обновляются до клика «Рассчитать доставку». Для address_delivery нужен force=true.
+					// не обновляются без принудительного sync. Для address_delivery нужен force=true.
 					if (state && state.currentStepId === 'address_delivery') {
 						scheduleAddressForcedRatesSync(state, $app);
 					}
@@ -9479,6 +10447,15 @@
 					$(this).val(val);
 				}
 			}
+			if (key === 'postcode') {
+				// Маска индекса: только цифры, максимум 6. Это страхует от paste «660000 г. Красноярск»,
+				// раскладок с буквами и тач-клавиатур, которые игнорируют inputmode=numeric.
+				var cleaned = String(val == null ? '' : val).replace(/\D+/g, '').slice(0, 6);
+				if (cleaned !== val) {
+					val = cleaned;
+					$(this).val(cleaned);
+				}
+			}
 			contact[key] = val;
 			state.frontendStore.form.contact = contact;
 			if (state.frontendStore.form.errors && state.frontendStore.form.errors.contact) {
@@ -9491,11 +10468,40 @@
 				$app.find('[data-order-notes-counter="1"]').text('Осталось символов: ' + String(remain));
 			}
 			invalidateV2DownstreamFrom(state, 1);
-			scheduleCurrentStepDraftSave(state, function () {
-				notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
-			});
+			if (key === 'postcode' && state.frontendStore && state.frontendStore.form && state.frontendStore.form.errors && state.frontendStore.form.errors.contact) {
+				// При любом ручном изменении индекса сбрасываем «штамп» о недоступной Почте России —
+				// иначе сообщение «индекс невалиден» висит, пока не дождёмся ответа пересчёта.
+				// Реальный новый статус подставит applySessionGetStateResponse после schedulePostcodeShippingRecalc.
+				if (state.frontendStore.form.errors.contact.postcode === 'rpaefw_unavailable') {
+					delete state.frontendStore.form.errors.contact.postcode;
+				}
+			}
+			// Оптимизация: для поля «Индекс» НЕ запускаем общий draft-save через 260мс.
+			// Причина: scheduleCurrentStepDraftSave → session_set_answers, а на бэке этот вызов
+			// триггерит WC->calculate_totals, который для каждого partial-индекса делает HTTP-запрос
+			// в API Почты России через плагин RPAEFW (5–10 секунд). Сразу следом отстреливается ещё
+			// один пересчёт (schedulePostcodeShippingRecalc → syncStoreWithBackend с preflight saveCurrentStepDraft),
+			// который тоже зовёт RPAEFW. PHP-локи сессии сериализуют эти AJAX → пользователь ждёт
+			// 15+ секунд два раза подряд. Пускаем только второй (с уже валидным 6-значным
+			// индексом) и тем самым ускоряем общую проверку вдвое.
+			if (key !== 'postcode') {
+				scheduleCurrentStepDraftSave(state, function () {
+					notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
+				});
+			} else {
+				// Если уже стоит таймер от предыдущего поля — оставляем, он не про индекс.
+				// Но если пользователь только что менял индекс и до этого ничего другого —
+				// явно отменим draft-save, который мог быть запланирован blur/paste-обработчиком.
+				if (draftSaveTimer) {
+					window.clearTimeout(draftSaveTimer);
+					draftSaveTimer = null;
+				}
+			}
 			if (key === 'country' || key === 'state' || key === 'city' || key === 'address_1' || key === 'address_2' || key === 'postcode') {
 				scheduleAddressRatesBackendSync(state, $app);
+			}
+			if (key === 'postcode') {
+				schedulePostcodeShippingRecalc(state, $app);
 			}
 		}).on('blur', function () {
 			var blurKey = String($(this).data('contact-field') || '');
@@ -9504,13 +10510,48 @@
 				cancelAddressRatesBackendSync();
 			}
 			ensureContactDefaults(state);
-			saveCurrentStepDraft(state).fail(function () {
-				notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
-			}).always(function () {
-				if (addrBlur && state.currentStepId !== 'address_delivery') {
-					syncStoreWithBackend(state, $app);
+			if (blurKey === 'postcode') {
+				// Та же оптимизация, что в input-обработчике: НЕ запускаем здесь
+				// saveCurrentStepDraft, иначе на бэке отстрелит лишний RPAEFW-вызов параллельно
+				// с тем, что сделает schedulePostcodeShippingRecalc({immediate:true}). На медленном
+				// API Почты России каждый лишний вызов добавляет ~5–10с к ожиданию.
+				schedulePostcodeShippingRecalc(state, $app, { immediate: true });
+			} else {
+				saveCurrentStepDraft(state).fail(function () {
+					notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
+				}).always(function () {
+					if (addrBlur && state.currentStepId !== 'address_delivery') {
+						syncStoreWithBackend(state, $app);
+					}
+				});
+			}
+		}).on('paste.mpccPostcode', function () {
+			var pasteKey = String($(this).data('contact-field') || '');
+			if (pasteKey !== 'postcode') {
+				return;
+			}
+			// Paste-листенер не получает уже отфильтрованное значение — браузер только что вставил
+			// сырой текст из буфера. Отложим на следующий tick, чтобы input-листенер успел
+			// прогнать его через strip non-digits + clamp(6).
+			var $inp = $(this);
+			window.setTimeout(function () {
+				var raw = String($inp.val() || '');
+				var cleaned = raw.replace(/\D+/g, '').slice(0, 6);
+				if (cleaned !== raw) {
+					$inp.val(cleaned);
+					state.frontendStore.form.contact = state.frontendStore.form.contact || {};
+					state.frontendStore.form.contact.postcode = cleaned;
 				}
-			});
+				schedulePostcodeShippingRecalc(state, $app, { immediate: true });
+			}, 0);
+		}).on('keydown.mpccPostcode', function (ev) {
+			var kd = String($(this).data('contact-field') || '');
+			if (kd !== 'postcode') {
+				return;
+			}
+			if (ev && (ev.key === 'Enter' || ev.keyCode === 13)) {
+				schedulePostcodeShippingRecalc(state, $app, { immediate: true });
+			}
 		});
 
 		$app.find('[data-contact-phone-national]').off('input change blur').on('input change', function () {
@@ -9576,7 +10617,8 @@
 		});
 
 		$app.find('[data-payment-gateway]').off('change').on('change', function () {
-			var gateway = trimNonEmpty($(this).val());
+			var $radioEl = $(this);
+			var gateway = trimNonEmpty($radioEl.val());
 			if (!gateway) {
 				return;
 			}
@@ -9668,7 +10710,23 @@
 			}
 		});
 
-		$app.find('[data-coupon-code]').off('input').on('input', function () {
+		// Discount toggles (Промокод, Подарочная карта) on payment step.
+		$app.off('change.mpCcDiscountToggle', '[data-discount-toggle-input]').on('change.mpCcDiscountToggle', '[data-discount-toggle-input]', function () {
+			var key = String($(this).attr('data-discount-toggle-input') || '');
+			var open = $(this).is(':checked');
+			state.frontendStore = state.frontendStore || {};
+			if (key === 'coupon') {
+				state.frontendStore.__mpCcCouponToggleOpen = open;
+			} else if (key === 'gift_card') {
+				state.frontendStore.__mpCcGiftCardToggleOpen = open;
+			}
+			var $row = $(this).closest('[data-discount-toggle]');
+			$row.toggleClass('is-open', open);
+			$row.find('[data-discount-toggle-body]').first().prop('hidden', !open);
+		});
+
+		var $couponScopes = $app.add($(selectors.summary));
+		$couponScopes.find('[data-coupon-code]').off('input').on('input', function () {
 			ensureDiscountDefaults(state);
 			var discounts = state.frontendStore.discounts || {};
 			var rt = discounts.coupon_runtime || { code: '', state: 'empty', message: '' };
@@ -9681,7 +10739,14 @@
 			state.frontendStore.discounts = discounts;
 		});
 
-		$app.find('[data-coupon-apply]').off('click').on('click', function () {
+		$couponScopes.find('[data-coupon-code]').off('keydown.mpCcCouponEnter').on('keydown.mpCcCouponEnter', function (ev) {
+			if (ev.key === 'Enter') {
+				ev.preventDefault();
+				$(this).closest('[data-coupon-block]').find('[data-coupon-apply]').first().trigger('click');
+			}
+		});
+
+		$couponScopes.find('[data-coupon-apply]').off('click').on('click', function () {
 			ensureDiscountDefaults(state);
 			var discounts = state.frontendStore.discounts || {};
 			var rt = discounts.coupon_runtime || { code: '', state: 'empty', message: '' };
@@ -9937,6 +11002,37 @@
 		});
 	}
 
+	/**
+	 * Корзина опустела после удаления последнего товара: показываем снэкбар, блокируем
+	 * дальнейшее взаимодействие и через короткую паузу уводим юзера на каталог/главную
+	 * (URL приходит с сервера в `cart.summary.catalog_url` через CheckoutReturnPaths).
+	 * Делаем idempotent: повторные триггеры (например, два параллельных remove_item
+	 * вернувшихся с is_empty=true) не дёргают setTimeout повторно.
+	 */
+	function redirectToCatalogOnEmptyCart(state) {
+		if (!state || state.__emptyCartRedirectScheduled) {
+			return;
+		}
+		state.__emptyCartRedirectScheduled = true;
+		var summary = state.frontendStore && state.frontendStore.cart ? (state.frontendStore.cart.summary || {}) : {};
+		var catalogUrl = trimNonEmpty(summary.catalog_url) || '/';
+		var message = getUiText('step_1.empty_cart_redirect', 'Корзина пуста — оформлять нечего. Возвращаемся в магазин…');
+		notify(message, 'info');
+		setRuntimeFlag(state, 'blocked', true);
+		// Небольшая задержка, чтобы юзер успел прочитать снэкбар; в этот момент UI
+		// уже отрендерен в empty-state. Скип, если в e2e/SSR-окружении нет window.
+		if (typeof window === 'undefined' || typeof window.location === 'undefined') {
+			return;
+		}
+		window.setTimeout(function () {
+			try {
+				window.location.assign(catalogUrl);
+			} catch (e) {
+				window.location.href = catalogUrl;
+			}
+		}, 2200);
+	}
+
 	function applyRemoveItem(state, $app, $item) {
 		var itemKey = String($item.data('cart-item-key') || '');
 		if (!itemKey || state.isTransitioning) {
@@ -9975,7 +11071,7 @@
 			syncFromFlow(state, nextFlow, nextCart);
 			render(state, $app);
 			if (payload.is_empty) {
-				notify(getUiText('step_1.empty_cart', 'Cart is empty'), 'info');
+				redirectToCatalogOnEmptyCart(state);
 			}
 		}).fail(function (xhr) {
 			var errorPayload = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : {};

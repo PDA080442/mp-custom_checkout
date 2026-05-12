@@ -71,7 +71,63 @@ final class AdminMenuHooks {
 		$merged  = array_replace_recursive( $stored, $incoming );
 		$sanitized = self::sanitize_by_shape( $merged, $defaults, '' );
 		$sanitized = self::normalize_delivery_settings( $sanitized );
-		return self::normalize_motion_settings( $sanitized );
+		$sanitized = self::normalize_motion_settings( $sanitized );
+		return self::normalize_payment_gateway_titles( $sanitized, $merged );
+	}
+
+	/**
+	 * Сохраняет переопределения названий платёжных шлюзов: ключи неизвестные на момент дефолтов
+	 * (`gateway_id => string`) sanitize_by_shape отбрасывает (default = `array()`), поэтому
+	 * после нормализации возвращаем их обратно из исходного post-данного дерева.
+	 *
+	 * @param array<string, mixed> $settings Результат sanitize_by_shape.
+	 * @param array<string, mixed> $merged   Сырой merged-tree до sanitize.
+	 * @return array<string, mixed>
+	 */
+	private static function normalize_payment_gateway_titles( array $settings, array $merged ): array {
+		$titles_node = self::dig_path( $merged, array( OptionKeys::SECTION_STEP_4, 'payment_block', 'gateway_titles' ) );
+		$titles_out = array();
+		if ( is_array( $titles_node ) ) {
+			foreach ( $titles_node as $gid => $title ) {
+				$gid_clean = sanitize_key( (string) $gid );
+				if ( '' === $gid_clean ) {
+					continue;
+				}
+				$title_clean = trim( wp_strip_all_tags( (string) $title ) );
+				if ( '' === $title_clean ) {
+					continue;
+				}
+				$titles_out[ $gid_clean ] = $title_clean;
+			}
+		}
+		if ( ! isset( $settings[ OptionKeys::SECTION_STEP_4 ] ) || ! is_array( $settings[ OptionKeys::SECTION_STEP_4 ] ) ) {
+			$settings[ OptionKeys::SECTION_STEP_4 ] = array();
+		}
+		if ( ! isset( $settings[ OptionKeys::SECTION_STEP_4 ]['payment_block'] ) || ! is_array( $settings[ OptionKeys::SECTION_STEP_4 ]['payment_block'] ) ) {
+			$settings[ OptionKeys::SECTION_STEP_4 ]['payment_block'] = array();
+		}
+		$settings[ OptionKeys::SECTION_STEP_4 ]['payment_block']['gateway_titles'] = $titles_out;
+		// Иконки способов оплаты зашиты в плагин (PNG), из админки не настраиваются.
+		$settings[ OptionKeys::SECTION_STEP_4 ]['payment_block']['gateway_icons'] = array();
+		return $settings;
+	}
+
+	/**
+	 * Безопасно достаёт значение из вложенного дерева.
+	 *
+	 * @param array<string, mixed> $tree
+	 * @param array<int, string>   $path
+	 * @return mixed
+	 */
+	private static function dig_path( array $tree, array $path ) {
+		$node = $tree;
+		foreach ( $path as $segment ) {
+			if ( ! is_array( $node ) || ! isset( $node[ $segment ] ) ) {
+				return null;
+			}
+			$node = $node[ $segment ];
+		}
+		return $node;
 	}
 
 	/**
@@ -625,6 +681,17 @@ final class AdminMenuHooks {
 		// На вкладке шага 4 скрываем эти блоки, чтобы не дублировать.
 		if ( OptionKeys::SECTION_STEP_4 === $tab_id ) {
 			unset( $section_value['contact_block'], $section_value['address_block'], $section_value['address_geo'] );
+			// gateway_titles рендерятся отдельным блоком (см. render_step_4_payment_gateway_titles_group).
+			if ( isset( $section_value['payment_block'] ) && is_array( $section_value['payment_block'] ) ) {
+				unset( $section_value['payment_block']['gateway_titles'], $section_value['payment_block']['gateway_icons'] );
+				unset( $section_value['payment_block']['card_row'] );
+				if ( isset( $section_value['payment_block']['discount_toggles'] ) && is_array( $section_value['payment_block']['discount_toggles'] ) ) {
+					unset(
+						$section_value['payment_block']['discount_toggles']['coupon_icon_url'],
+						$section_value['payment_block']['discount_toggles']['gift_card_icon_url']
+					);
+				}
+			}
 		}
 		$title = isset( AdminSectionsRegistry::sections()[ $tab_id ]['label'] ) ? (string) AdminSectionsRegistry::sections()[ $tab_id ]['label'] : $tab_id;
 		$description = isset( $tabs[ $tab_id ]['description'] ) ? (string) $tabs[ $tab_id ]['description'] : '';
@@ -765,6 +832,12 @@ final class AdminMenuHooks {
 	 * @param array<string, mixed> $settings
 	 */
 	private static function render_supplemental_groups_for_tab( string $tab_id, array $settings ): void {
+		if ( OptionKeys::SECTION_STEP_1 === $tab_id ) {
+			self::render_step_1_parcel_count_labels_group( $settings );
+		}
+		if ( OptionKeys::SECTION_STEP_4 === $tab_id || OptionKeys::SECTION_PAYMENT === $tab_id ) {
+			self::render_step_4_payment_gateway_titles_group( $settings );
+		}
 		if ( OptionKeys::SECTION_SERVICE === $tab_id ) {
 			self::render_config_io_block();
 			self::render_supplemental_group(
@@ -1038,6 +1111,160 @@ final class AdminMenuHooks {
 	}
 
 	/**
+	 * Блок «Подпись количества посылок» на вкладке Шага 1.
+	 * Хранится в виртуальной секции `labels.step_1.parcel_count_*`.
+	 *
+	 * @param array<string, mixed> $settings
+	 */
+	private static function render_step_1_parcel_count_labels_group( array $settings ): void {
+		$labels_section = isset( $settings[ OptionKeys::KEY_LABELS ] ) && is_array( $settings[ OptionKeys::KEY_LABELS ] )
+			? $settings[ OptionKeys::KEY_LABELS ]
+			: array();
+		$step_labels = isset( $labels_section['step_1'] ) && is_array( $labels_section['step_1'] )
+			? $labels_section['step_1']
+			: array();
+		$defaults_tree    = SafeSettingsResolver::get_defaults_tree();
+		$labels_defaults  = isset( $defaults_tree[ OptionKeys::KEY_LABELS ]['step_1'] ) && is_array( $defaults_tree[ OptionKeys::KEY_LABELS ]['step_1'] )
+			? $defaults_tree[ OptionKeys::KEY_LABELS ]['step_1']
+			: array();
+
+		$keys = array(
+			'parcel_count_one'   => array(
+				'label' => __( 'Подпись «посылка» (1)', 'mp-custom-checkout' ),
+				'help'  => __( 'Используется при числе посылок, оканчивающемся на 1 (но не на 11). Пример: 1 посылка. Используйте плейсхолдер {n} для подстановки числа.', 'mp-custom-checkout' ),
+			),
+			'parcel_count_few'   => array(
+				'label' => __( 'Подпись «посылки» (2–4)', 'mp-custom-checkout' ),
+				'help'  => __( 'Используется при числе посылок 2–4 (но не 12–14). Пример: 3 посылки. Плейсхолдер {n} обязателен.', 'mp-custom-checkout' ),
+			),
+			'parcel_count_other' => array(
+				'label' => __( 'Подпись «посылок» (0, 5+, 11–14)', 'mp-custom-checkout' ),
+				'help'  => __( 'Используется во всех остальных случаях. Пример: 0 посылок, 5 посылок, 11 посылок. Плейсхолдер {n} обязателен.', 'mp-custom-checkout' ),
+			),
+		);
+
+		echo '<details class="mp-cc-admin-shell__fieldset" open>';
+		echo '<summary><span>' . esc_html__( 'Подпись количества посылок (заголовок страницы)', 'mp-custom-checkout' ) . '</span><em class="mp-cc-admin-shell__type-badge mp-cc-admin-shell__type-badge--content">' . esc_html( self::group_type_label( 'content' ) ) . '</em></summary>';
+		echo '<p class="description">' . esc_html__( 'Подписи под заголовком «Оформление заказа» с количеством посылок. Поддерживается русское склонение.', 'mp-custom-checkout' ) . '</p>';
+
+		foreach ( $keys as $key => $meta ) {
+			$value = isset( $step_labels[ $key ] ) ? (string) $step_labels[ $key ] : '';
+			if ( '' === $value && isset( $labels_defaults[ $key ] ) ) {
+				$value = (string) $labels_defaults[ $key ];
+			}
+			$name = OptionKeys::MAIN . '[' . OptionKeys::KEY_LABELS . '][step_1][' . $key . ']';
+			echo '<label class="mp-cc-admin-shell__field">';
+			echo '<span class="mp-cc-admin-shell__field-label">' . esc_html( $meta['label'] ) . '</span>';
+			echo '<input type="text" class="regular-text" name="' . esc_attr( $name ) . '" value="' . esc_attr( $value ) . '" />';
+			echo '<span class="description mp-cc-admin-shell__field-tooltip">' . esc_html( $meta['help'] ) . '</span>';
+			echo '</label>';
+		}
+
+		echo '</details>';
+	}
+
+	/**
+	 * Блок «Названия способов оплаты» на вкладке Шага 4.
+	 * Перечисляет все установленные шлюзы WooCommerce и позволяет переопределить заголовок.
+	 * Хранится в `step_4.payment_block.gateway_titles[<gateway_id>]`.
+	 *
+	 * @param array<string, mixed> $settings
+	 */
+	private static function render_step_4_payment_gateway_titles_group( array $settings ): void {
+		$step_four = isset( $settings[ OptionKeys::SECTION_STEP_4 ] ) && is_array( $settings[ OptionKeys::SECTION_STEP_4 ] )
+			? $settings[ OptionKeys::SECTION_STEP_4 ]
+			: array();
+		$payment_block = isset( $step_four['payment_block'] ) && is_array( $step_four['payment_block'] )
+			? $step_four['payment_block']
+			: array();
+		$titles = isset( $payment_block['gateway_titles'] ) && is_array( $payment_block['gateway_titles'] )
+			? $payment_block['gateway_titles']
+			: array();
+
+		echo '<details class="mp-cc-admin-shell__fieldset" open>';
+		echo '<summary><span>' . esc_html__( 'Названия способов оплаты', 'mp-custom-checkout' ) . '</span><em class="mp-cc-admin-shell__type-badge mp-cc-admin-shell__type-badge--content">' . esc_html( self::group_type_label( 'content' ) ) . '</em></summary>';
+		echo '<p class="description">' . esc_html__( 'Переопределите подпись для каждого шлюза (например, «СБП», «Сплит»). Если поле пустое — используется название из настроек WooCommerce. Маленькие иконки в строках оплаты подставляются автоматически из файлов плагина.', 'mp-custom-checkout' ) . '</p>';
+
+		$gateways = array();
+		if ( function_exists( 'WC' ) && WC() && WC()->payment_gateways() instanceof \WC_Payment_Gateways ) {
+			$all = WC()->payment_gateways()->payment_gateways();
+			if ( is_array( $all ) ) {
+				$gateways = $all;
+			}
+		}
+
+		if ( empty( $gateways ) ) {
+			echo '<p>' . esc_html__( 'WooCommerce не вернул ни одного шлюза. Откройте WooCommerce → Платежи и активируйте хотя бы один способ оплаты.', 'mp-custom-checkout' ) . '</p>';
+			echo '</details>';
+			return;
+		}
+
+		$known_ids = array();
+		foreach ( $gateways as $gateway ) {
+			if ( ! $gateway instanceof \WC_Payment_Gateway ) {
+				continue;
+			}
+			$gid = sanitize_key( (string) $gateway->id );
+			if ( '' === $gid ) {
+				continue;
+			}
+			$known_ids[ $gid ] = true;
+
+			$wc_title = wp_strip_all_tags( (string) $gateway->get_title() );
+			$wc_method_title = wp_strip_all_tags( (string) ( method_exists( $gateway, 'get_method_title' ) ? $gateway->get_method_title() : '' ) );
+			$is_enabled = isset( $gateway->enabled ) ? ( 'yes' === $gateway->enabled ) : true;
+			$override = isset( $titles[ $gid ] ) ? (string) $titles[ $gid ] : '';
+
+			$name_title = OptionKeys::MAIN . '[' . OptionKeys::SECTION_STEP_4 . '][payment_block][gateway_titles][' . $gid . ']';
+
+			$badge_html = $is_enabled
+				? '<em class="mp-cc-admin-shell__scenario-badge">' . esc_html__( 'включён', 'mp-custom-checkout' ) . '</em>'
+				: '<em class="mp-cc-admin-shell__scenario-badge is-risky">' . esc_html__( 'отключён', 'mp-custom-checkout' ) . '</em>';
+
+			$current_label = '' !== $override ? $override : $wc_title;
+
+			echo '<label class="mp-cc-admin-shell__field">';
+			echo '<span class="mp-cc-admin-shell__field-label">';
+			echo esc_html( '' !== $wc_method_title ? $wc_method_title : $gid );
+			echo ' <code style="font-weight:normal;opacity:.7">' . esc_html( $gid ) . '</code> ';
+			echo $badge_html; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- безопасный статический HTML.
+			echo '</span>';
+			echo '<input type="text" class="regular-text" name="' . esc_attr( $name_title ) . '" value="' . esc_attr( $override ) . '" placeholder="' . esc_attr( $wc_title ) . '" />';
+			echo '<span class="description mp-cc-admin-shell__field-tooltip">';
+			printf(
+				/* translators: 1: WC gateway title, 2: current label visible to customer. */
+				esc_html__( 'Название из WooCommerce: «%1$s». Сейчас покупатель видит: «%2$s». Очистите поле, чтобы вернуть исходное название WooCommerce.', 'mp-custom-checkout' ),
+				esc_html( '' !== $wc_title ? $wc_title : '—' ),
+				esc_html( '' !== $current_label ? $current_label : '—' )
+			);
+			echo '</span>';
+			echo '</label>';
+		}
+
+		// Если в БД остались переопределения для удалённых/недоступных шлюзов — рендерим их тоже,
+		// чтобы пользователь мог увидеть и сбросить значение, не трогая БД руками.
+		$orphan_keys = array_keys( $titles );
+		foreach ( $orphan_keys as $orphan_id ) {
+			$gid = sanitize_key( (string) $orphan_id );
+			if ( '' === $gid || isset( $known_ids[ $gid ] ) ) {
+				continue;
+			}
+			$orphan_title = isset( $titles[ $orphan_id ] ) ? (string) $titles[ $orphan_id ] : '';
+			$name_title = OptionKeys::MAIN . '[' . OptionKeys::SECTION_STEP_4 . '][payment_block][gateway_titles][' . $gid . ']';
+			echo '<label class="mp-cc-admin-shell__field">';
+			echo '<span class="mp-cc-admin-shell__field-label">';
+			echo esc_html( $gid );
+			echo ' <em class="mp-cc-admin-shell__scenario-badge is-risky">' . esc_html__( 'шлюз не найден в WooCommerce', 'mp-custom-checkout' ) . '</em>';
+			echo '</span>';
+			echo '<input type="text" class="regular-text" name="' . esc_attr( $name_title ) . '" value="' . esc_attr( $orphan_title ) . '" />';
+			echo '<span class="description mp-cc-admin-shell__field-tooltip">' . esc_html__( 'Шлюз больше не установлен в WooCommerce. Очистите поле, чтобы убрать сохранённое переопределение.', 'mp-custom-checkout' ) . '</span>';
+			echo '</label>';
+		}
+
+		echo '</details>';
+	}
+
+	/**
 	 * @param mixed $value
 	 */
 	private static function render_supplemental_group( string $title, string $name_prefix, $value, string $path, string $type ): void {
@@ -1134,6 +1361,18 @@ final class AdminMenuHooks {
 			'general.checkout_layout.max_width'          => __( 'Максимальная ширина страницы checkout', 'mp-custom-checkout' ),
 			'general.checkout_layout.vertical_padding'   => __( 'Вертикальные отступы блока checkout (сверху и снизу)', 'mp-custom-checkout' ),
 			'step_1.address_form_style_preset'          => __( 'Пресет стиля формы адреса', 'mp-custom-checkout' ),
+			'step_1.labels.title'                       => __( 'Шаг 1: заголовок страницы корзины', 'mp-custom-checkout' ),
+			'step_1.labels.summary_title'               => __( 'Заголовок блока «Детали заказа» (боковая колонка)', 'mp-custom-checkout' ),
+			'step_1.labels.subtotal_label'              => __( 'Сводка: подпись «Подытог»', 'mp-custom-checkout' ),
+			'step_1.labels.shipping_label'              => __( 'Сводка: подпись «Доставка»', 'mp-custom-checkout' ),
+			'step_1.labels.discount_label'              => __( 'Сводка: подпись «Скидка»', 'mp-custom-checkout' ),
+			'step_1.labels.gift_card_label'             => __( 'Сводка: подпись «Подарочная карта»', 'mp-custom-checkout' ),
+			'step_1.labels.tax_label'                   => __( 'Сводка: подпись «Налоги»', 'mp-custom-checkout' ),
+			'step_1.labels.total_label'                 => __( 'Сводка: подпись «Итого»', 'mp-custom-checkout' ),
+			'step_1.labels.items_label'                 => __( 'Сводка: подпись «Позиций»', 'mp-custom-checkout' ),
+			'step_1.labels.continue_label'              => __( 'Кнопка «Продолжить оформление»', 'mp-custom-checkout' ),
+			'step_1.labels.return_label'                => __( 'Кнопка «Вернуться в магазин»', 'mp-custom-checkout' ),
+			'step_1.labels.empty_title'                 => __( 'Заголовок при пустой корзине', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.card_bg'        => __( 'Фон карточки', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.card_border'    => __( 'Рамка карточки', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.card_radius'    => __( 'Скругление карточки', 'mp-custom-checkout' ),
@@ -1240,6 +1479,11 @@ final class AdminMenuHooks {
 			'step_4.payment_block.card_styles.gift_peer_seal_icon_color' => __( 'Подарочная карта (печать слева): цвет линий иконки', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.gift_peer_seal_ring_inner' => __( 'Подарочная карта (печать слева): цвет внутреннего кольца', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.gift_peer_seal_ring_outer' => __( 'Подарочная карта (печать слева): цвет внешней обводки', 'mp-custom-checkout' ),
+			'step_4.payment_block.rows_layout' => __( 'Оплата: показывать способы оплаты строчками (вместо плиток)', 'mp-custom-checkout' ),
+			'step_4.payment_block.discount_toggles.coupon_in_step' => __( 'Промокод: показывать тоггл на шаге «Оплата»', 'mp-custom-checkout' ),
+			'step_4.payment_block.discount_toggles.gift_card_in_step' => __( 'Подарочная карта: показывать тоггл на шаге «Оплата»', 'mp-custom-checkout' ),
+			'step_4.payment_block.discount_toggles.coupon_in_summary' => __( 'Промокод: показывать форму ввода в правой сводке', 'mp-custom-checkout' ),
+			'step_4.payment_block.discount_toggles.gift_card_in_summary' => __( 'Подарочная карта: показывать форму ввода в правой сводке', 'mp-custom-checkout' ),
 			'step_4.coupon_block.styles.summary_glow_color' => __( 'Промокод: цвет свечения блока', 'mp-custom-checkout' ),
 			'step_4.coupon_block.styles.summary_bg' => __( 'Промокод: фон блока (градиент/цвет)', 'mp-custom-checkout' ),
 			'step_4.coupon_block.styles.summary_border' => __( 'Промокод: цвет рамки блока', 'mp-custom-checkout' ),
@@ -1281,6 +1525,7 @@ final class AdminMenuHooks {
 			'styles.progress_step_index'                 => __( 'Кружки номеров шагов (вертикальный таймлайн)', 'mp-custom-checkout' ),
 			'step_1.address_form_styles'                 => __( 'Стили формы адреса и доставки (шаг 1)', 'mp-custom-checkout' ),
 			'step_1.step_panel_screen_styles'            => __( 'Рамка экрана шага (.mp-cc-step-panel.mp-cc-step-screen)', 'mp-custom-checkout' ),
+			'step_1.labels'                              => __( 'Тексты сводки заказа и кнопок (шаг 1)', 'mp-custom-checkout' ),
 			'step_4.contact_block'                       => __( 'Контактные данные (шаг 4)', 'mp-custom-checkout' ),
 			'step_4.contact_block.layout'                => __( 'Сетка полей контактов', 'mp-custom-checkout' ),
 			'step_4.contact_block.field_state_styles'    => __( 'Стили состояний полей контактов', 'mp-custom-checkout' ),
@@ -1297,6 +1542,7 @@ final class AdminMenuHooks {
 			'step_4.recipient_styles'                    => __( 'Стили шага 2: Получатель', 'mp-custom-checkout' ),
 			'step_4.recipient_step_panel_styles'         => __( 'Рамка и тень панели шага «Получатель» (data-step-panel=recipient)', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles'           => __( 'Стили карточек оплаты', 'mp-custom-checkout' ),
+			'step_4.payment_block.discount_toggles'      => __( 'Промокод и подарочная карта на шаге оплаты', 'mp-custom-checkout' ),
 		);
 		if ( isset( $map[ $path ] ) ) {
 			return (string) $map[ $path ];
@@ -1479,7 +1725,10 @@ final class AdminMenuHooks {
 			return __( 'Адрес пункта самовывоза одной строкой. Отображается в карточке метода «Самовывоз».', 'mp-custom-checkout' );
 		}
 		if ( false !== strpos( $p, 'step_1.labels.address_form' ) ) {
-			return __( 'Тексты полей формы «Адрес и доставка» на checkout (шаг 1): подписи строк, placeholder города, кнопка «другой», подпись к тарифам, строка адреса офиса.', 'mp-custom-checkout' );
+			return __( 'Тексты полей формы «Адрес и доставка» на checkout (шаг 1): подписи строк, placeholder города, кнопка «другой», подпись к тарифам.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'step_1.labels.summary_title' ) ) {
+			return __( 'Заголовок верхней карточки в правой/нижней колонке checkout — над списком товаров и итогом. По умолчанию «Детали заказа».', 'mp-custom-checkout' );
 		}
 		if ( false !== strpos( $p, 'phone_country_codes' ) ) {
 			return __( 'Список стран для выбора кода телефона на шаге «Получатель»: dial, ISO, national_digits (сколько цифр без кода страны), label (подпись в списке, обычно код ISO: RU, KZ, …). Флаги на сайте — эмодзи по ISO.', 'mp-custom-checkout' );

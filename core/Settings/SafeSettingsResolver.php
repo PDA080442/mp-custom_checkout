@@ -79,7 +79,7 @@ final class SafeSettingsResolver {
 				$tree[ $section_key ] = array(
 					'labels' => array(
 						'title'          => 'Корзина',
-						'summary_title'  => 'Сводка заказа',
+						'summary_title'  => 'Детали заказа',
 						'subtotal_label' => 'Подытог',
 						'shipping_label' => 'Доставка',
 						'discount_label' => 'Скидка',
@@ -97,8 +97,6 @@ final class SafeSettingsResolver {
 							'change_button'    => 'другой',
 							'method_row'       => 'способ доставки',
 							'tariff_intro'     => 'Выбрать вариант:',
-							'office_row'       => 'адрес офиса',
-							'office_not_set'   => 'Не выбран',
 						),
 					),
 					'product_meta_visibility' => array(
@@ -342,20 +340,22 @@ final class SafeSettingsResolver {
 							'female'      => 'Женщина',
 						),
 						'validation_messages' => array(
-							'required'           => 'Заполните это поле.',
-							'email_invalid'      => 'Введите корректный email.',
-							'phone_required'     => 'Укажите номер телефона.',
-							'phone_format'       => 'Введите номер полностью.',
-							'birthdate_required' => 'Укажите дату рождения.',
-							'birthdate_invalid'  => 'Введите корректную дату рождения.',
-							'birthdate_range'    => 'Допустимый возраст: от 0 до 120 лет.',
-							'order_notes_length' => 'Превышена максимальная длина примечания.',
-							'address_required'   => 'Заполните это поле.',
-							'address_region'     => 'Выберите корректный регион.',
-							'address_city'       => 'Выберите населённый пункт из списка.',
-							'address_postcode'   => 'Слишком длинный индекс.',
-							'step_blocked'       => 'Заполните обязательные поля текущего шага.',
-							'conditions_required'=> 'Подтвердите ознакомление с условиями, чтобы продолжить.',
+							'required'                     => 'Заполните это поле.',
+							'email_invalid'                => 'Введите корректный email.',
+							'phone_required'               => 'Укажите номер телефона.',
+							'phone_format'                 => 'Введите номер полностью.',
+							'birthdate_required'           => 'Укажите дату рождения.',
+							'birthdate_invalid'            => 'Введите корректную дату рождения.',
+							'birthdate_range'              => 'Допустимый возраст: от 0 до 120 лет.',
+							'order_notes_length'           => 'Превышена максимальная длина примечания.',
+							'address_required'             => 'Заполните это поле.',
+							'address_region'               => 'Выберите корректный регион.',
+							'address_city'                 => 'Выберите населённый пункт из списка.',
+							'address_postcode'             => 'Слишком длинный индекс.',
+							'address_postcode_format'      => 'Введите 6 цифр почтового индекса.',
+							'address_postcode_unavailable' => 'Доставка Почтой России по этому индексу недоступна. Проверьте индекс или выберите другой способ доставки.',
+							'step_blocked'                 => 'Заполните обязательные поля текущего шага.',
+							'conditions_required'          => 'Подтвердите ознакомление с условиями, чтобы продолжить.',
 						),
 						'validation_constraints' => array(
 							'birthdate_min_age'    => 0,
@@ -531,6 +531,15 @@ final class SafeSettingsResolver {
 						'title' => 'Способ оплаты',
 						'intro' => 'Выберите удобный способ оплаты.',
 						'gateway_order' => array(),
+						'gateway_titles' => array(),
+						'gateway_icons' => array(),
+						'rows_layout' => true,
+						'discount_toggles' => array(
+							'coupon_in_step'      => true,
+							'gift_card_in_step'   => true,
+							'coupon_in_summary'   => false,
+							'gift_card_in_summary'=> false,
+						),
 						'card_surface' => 'visual',
 						'auto_classic_on_empty_gateway_fields' => true,
 						'decorative_card_fields' => true,
@@ -1002,6 +1011,23 @@ final class SafeSettingsResolver {
 	}
 
 	/**
+	 * Удаляет устаревшие ключи `payment_block` (виртуальная строка «карта» больше не используется).
+	 *
+	 * @param array<string, mixed> $merged
+	 * @return array<string, mixed>
+	 */
+	private static function normalize_merged_step4_payment_block( array $merged ): array {
+		if ( ! isset( $merged[ OptionKeys::SECTION_STEP_4 ] ) || ! is_array( $merged[ OptionKeys::SECTION_STEP_4 ] ) ) {
+			return $merged;
+		}
+		$s4 = &$merged[ OptionKeys::SECTION_STEP_4 ];
+		if ( isset( $s4['payment_block'] ) && is_array( $s4['payment_block'] ) ) {
+			unset( $s4['payment_block']['card_row'] );
+		}
+		return $merged;
+	}
+
+	/**
 	 * Слияние сохранённых настроек с дефолтами (пользователь перекрывает дефолты).
 	 *
 	 * @return array<string, mixed>
@@ -1019,6 +1045,7 @@ final class SafeSettingsResolver {
 		$defaults       = self::get_defaults_tree();
 		self::$merged_cache = array_replace_recursive( $defaults, $stored );
 		self::$merged_cache = self::normalize_merged_coupon_intro( self::$merged_cache );
+		self::$merged_cache = self::normalize_merged_step4_payment_block( self::$merged_cache );
 
 		return self::$merged_cache;
 	}

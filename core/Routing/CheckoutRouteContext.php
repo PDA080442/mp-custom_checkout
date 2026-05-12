@@ -206,8 +206,78 @@ final class CheckoutRouteContext {
 			$requires_address_for_shipping = filter_var( $delivery_answers['shipping_requires_address'], FILTER_VALIDATE_BOOLEAN );
 		}
 		$shipping_method_chosen = '' !== trim( (string) ( $delivery_answers['shipping_method_id'] ?? '' ) );
+
+		// §29.4 fix: «Цена доставки пропадает после первого AJAX».
+		// Сценарий бага (особо ярко в Yandex.Browser, но логика общая):
+		//   * При первом рендере страницы flow ещё не создан, $current_step_id = '' →
+		//     suppress не срабатывает, и в сводке честно выводится строка «Доставка: 636 ₽»,
+		//     полученная из WC (auto-pick первого rate в пакете).
+		//   * После первого `session_get_state` flow уже инициализирован, $current_step_id =
+		//     'address_delivery', а пользователь физически ещё не кликал по методу, поэтому
+		//     $shipping_method_chosen = false и старый suppress зануляет строку доставки.
+		//   * Параллельно у `WC()->cart->get_shipping_total()` может быть 0 (устаревшие
+		//     cart_totals в сессии WC), даже если в `wc_shipping_rates` снапшоте уже
+		//     есть положительная ставка. Это даёт ситуацию «summary.shipping = '', но
+		//     wc_shipping_rates содержит cost: 636» — ровно то, что прислал пользователь.
+		//
+		// Чтобы строка «Доставка» не «мигала», аккуратно берём первую положительную
+		// ставку из снапшота как fallback. Снимок снят на woocommerce_after_calculate_totals,
+		// он отражает реальные пакеты текущей корзины (для случая, когда повторный
+		// calculate_totals для session_get_state не запускался). Сложный матчинг
+		// MP-метода ↔ WC-rate не делаем: в каталоге обычно несколько MP-методов и
+		// несколько WC-ставок, но при первой загрузке WC сам авто-выбирает «лучшую»
+		// ставку — её цена и есть та сумма, что пользователь видит и ожидает увидеть.
+		//
+		// ВАЖНО: НЕ перезаписываем $cart_shipping_total — он ниже используется для
+		// total_edit-арифметики в ветке `session_shipping_price_value > 0`
+		// (`$total_edit - $cart_shipping_total + $shipping_total`), и подмена сломала
+		// бы итог. Используем отдельный fallback-источник для строки summary.shipping
+		// и для условия «WC реально посчитал доставку».
+		$wc_first_positive_rate_cost = 0.0;
+		$post_russia_rate_failed    = false;
+		if ( $cart->needs_shipping() ) {
+			$wc_rates_for_fallback = self::collect_wc_shipping_rates_snapshot();
+			if ( ! empty( $wc_rates_for_fallback ) && is_array( $wc_rates_for_fallback ) ) {
+				foreach ( $wc_rates_for_fallback as $row ) {
+					if ( ! is_array( $row ) ) {
+						continue;
+					}
+					$method_id_lower = isset( $row['method_id'] ) ? strtolower( (string) $row['method_id'] ) : '';
+					$rate_id_lower   = isset( $row['id'] ) ? strtolower( (string) $row['id'] ) : '';
+					if ( ! empty( $row['is_error'] ) && ( 0 === strpos( $method_id_lower, 'rpaefw' ) || 0 === strpos( $rate_id_lower, 'rpaefw' ) ) ) {
+						$post_russia_rate_failed = true;
+						continue;
+					}
+					$c = isset( $row['cost'] ) ? (float) $row['cost'] : 0.0;
+					if ( $c > 0.0 ) {
+						$wc_first_positive_rate_cost = $c;
+						break;
+					}
+				}
+			}
+		}
+		$chosen_method_id_for_summary = isset( $delivery_answers['shipping_method_id'] )
+			? sanitize_key( (string) $delivery_answers['shipping_method_id'] )
+			: '';
+		// Если пользователь выбрал «Почту России», а RPAEFW отдал ошибку (cost=0 + label
+		// с диагностикой), нельзя подставлять в строку «Доставка» цену чужой ставки (СДЭК и т.п.)
+		// — это вводит в заблуждение. Глушим fallback и заставляем фронт показать заглушку
+		// «Стоимость рассчитается после ввода корректного индекса».
+		if ( $post_russia_rate_failed && 'post_russia' === $chosen_method_id_for_summary ) {
+			$wc_first_positive_rate_cost = 0.0;
+		}
+		$wc_has_positive_shipping = ScenarioStepRegistry::SCENARIO_PICKUP !== $scenario_for_shipping
+			&& ( $cart_shipping_total > 0.0 || $wc_first_positive_rate_cost > 0.0 );
+		// Если у WC в cart_totals доставки 0, но в снапшоте есть положительная ставка —
+		// показываем её в строке (только если фронт ещё не переопределил через каталог).
+		if ( $shipping_total <= 0.0 && $cart_shipping_total <= 0.0
+			&& $wc_first_positive_rate_cost > 0.0
+			&& ScenarioStepRegistry::SCENARIO_PICKUP !== $scenario_for_shipping ) {
+			$shipping_total = $wc_first_positive_rate_cost;
+		}
+
 		// Почта/курьер с адресом: в answers часто shipping_price=0 до синка с фронта, но WC уже пересчитал пакеты — показываем сумму из корзины.
-		$wc_address_shipping_ready = $shipping_method_chosen && $requires_address_for_shipping && $cart_shipping_total > 0.0;
+		$wc_address_shipping_ready = $shipping_method_chosen && $requires_address_for_shipping && $wc_has_positive_shipping;
 		$session_shipping_price_chosen = ( null !== $session_shipping_price_value && $session_shipping_price_value > 0.0 )
 			|| (
 				null !== $session_shipping_price_value
@@ -230,9 +300,10 @@ final class CheckoutRouteContext {
 		if ( $cart->needs_shipping() ) {
 			if ( ScenarioStepRegistry::SCENARIO_PICKUP === $scenario_for_shipping ) {
 				$suppress_shipping_in_summary = true;
-			} elseif ( ! $woocommerce_pricing && '' !== $current_step_id && in_array( $current_step_id, $steps_pre_payment, true ) && ! $session_shipping_price_chosen ) {
-				// Пока покупатель на шаге 1 ещё не выбрал тариф (нет shipping_price в answers.step_one
-				// и WC не посчитал rate по адресу), не подмешиваем «чужую» WC-доставку в строки и итог.
+			} elseif ( ! $woocommerce_pricing && '' !== $current_step_id && in_array( $current_step_id, $steps_pre_payment, true ) && ! $session_shipping_price_chosen && ! $wc_has_positive_shipping ) {
+				// Пока покупатель на шаге 1 ещё не выбрал тариф (нет shipping_price в answers.step_one,
+				// WC не посчитал rate по адресу, и в снапшоте wc_shipping_rates нет положительной
+				// ставки) — не подмешиваем «чужую» WC-доставку в строки и итог.
 				$suppress_shipping_in_summary = true;
 			}
 		}
@@ -258,6 +329,11 @@ final class CheckoutRouteContext {
 		}
 		$total_tax_display = (float) $cart->get_total_tax();
 		$total_edit        = (float) $cart->get_total( 'edit' );
+		// Реальная сумма доставки, уже учтённая WC в cart->get_total('edit').
+		// Если она 0, а в строке summary мы показали fallback из wc_shipping_rates —
+		// эту сумму нужно прибавить к итогу вручную, иначе строка «Доставка» и
+		// «Итого» расходятся (см. блок про $wc_first_positive_rate_cost выше).
+		$wc_cart_shipping_with_tax = (float) $cart->get_shipping_total() + (float) $cart->get_shipping_tax();
 		if ( $suppress_shipping_in_summary ) {
 			$ship_tax = (float) $cart->get_shipping_tax();
 			$ship_amt = (float) $cart->get_shipping_total();
@@ -265,6 +341,11 @@ final class CheckoutRouteContext {
 			$total_edit        = max( 0.0, $total_edit - $ship_tax - $ship_amt );
 		} elseif ( ! $woocommerce_pricing && null !== $session_shipping_price_value && $session_shipping_price_value > 0.0 ) {
 			$total_edit = max( 0.0, $total_edit - $cart_shipping_total + $shipping_total );
+		} elseif ( ! $woocommerce_pricing && $wc_cart_shipping_with_tax <= 0.0 && $shipping_total > 0.0 ) {
+			// Fallback из wc_shipping_rates: WC cart->get_total('edit') ещё не знает
+			// про эту ставку (chosen_shipping_methods устарел или не auto-pickнулся),
+			// добавляем доставку в итог, чтобы он совпадал со строкой «Доставка».
+			$total_edit = $total_edit + $shipping_total;
 		}
 		$result['summary']['tax']   = (string) wc_price( $total_tax_display );
 		$result['summary']['total'] = (string) wc_price( $total_edit );
@@ -353,11 +434,276 @@ final class CheckoutRouteContext {
 	}
 
 	/**
-	 * Плоский список ставок WC для текущего адреса корзины (после calculate_totals / синка сессии).
+	 * Извлекает диапазон срока доставки в днях из мета-данных WC-ставки.
 	 *
-	 * @return array<int, array{id: string, label: string, cost: float, method_id: string, meta: array<string, string>}>
+	 * Парсит распространённые ключи (period_min/max от официального плагина СДЭК и др.).
+	 * Возвращает массив { min: ?int, max: ?int }. Если данных нет — оба значения null.
+	 *
+	 * @param array<string, string> $meta       Очищенная мета ставки (ключ => строка).
+	 * @param \WC_Shipping_Rate     $rate       Сам объект ставки (для фильтра).
+	 * @param string                $method_id  ID метода (cdek, post_russia и т.п.) — для фильтра.
+	 *
+	 * @return array{min: ?int, max: ?int}
+	 */
+	private static function extract_wc_shipping_rate_eta_days( array $meta, \WC_Shipping_Rate $rate, string $method_id ): array {
+		$min = null;
+		$max = null;
+
+		$normalized = array();
+		foreach ( $meta as $k => $v ) {
+			$normalized[ strtolower( (string) $k ) ] = (string) $v;
+		}
+
+		$min_keys = array( 'period_min', '_cdek_period_min', 'min_delivery_days', 'days_min', 'delivery_min' );
+		$max_keys = array( 'period_max', '_cdek_period_max', 'max_delivery_days', 'days_max', 'delivery_max' );
+
+		foreach ( $min_keys as $mk ) {
+			if ( isset( $normalized[ $mk ] ) && '' !== $normalized[ $mk ] ) {
+				$parsed = self::parse_first_positive_int( $normalized[ $mk ] );
+				if ( null !== $parsed ) {
+					$min = $parsed;
+					break;
+				}
+			}
+		}
+		foreach ( $max_keys as $mxk ) {
+			if ( isset( $normalized[ $mxk ] ) && '' !== $normalized[ $mxk ] ) {
+				$parsed = self::parse_first_positive_int( $normalized[ $mxk ] );
+				if ( null !== $parsed ) {
+					$max = $parsed;
+					break;
+				}
+			}
+		}
+
+		if ( null === $min && null === $max ) {
+			$combo_keys = array( 'delivery_days', 'period', 'days', 'eta_days' );
+			foreach ( $combo_keys as $ck ) {
+				if ( isset( $normalized[ $ck ] ) && '' !== $normalized[ $ck ] ) {
+					$pair = self::parse_days_range_string( $normalized[ $ck ] );
+					if ( null !== $pair['min'] || null !== $pair['max'] ) {
+						$min = $pair['min'];
+						$max = $pair['max'];
+						break;
+					}
+				}
+			}
+		}
+
+		// Многие плагины (например, официальный плагин CDEK) не пишут срок в meta, но добавляют его в label
+		// ставки: "Курьером до двери (экспресс), (3-4 дней)". Если meta пуста — пробуем извлечь срок из label,
+		// но ТОЛЬКО когда числа стоят рядом со словом "дн"/"day" — иначе можно зацепить вес/код/индекс.
+		if ( null === $min && null === $max ) {
+			$label = is_callable( array( $rate, 'get_label' ) ) ? (string) $rate->get_label() : '';
+			$from_label = self::parse_days_from_label( $label );
+			if ( null !== $from_label['min'] || null !== $from_label['max'] ) {
+				$min = $from_label['min'];
+				$max = $from_label['max'];
+			}
+		}
+
+		if ( null === $min && null !== $max ) {
+			$min = $max;
+		}
+		if ( null !== $min && null === $max ) {
+			$max = $min;
+		}
+		if ( null !== $min && null !== $max && $min > $max ) {
+			$tmp = $min;
+			$min = $max;
+			$max = $tmp;
+		}
+
+		$result = array(
+			'min' => $min,
+			'max' => $max,
+		);
+
+		/**
+		 * Позволяет переопределить или дополнить парсер срока для конкретной WC-ставки.
+		 *
+		 * @param array{min: ?int, max: ?int} $result     Текущий результат парсинга.
+		 * @param \WC_Shipping_Rate           $rate       Объект WC-ставки.
+		 * @param array<string, string>       $meta       Очищенная мета ставки.
+		 * @param string                      $method_id  ID метода доставки.
+		 */
+		$filtered = apply_filters( 'mp_custom_checkout_wc_shipping_rate_eta_days', $result, $rate, $meta, $method_id );
+		if ( ! is_array( $filtered ) ) {
+			return $result;
+		}
+		$out_min = isset( $filtered['min'] ) && is_numeric( $filtered['min'] ) ? (int) $filtered['min'] : null;
+		$out_max = isset( $filtered['max'] ) && is_numeric( $filtered['max'] ) ? (int) $filtered['max'] : null;
+		if ( null !== $out_min && $out_min < 1 ) {
+			$out_min = null;
+		}
+		if ( null !== $out_max && $out_max < 1 ) {
+			$out_max = null;
+		}
+		if ( null === $out_min && null !== $out_max ) {
+			$out_min = $out_max;
+		}
+		if ( null !== $out_min && null === $out_max ) {
+			$out_max = $out_min;
+		}
+
+		return array(
+			'min' => $out_min,
+			'max' => $out_max,
+		);
+	}
+
+	/**
+	 * Парсит первое положительное целое число из строки. Например, "3", "3 дня", "до 5".
+	 *
+	 * @param string $raw
+	 *
+	 * @return int|null
+	 */
+	private static function parse_first_positive_int( string $raw ) {
+		if ( '' === $raw ) {
+			return null;
+		}
+		if ( preg_match( '/\d+/', $raw, $m ) ) {
+			$n = (int) $m[0];
+			if ( $n >= 1 ) {
+				return $n;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Парсит диапазон дней из одной строки вида "3-5", "3—5", "3..5", "от 3 до 5" и т.п.
+	 *
+	 * @param string $raw
+	 *
+	 * @return array{min: ?int, max: ?int}
+	 */
+	private static function parse_days_range_string( string $raw ): array {
+		$result = array(
+			'min' => null,
+			'max' => null,
+		);
+		if ( '' === $raw ) {
+			return $result;
+		}
+		if ( preg_match_all( '/\d+/', $raw, $matches ) ) {
+			$nums = array_map( 'intval', $matches[0] );
+			$nums = array_values( array_filter( $nums, static function ( $n ) { return $n >= 1; } ) );
+			if ( ! empty( $nums ) ) {
+				$result['min'] = (int) $nums[0];
+				$result['max'] = isset( $nums[1] ) ? (int) $nums[1] : $result['min'];
+			}
+		}
+		return $result;
+	}
+
+	/**
+	 * Парсит срок из подписи WC-ставки. Срабатывает ТОЛЬКО когда число(а) стоят рядом со словом
+	 * "дн" (день/дня/дней/дн.) или "day(s)" — чтобы не зацепить лишние цифры (вес, коды и пр.).
+	 *
+	 * @param string $label
+	 *
+	 * @return array{min: ?int, max: ?int}
+	 */
+	private static function parse_days_from_label( string $label ): array {
+		$result = array(
+			'min' => null,
+			'max' => null,
+		);
+		if ( '' === $label ) {
+			return $result;
+		}
+		if ( preg_match( '/(\d+)\s*[\-–—]\s*(\d+)\s*(?:дн|day)/iu', $label, $m ) ) {
+			$lo = (int) $m[1];
+			$hi = (int) $m[2];
+			if ( $lo >= 1 ) {
+				$result['min'] = $lo;
+			}
+			if ( $hi >= 1 ) {
+				$result['max'] = $hi;
+			}
+			return $result;
+		}
+		if ( preg_match( '/(\d+)\s*(?:дн|day)/iu', $label, $m ) ) {
+			$n = (int) $m[1];
+			if ( $n >= 1 ) {
+				$result['min'] = $n;
+				$result['max'] = $n;
+			}
+		}
+		return $result;
+	}
+
+	/**
+	 * Ключ хранения снимка ставок WC в WC_Session. Снимок обновляется на каждый
+	 * `woocommerce_after_calculate_totals` (это момент, когда WC уже пересчитал packages и
+	 * cart->shipping_total согласован). При сборке контекста чекаута мы читаем именно отсюда,
+	 * чтобы не дёргать calculate_shipping() самостоятельно и не ломать cart_totals.
+	 */
+	private const WC_SHIPPING_RATES_SNAPSHOT_SESSION_KEY = 'mp_cc_wc_shipping_rates_snapshot';
+
+	/**
+	 * Регистрирует слушатель момента пересчёта корзины. Вызывается из PluginHooksRegistrar
+	 * после готовности интеграции с WooCommerce.
+	 */
+	public static function register_shipping_snapshot_capture(): void {
+		add_action( 'woocommerce_after_calculate_totals', array( __CLASS__, 'capture_wc_shipping_rates_snapshot' ), 20 );
+		add_action( 'woocommerce_shipping_method_chosen', array( __CLASS__, 'capture_wc_shipping_rates_snapshot' ), 20 );
+	}
+
+	/**
+	 * Callback на стандартные WC-экшены. Сохраняет в WC_Session текущий снимок ставок,
+	 * не дёргая никаких пересчётов сам. WC к этому моменту уже всё посчитал.
+	 */
+	public static function capture_wc_shipping_rates_snapshot(): void {
+		if ( ! function_exists( 'WC' ) ) {
+			return;
+		}
+		$session = WC()->session;
+		if ( ! ( $session instanceof \WC_Session ) ) {
+			return;
+		}
+		try {
+			$rows = self::collect_wc_shipping_rates_snapshot_raw();
+			if ( ! empty( $rows ) && is_callable( array( $session, 'set' ) ) ) {
+				$session->set(
+					self::WC_SHIPPING_RATES_SNAPSHOT_SESSION_KEY,
+					array(
+						'time'  => time(),
+						'rates' => $rows,
+					)
+				);
+			}
+		} catch ( \Throwable $e ) {
+			return;
+		}
+	}
+
+	/**
+	 * Плоский список ставок WC для текущего адреса корзины.
+	 * Сначала пытается прочитать снимок из WC_Session (он обновляется на woocommerce_after_calculate_totals).
+	 * Если снимка нет — пробуем прочитать пакеты «как есть» в текущем процессе.
+	 *
+	 * @return array<int, array{id: string, label: string, cost: float, method_id: string, meta: array<string, string>, eta_days: array{min: ?int, max: ?int}}>
 	 */
 	private static function collect_wc_shipping_rates_snapshot(): array {
+		if ( function_exists( 'WC' ) && WC()->session instanceof \WC_Session ) {
+			$cached = WC()->session->get( self::WC_SHIPPING_RATES_SNAPSHOT_SESSION_KEY );
+			if ( is_array( $cached ) && isset( $cached['rates'] ) && is_array( $cached['rates'] ) && ! empty( $cached['rates'] ) ) {
+				return $cached['rates'];
+			}
+		}
+		return self::collect_wc_shipping_rates_snapshot_raw();
+	}
+
+	/**
+	 * Чистое чтение packages WC без принудительных пересчётов и без чтения сессионного кеша.
+	 * Если packages пуст в текущем процессе — вернём пустой массив (это нормально для AJAX до синка).
+	 *
+	 * @return array<int, array<string, mixed>>
+	 */
+	private static function collect_wc_shipping_rates_snapshot_raw(): array {
 		if ( ! function_exists( 'WC' ) || ! WC()->cart instanceof \WC_Cart ) {
 			return array();
 		}
@@ -381,15 +727,38 @@ final class CheckoutRouteContext {
 				foreach ( (array) $rate->get_taxes() as $tax_amt ) {
 					$cost += (float) $tax_amt;
 				}
-				$decimals   = function_exists( 'wc_get_price_decimals' ) ? (int) wc_get_price_decimals() : 2;
-				$method_id  = is_callable( array( $rate, 'get_method_id' ) ) ? (string) $rate->get_method_id() : '';
-				$meta_clean = self::wc_shipping_rate_meta_for_snapshot( $rate );
-				$row        = array(
-					'id'         => $id,
-					'label'      => wp_strip_all_tags( (string) $rate->get_label() ),
-					'cost'       => (float) wc_format_decimal( max( 0.0, $cost ), $decimals ),
-					'method_id'  => $method_id,
-					'meta'       => $meta_clean,
+				$decimals    = function_exists( 'wc_get_price_decimals' ) ? (int) wc_get_price_decimals() : 2;
+				$method_id   = is_callable( array( $rate, 'get_method_id' ) ) ? (string) $rate->get_method_id() : '';
+				$meta_clean  = self::wc_shipping_rate_meta_for_snapshot( $rate );
+				$eta_days    = self::extract_wc_shipping_rate_eta_days( $meta_clean, $rate, $method_id );
+				// Плагин «Russian Post Auto-Estimate From Weight» (RPAEFW) при ошибке API возвращает
+				// ставку с cost=0 и встраивает в label сырой ответ Почты России — например
+				// «Почта России, посылка стандарт - Ошибка запроса для "price": CODE: 400, ...».
+				// Этот текст НЕЛЬЗЯ показывать клиенту: он раскрывает внутренние подробности и
+				// сбивает с толку. Кроме того, на основе такой ставки нельзя считать сумму
+				// доставки (cost = 0 — это «не посчитано», а не «бесплатно»). Помечаем такие
+				// ставки `is_error = true`, чистим публичный label и передаём оригинальный текст
+				// в `error_message` для логов/диагностики на фронте.
+				$raw_label     = wp_strip_all_tags( (string) $rate->get_label() );
+				$is_error_rate = false;
+				$error_message = '';
+				$public_label  = $raw_label;
+				if ( 0 === strpos( strtolower( $method_id ), 'rpaefw' ) || 0 === strpos( strtolower( (string) $id ), 'rpaefw' ) ) {
+					if ( preg_match( '/Ошибк[ауи]\s+запроса|CODE\s*:\s*\d{3}|Объект\s+с\s+индексом|Indexes/iu', $raw_label ) ) {
+						$is_error_rate = true;
+						$error_message = $raw_label;
+						$public_label  = __( 'Почта России', 'mp-custom-checkout' );
+					}
+				}
+				$row = array(
+					'id'            => $id,
+					'label'         => $public_label,
+					'cost'          => (float) wc_format_decimal( max( 0.0, $cost ), $decimals ),
+					'method_id'     => $method_id,
+					'meta'          => $meta_clean,
+					'eta_days'      => $eta_days,
+					'is_error'      => $is_error_rate,
+					'error_message' => $error_message,
 				);
 				/**
 				 * Одна ставка в снимке (расширение под конкретный плагин СДЭК / другое).
