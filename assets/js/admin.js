@@ -16,7 +16,7 @@
 		return {
 			previewEnabled: Boolean(source.admin_preview && source.admin_preview.enabled !== false),
 			title: labels.title || 'Корзина',
-			summaryTitle: labels.summary_title || 'Сводка заказа',
+			summaryTitle: labels.summary_title || 'Детали заказа',
 			subtotalLabel: labels.subtotal_label || 'Подытог',
 			shippingLabel: labels.shipping_label || 'Доставка',
 			discountLabel: labels.discount_label || 'Скидка',
@@ -190,6 +190,9 @@
 				radio_style: 'default',
 				description_style: 'muted',
 				show_description: true,
+				two_up_show_card_description: true,
+				two_up_show_perk_tags: true,
+				two_up_minimal_idle_chrome: false,
 				required: true,
 				error_message: 'Выберите способ оплаты.',
 				messages: { loading: '', success: '', error: '' },
@@ -933,6 +936,35 @@
 
 	var DELIVERY_STUDIO_CATALOG = 'mp_custom_checkout_settings[delivery][shipping_catalog]';
 
+	function shippingCatalogMethodHasTariffs(method) {
+		if (!method || !method.tariffs || typeof method.tariffs !== 'object') {
+			return false;
+		}
+		return Object.keys(method.tariffs).length > 0;
+	}
+
+	function methodWcRateFieldName(methodId) {
+		return DELIVERY_STUDIO_CATALOG + '[methods][' + String(methodId || '') + '][wc_rate_id]';
+	}
+
+	function pruneNonStudioMethodWcRateInputs(studioRoot, methodIds) {
+		var root = studioRoot && studioRoot.length ? studioRoot[0] : null;
+		if (!root || !Array.isArray(methodIds)) {
+			return;
+		}
+		var $scope = $('.mp-cc-admin-shell__fields').first();
+		if (!$scope.length) {
+			return;
+		}
+		var mi;
+		for (mi = 0; mi < methodIds.length; mi += 1) {
+			var fullName = methodWcRateFieldName(methodIds[mi]);
+			$scope.find('input').filter(function () {
+				return this.name === fullName && !root.contains(this);
+			}).remove();
+		}
+	}
+
 	function deliveryStudioNotifyForm(name) {
 		var $f = $('[name="' + name + '"]').first();
 		if ($f.length) {
@@ -994,7 +1026,7 @@
 		html += '<div id="mp-cc-delivery-studio" class="mp-cc-delivery-studio">';
 		html += '<header class="mp-cc-delivery-studio__head">';
 		html += '<h3 class="mp-cc-delivery-studio__title">Каталог доставки</h3>';
-		html += '<p class="mp-cc-delivery-studio__lead">Порядок способов синхронизируется с полем <code>sort_order</code>. Тарифы курьера и ПВЗ — с соответствующими полями формы. Дополнительные позиции используют резервные слоты <code>slot_1</code> / <code>slot_2</code> (так сохранение совместимо с деревом настроек).</p>';
+		html += '<p class="mp-cc-delivery-studio__lead">Порядок способов синхронизируется с полем <code>sort_order</code>. Для <strong>Почты России</strong>, самовывоза и локальной доставки задайте <strong>WC rate ID</strong> ниже (как в нативном checkout: <code>flat_rate:12</code>, <code>local_pickup:3</code> и т.д.). Тарифы курьера и ПВЗ — в таблицах ниже. Резервные слоты <code>slot_1</code> / <code>slot_2</code> совместимы с деревом настроек.</p>';
 		html += '</header>';
 		html += '<section class="mp-cc-delivery-studio__block">';
 		html += '<h4>Порядок на витрине</h4>';
@@ -1016,6 +1048,32 @@
 			html += '</span></li>';
 		}
 		html += '</ol></section>';
+		var noTariffMethodIds = [];
+		for (i = 0; i < displaySort.length; i += 1) {
+			var nid = String(displaySort[i] || '');
+			if (!nid || !methods[nid]) {
+				continue;
+			}
+			if (!shippingCatalogMethodHasTariffs(methods[nid])) {
+				noTariffMethodIds.push(nid);
+			}
+		}
+		if (noTariffMethodIds.length) {
+			html += '<section class="mp-cc-delivery-studio__block">';
+			html += '<h4>WC rate ID (методы без тарифов)</h4>';
+			html += '<p class="description">Нужно для режима цен WooCommerce и для записи <code>chosen_shipping_methods</code> в сессии WC при выборе способа на MP checkout. ID смотрите в WooCommerce → Настройки → Доставка → зона → строка способа (в URL или в инспекторе нативного checkout).</p>';
+			html += '<table class="mp-cc-delivery-studio__tariff-table"><thead><tr><th>Метод</th><th>WC rate ID</th></tr></thead><tbody>';
+			var ni;
+			for (ni = 0; ni < noTariffMethodIds.length; ni += 1) {
+				var sid = noTariffMethodIds[ni];
+				var sm = methods[sid] || {};
+				var wcName = methodWcRateFieldName(sid);
+				var wcVal = String(sm.wc_rate_id || '');
+				html += '<tr><td><strong>' + escapeHtml(String(sm.title || sid)) + '</strong> <code>' + escapeHtml(sid) + '</code></td>';
+				html += '<td><input type="text" class="regular-text mp-cc-delivery-studio__input" placeholder="flat_rate:5" data-mp-cc-method-wc-rate="1" name="' + escapeHtml(wcName) + '" value="' + escapeHtml(wcVal) + '" /></td></tr>';
+			}
+			html += '</tbody></table></section>';
+		}
 		var tariffMethods = ['courier', 'pvz'];
 		for (var tm = 0; tm < tariffMethods.length; tm += 1) {
 			var methodId = tariffMethods[tm];
@@ -1025,7 +1083,7 @@
 			}
 			html += '<section class="mp-cc-delivery-studio__block">';
 			html += '<h4>Тарифы: ' + escapeHtml(String(method.title || methodId)) + ' <code>' + escapeHtml(methodId) + '</code></h4>';
-			html += '<table class="mp-cc-delivery-studio__tariff-table"><thead><tr><th>ID</th><th>Название</th><th>Цена</th><th>ETA</th><th>Активен</th><th></th></tr></thead><tbody>';
+			html += '<table class="mp-cc-delivery-studio__tariff-table"><thead><tr><th>ID</th><th>Название</th><th>Цена</th><th>ETA</th><th>WC rate ID</th><th>Активен</th><th></th></tr></thead><tbody>';
 			var tariffIds = Object.keys(method.tariffs);
 			var ti2;
 			for (ti2 = 0; ti2 < tariffIds.length; ti2 += 1) {
@@ -1038,6 +1096,7 @@
 				html += '<td><input type="text" class="regular-text mp-cc-delivery-studio__input" data-mp-cc-tariff-field="title" data-method="' + escapeHtml(methodId) + '" data-tariff="' + escapeHtml(tariffId) + '" value="' + escapeHtml(String(tr.title || '')) + '" /></td>';
 				html += '<td><input type="number" min="0" step="1" class="small-text mp-cc-delivery-studio__input" data-mp-cc-tariff-field="price" data-method="' + escapeHtml(methodId) + '" data-tariff="' + escapeHtml(tariffId) + '" value="' + escapeHtml(String(Math.max(0, Math.round(Number(tr.price || 0))))) + '" /></td>';
 				html += '<td><input type="text" class="regular-text mp-cc-delivery-studio__input" data-mp-cc-tariff-field="eta" data-method="' + escapeHtml(methodId) + '" data-tariff="' + escapeHtml(tariffId) + '" value="' + escapeHtml(String(tr.eta || '')) + '" /></td>';
+				html += '<td><input type="text" class="regular-text mp-cc-delivery-studio__input" placeholder="flat_rate:5" data-mp-cc-tariff-field="wc_rate_id" data-method="' + escapeHtml(methodId) + '" data-tariff="' + escapeHtml(tariffId) + '" value="' + escapeHtml(String(tr.wc_rate_id || '')) + '" /></td>';
 				html += '<td><label class="mp-cc-delivery-studio__check"><input type="checkbox" data-mp-cc-tariff-field="active" data-method="' + escapeHtml(methodId) + '" data-tariff="' + escapeHtml(tariffId) + '"' + (active ? ' checked' : '') + ' /> да</label></td>';
 				html += '<td>';
 				if (isSlot) {
@@ -1059,6 +1118,10 @@
 			$existing.replaceWith(html);
 		} else {
 			$fields.prepend(html);
+		}
+		var $studioRoot = $('#mp-cc-delivery-studio');
+		if ($studioRoot.length && noTariffMethodIds.length) {
+			pruneNonStudioMethodWcRateInputs($studioRoot, noTariffMethodIds);
 		}
 	}
 
@@ -1110,6 +1173,9 @@
 				writeFormValue(name, $el.val());
 			}
 			deliveryStudioNotifyForm(name);
+		});
+		$(document).on('input change', '#mp-cc-delivery-studio [data-mp-cc-method-wc-rate]', function () {
+			deliveryStudioNotifyForm(this.name);
 		});
 		$(document).on('click', '[data-mp-cc-tariff-slot-on]', function () {
 			var methodId = String($(this).attr('data-mp-cc-tariff-slot-on') || '');
@@ -1213,7 +1279,9 @@
 		html += '<div class="mp-cc-admin-preview__date-rules">';
 		html += '<p><strong>Coupon placement:</strong> ' + escapeHtml(String(cfg.discountLayout.placement || 'step_4')) + ', separate-step ready=' + escapeHtml(cfg.discountLayout.separate_step_enabled ? 'yes' : 'no') + '</p>';
 		html += '<p><strong>Discount styles:</strong> empty=' + escapeHtml(String(cfg.discountStyles.state_empty || 'default')) + ', success=' + escapeHtml(String(cfg.discountStyles.state_success || 'success')) + ', error=' + escapeHtml(String(cfg.discountStyles.state_error || 'error')) + '</p>';
-		html += '<p><strong>Payment block:</strong> title="' + escapeHtml(String(cfg.payment.title || 'Способ оплаты')) + '", surface=' + escapeHtml(String(cfg.payment.card_surface || 'visual')) + ', auto_classic_if_empty=' + escapeHtml(cfg.payment.auto_classic_on_empty_gateway_fields === false ? 'off' : 'on') + ', decorative=' + escapeHtml(cfg.payment.decorative_card_fields === false ? 'off' : 'on') + ', style=' + escapeHtml(String(cfg.payment.card_style || 'default')) + ', description=' + escapeHtml(cfg.payment.show_description === false ? 'off' : 'on') + '</p>';
+		html += '<p><strong>Payment block:</strong> title="' + escapeHtml(String(cfg.payment.title || 'Способ оплаты')) + '", surface=' + escapeHtml(String(cfg.payment.card_surface || 'visual')) + ', auto_classic_if_empty=' + escapeHtml(cfg.payment.auto_classic_on_empty_gateway_fields === false ? 'off' : 'on') + ', decorative=' + escapeHtml(cfg.payment.decorative_card_fields === false ? 'off' : 'on') + ', style=' + escapeHtml(String(cfg.payment.card_style || 'default')) + ', description=' + escapeHtml(cfg.payment.show_description === false ? 'off' : 'on') + ', two_up_desc=' + escapeHtml(cfg.payment.two_up_show_card_description === false ? 'off' : 'on') + ', two_up_perks=' + escapeHtml(cfg.payment.two_up_show_perk_tags === false ? 'off' : 'on') + ', two_up_minimal_idle=' + escapeHtml(cfg.payment.two_up_minimal_idle_chrome === true ? 'on' : 'off') + '</p>';
+		var payCs = cfg.payment.card_styles && typeof cfg.payment.card_styles === 'object' ? cfg.payment.card_styles : {};
+		html += '<p><strong>Payment two-up heights:</strong> card_min=' + escapeHtml(trimNonEmptyAdmin(payCs.two_up_card_min_height) || 'default') + ', shell_min=' + escapeHtml(trimNonEmptyAdmin(payCs.two_up_shell_min_height) || 'default') + ', logo_h=' + escapeHtml(trimNonEmptyAdmin(payCs.logo_height) || '—') + '</p>';
 		html += '<p><strong>Payment states:</strong> loading="' + escapeHtml(String((cfg.payment.messages && cfg.payment.messages.loading) || '—')) + '", success="' + escapeHtml(String((cfg.payment.messages && cfg.payment.messages.success) || '—')) + '", error="' + escapeHtml(String((cfg.payment.messages && cfg.payment.messages.error) || '—')) + '"</p>';
 		html += '<p><strong>Payment diagnostics:</strong> ' + escapeHtml(cfg.payment.diagnostics && cfg.payment.diagnostics.enabled === false ? 'off' : 'on') + '</p>';
 		var smrCfg = cfg.payment.summary_mini_review && typeof cfg.payment.summary_mini_review === 'object' ? cfg.payment.summary_mini_review : {};
@@ -1416,6 +1484,8 @@
 		cfg.contact.validationMessages.address_region = readFormValue(p + '[validation_messages][address_region]', cfg.contact.validationMessages.address_region || 'Выберите корректный регион.');
 		cfg.contact.validationMessages.address_city = readFormValue(p + '[validation_messages][address_city]', cfg.contact.validationMessages.address_city || 'Выберите населённый пункт из списка.');
 		cfg.contact.validationMessages.address_postcode = readFormValue(p + '[validation_messages][address_postcode]', cfg.contact.validationMessages.address_postcode || 'Слишком длинный индекс.');
+		cfg.contact.validationMessages.address_postcode_format = readFormValue(p + '[validation_messages][address_postcode_format]', cfg.contact.validationMessages.address_postcode_format || 'Введите 6 цифр почтового индекса.');
+		cfg.contact.validationMessages.address_postcode_unavailable = readFormValue(p + '[validation_messages][address_postcode_unavailable]', cfg.contact.validationMessages.address_postcode_unavailable || 'Доставка Почтой России по этому индексу недоступна. Проверьте индекс или выберите другой способ доставки.');
 		cfg.contact.validationMessages.step_blocked = readFormValue(p + '[validation_messages][step_blocked]', cfg.contact.validationMessages.step_blocked || 'Заполните обязательные поля текущего шага.');
 		cfg.contact.validationMessages.conditions_required = readFormValue(p + '[validation_messages][conditions_required]', cfg.contact.validationMessages.conditions_required || 'Подтвердите ознакомление с условиями, чтобы продолжить.');
 		cfg.contact.constraints.birthdate_min_age = Number(readFormValue(p + '[validation_constraints][birthdate_min_age]', cfg.contact.constraints.birthdate_min_age || 0));
@@ -1444,6 +1514,9 @@
 		cfg.payment.decorative_card_fields = Boolean(readFormValue(py + '[decorative_card_fields]', cfg.payment.decorative_card_fields !== false));
 		cfg.payment.card_style = readFormValue(py + '[card_style]', cfg.payment.card_style || 'default');
 		cfg.payment.show_description = Boolean(readFormValue(py + '[show_description]', cfg.payment.show_description !== false));
+		cfg.payment.two_up_show_card_description = Boolean(readFormValue(py + '[two_up_show_card_description]', cfg.payment.two_up_show_card_description !== false));
+		cfg.payment.two_up_show_perk_tags = Boolean(readFormValue(py + '[two_up_show_perk_tags]', cfg.payment.two_up_show_perk_tags !== false));
+		cfg.payment.two_up_minimal_idle_chrome = Boolean(readFormValue(py + '[two_up_minimal_idle_chrome]', cfg.payment.two_up_minimal_idle_chrome === true));
 		cfg.payment.required = Boolean(readFormValue(py + '[required]', cfg.payment.required !== false));
 		cfg.payment.error_message = readFormValue(py + '[error_message]', cfg.payment.error_message || 'Выберите способ оплаты.');
 		cfg.payment.layout = cfg.payment.layout && typeof cfg.payment.layout === 'object' ? cfg.payment.layout : {};
@@ -1451,6 +1524,10 @@
 		cfg.payment.layout.tablet_columns = Number(readFormValue(py + '[layout][tablet_columns]', cfg.payment.layout.tablet_columns || 2));
 		cfg.payment.layout.mobile_columns = Number(readFormValue(py + '[layout][mobile_columns]', cfg.payment.layout.mobile_columns || 1));
 		cfg.payment.layout.grid_gap = readFormValue(py + '[layout][grid_gap]', cfg.payment.layout.grid_gap || '0.6rem 0.75rem');
+		cfg.payment.card_styles = cfg.payment.card_styles && typeof cfg.payment.card_styles === 'object' ? cfg.payment.card_styles : {};
+		var csPath = py + '[card_styles]';
+		cfg.payment.card_styles.two_up_card_min_height = readFormValue(csPath + '[two_up_card_min_height]', cfg.payment.card_styles.two_up_card_min_height || '');
+		cfg.payment.card_styles.two_up_shell_min_height = readFormValue(csPath + '[two_up_shell_min_height]', cfg.payment.card_styles.two_up_shell_min_height || '');
 		cfg.payment.gateway_order = String(readFormValue(py + '[gateway_order]', (cfg.payment.gateway_order || []).join(','))).split(',').map(function (value) {
 			return $.trim(String(value || ''));
 		}).filter(Boolean);
@@ -1521,6 +1598,7 @@
 			methods[id].visibility_scenarios = String(readFormValue(mPath + '[visibility_scenarios]', visFallback)).split(',').map(function (s) {
 				return String(s || '').trim();
 			}).filter(Boolean);
+			methods[id].wc_rate_id = String(readFormValue(mPath + '[wc_rate_id]', methods[id].wc_rate_id || '') || '');
 			if (methods[id].tariffs && typeof methods[id].tariffs === 'object') {
 				var tIds = Object.keys(methods[id].tariffs);
 				var ti;
@@ -1532,6 +1610,7 @@
 						title: readFormValue(tPath + '[title]', tBase.title),
 						price: Number(readFormValue(tPath + '[price]', tBase.price)),
 						eta: readFormValue(tPath + '[eta]', tBase.eta),
+						wc_rate_id: readFormValue(tPath + '[wc_rate_id]', tBase.wc_rate_id || ''),
 						active: Boolean(readFormValue(tPath + '[active]', tBase.active))
 					};
 				}

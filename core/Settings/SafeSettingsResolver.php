@@ -51,7 +51,8 @@ final class SafeSettingsResolver {
 					'require_entry_gate'  => true,
 					'success_route_slug'  => 'mp-checkout-success',
 					'checkout_layout'     => array(
-						'max_width' => '1140px',
+						'max_width'         => '1140px',
+						'vertical_padding'  => '75px',
 					),
 					'admin_branding'      => array(
 						'title'         => 'MP Custom Checkout — Настройки',
@@ -78,7 +79,7 @@ final class SafeSettingsResolver {
 				$tree[ $section_key ] = array(
 					'labels' => array(
 						'title'          => 'Корзина',
-						'summary_title'  => 'Сводка заказа',
+						'summary_title'  => 'Детали заказа',
 						'subtotal_label' => 'Подытог',
 						'shipping_label' => 'Доставка',
 						'discount_label' => 'Скидка',
@@ -96,8 +97,6 @@ final class SafeSettingsResolver {
 							'change_button'    => 'другой',
 							'method_row'       => 'способ доставки',
 							'tariff_intro'     => 'Выбрать вариант:',
-							'office_row'       => 'адрес офиса',
-							'office_not_set'   => 'Не выбран',
 						),
 					),
 					'product_meta_visibility' => array(
@@ -131,7 +130,11 @@ final class SafeSettingsResolver {
 						'card_bg'             => '#ffffff',
 						'card_border'         => '#e5e7eb',
 						'card_radius'         => '14px',
+						'form_border_width'   => '1px',
 						'row_divider'         => '#e5e7eb',
+						'row_divider_width'   => '1px',
+						'divider_after_city_width'   => '',
+						'divider_after_method_width' => '',
 						'label_color'         => '#111111',
 						'label_size'          => '1.05rem',
 						'value_color'         => '#1f2937',
@@ -147,6 +150,11 @@ final class SafeSettingsResolver {
 						'edit_btn_border'     => '#d9dce1',
 						'edit_btn_color'      => '#1f2937',
 						'edit_btn_radius'     => '6px',
+					),
+					'step_panel_screen_styles' => array(
+						'border_width' => '1px',
+						'border_color' => '',
+						'box_shadow'   => '',
 					),
 					'responsive' => array(
 						'desktop_mode'       => 'comfortable',
@@ -332,20 +340,22 @@ final class SafeSettingsResolver {
 							'female'      => 'Женщина',
 						),
 						'validation_messages' => array(
-							'required'           => 'Заполните это поле.',
-							'email_invalid'      => 'Введите корректный email.',
-							'phone_required'     => 'Укажите номер телефона.',
-							'phone_format'       => 'Введите номер полностью.',
-							'birthdate_required' => 'Укажите дату рождения.',
-							'birthdate_invalid'  => 'Введите корректную дату рождения.',
-							'birthdate_range'    => 'Допустимый возраст: от 0 до 120 лет.',
-							'order_notes_length' => 'Превышена максимальная длина примечания.',
-							'address_required'   => 'Заполните это поле.',
-							'address_region'     => 'Выберите корректный регион.',
-							'address_city'       => 'Выберите населённый пункт из списка.',
-							'address_postcode'   => 'Слишком длинный индекс.',
-							'step_blocked'       => 'Заполните обязательные поля текущего шага.',
-							'conditions_required'=> 'Подтвердите ознакомление с условиями, чтобы продолжить.',
+							'required'                     => 'Заполните это поле.',
+							'email_invalid'                => 'Введите корректный email.',
+							'phone_required'               => 'Укажите номер телефона.',
+							'phone_format'                 => 'Введите номер полностью.',
+							'birthdate_required'           => 'Укажите дату рождения.',
+							'birthdate_invalid'            => 'Введите корректную дату рождения.',
+							'birthdate_range'              => 'Допустимый возраст: от 0 до 120 лет.',
+							'order_notes_length'           => 'Превышена максимальная длина примечания.',
+							'address_required'             => 'Заполните это поле.',
+							'address_region'               => 'Выберите корректный регион.',
+							'address_city'                 => 'Выберите населённый пункт из списка.',
+							'address_postcode'             => 'Слишком длинный индекс.',
+							'address_postcode_format'      => 'Введите 6 цифр почтового индекса.',
+							'address_postcode_unavailable' => 'Доставка Почтой России по этому индексу недоступна. Проверьте индекс или выберите другой способ доставки.',
+							'step_blocked'                 => 'Заполните обязательные поля текущего шага.',
+							'conditions_required'          => 'Подтвердите ознакомление с условиями, чтобы продолжить.',
 						),
 						'validation_constraints' => array(
 							'birthdate_min_age'    => 0,
@@ -459,6 +469,11 @@ final class SafeSettingsResolver {
 						'address_title_size'       => '1.1rem',
 						'address_intro_size'       => '0.92rem',
 					),
+					'recipient_step_panel_styles' => array(
+						'border_width' => '',
+						'border_color' => '',
+						'box_shadow'   => '',
+					),
 					'discount_layout' => array(
 						'placement'             => 'step_4',
 						'separate_step_enabled' => false,
@@ -481,6 +496,21 @@ final class SafeSettingsResolver {
 						'error_message'         => 'Не удалось применить промокод. Проверьте написание и срок действия купона.',
 						'allow_remove_applied'  => true,
 						'summary_section_title' => '',
+						'styles' => array(
+							'summary_glow_color'   => '#a78bfa',
+							'summary_bg'           => 'linear-gradient(180deg, color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 14%, #fff) 0%, #fff 100%)',
+							'summary_border'       => 'color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 48%, #e9ddff)',
+							'title_color'          => '#111111',
+							'text_color'           => '#4b5563',
+							'input_bg'             => 'rgba(255, 255, 255, 0.95)',
+							'input_border'         => 'color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 35%, var(--mp-cc-color-border))',
+							'input_text'           => 'var(--mp-cc-color-text, #111111)',
+							'button_bg'            => 'linear-gradient(180deg, color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 40%, #232323) 0%, #191919 100%)',
+							'button_border'        => 'color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 62%, #111)',
+							'button_text'          => '#ffffff',
+							'button_bg_hover'      => 'linear-gradient(180deg, color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 50%, #2f2f2f) 0%, #232323 100%)',
+							'button_border_hover'  => 'color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 74%, #2f2f2f)',
+						),
 					),
 					'gift_card_block' => array(
 						'title'                      => '',
@@ -501,12 +531,21 @@ final class SafeSettingsResolver {
 						'title' => 'Способ оплаты',
 						'intro' => 'Выберите удобный способ оплаты.',
 						'gateway_order' => array(),
+						'gateway_titles' => array(),
+						'gateway_icons' => array(),
+						'rows_layout' => true,
+						'discount_toggles' => array(
+							'coupon_in_step'      => true,
+							'gift_card_in_step'   => true,
+							'coupon_in_summary'   => false,
+							'gift_card_in_summary'=> false,
+						),
 						'card_surface' => 'visual',
 						'auto_classic_on_empty_gateway_fields' => true,
 						'decorative_card_fields' => true,
 						'layout' => array(
 							'desktop_columns' => 2,
-							'tablet_columns'  => 2,
+							'tablet_columns'  => 1,
 							'mobile_columns'  => 1,
 							'grid_gap'        => '0.6rem 0.75rem',
 						),
@@ -515,6 +554,9 @@ final class SafeSettingsResolver {
 						'radio_style' => 'default',
 						'description_style' => 'muted',
 						'show_description' => true,
+						'two_up_show_card_description' => true,
+						'two_up_show_perk_tags'          => true,
+						'two_up_minimal_idle_chrome'     => false,
 						'required' => true,
 						'bank_card_visual' => array(
 							'enabled'                 => true,
@@ -531,12 +573,16 @@ final class SafeSettingsResolver {
 							'card_radius'          => '14px',
 							'card_border'          => '#e6e1da',
 							'card_shadow'          => '0 2px 10px rgba(17,24,39,0.03)',
+							'shell_shadow'         => '0 6px 18px rgba(15,23,42,0.12)',
 							'active_border'        => '#b9a9ff',
 							'active_glow_outer'    => 'rgba(167,139,250,0.12)',
 							'active_glow_shadow'   => '0 8px 18px rgba(111,76,193,0.08)',
+							'selection_glow_color' => '#a78bfa',
 							'radio_size'           => '18px',
 							'logo_height'          => '12rem',
 							'logo_max_width'       => '22rem',
+							'two_up_card_min_height'  => '',
+							'two_up_shell_min_height' => '',
 							'title_size'           => '2rem',
 							'desc_size'            => '1.15rem',
 							'perk_font_size'       => '0.92rem',
@@ -554,6 +600,9 @@ final class SafeSettingsResolver {
 							'gift_bar_input_text'  => '#46372a',
 							'gift_bar_button_bg'   => '#121212',
 							'gift_bar_button_text' => '#ffffff',
+							'gift_peer_seal_icon_color'   => '#896a3a',
+							'gift_peer_seal_ring_inner'   => '#caa36d',
+							'gift_peer_seal_ring_outer'   => '#ceb284',
 						),
 						'error_message' => 'Выберите способ оплаты.',
 						'messages' => array(
@@ -596,6 +645,7 @@ final class SafeSettingsResolver {
 								'active'              => true,
 								'requires_address'    => true,
 								'visibility_scenarios'=> array( 'other_city_delivery' ),
+								'wc_rate_id'          => '',
 							),
 							'courier' => array(
 								'title'               => 'Курьером до двери',
@@ -605,11 +655,12 @@ final class SafeSettingsResolver {
 								'active'              => true,
 								'requires_address'    => true,
 								'visibility_scenarios'=> array( 'krasnoyarsk_delivery', 'other_city_delivery' ),
+								'wc_rate_id'          => '',
 								'tariffs'             => array(
-									'express'  => array( 'title' => 'Курьером до двери (экспресс)', 'price' => 550, 'eta' => '2 дней', 'active' => true ),
-									'standard' => array( 'title' => 'Курьером до двери (стандарт)', 'price' => 375, 'eta' => '2 дней', 'active' => true ),
-									'slot_1'   => array( 'title' => '', 'price' => 0, 'eta' => '', 'active' => false ),
-									'slot_2'   => array( 'title' => '', 'price' => 0, 'eta' => '', 'active' => false ),
+									'express'  => array( 'title' => 'Курьером до двери (экспресс)', 'price' => 550, 'eta' => '2 дней', 'active' => true, 'wc_rate_id' => '' ),
+									'standard' => array( 'title' => 'Курьером до двери (стандарт)', 'price' => 375, 'eta' => '2 дней', 'active' => true, 'wc_rate_id' => '' ),
+									'slot_1'   => array( 'title' => '', 'price' => 0, 'eta' => '', 'active' => false, 'wc_rate_id' => '' ),
+									'slot_2'   => array( 'title' => '', 'price' => 0, 'eta' => '', 'active' => false, 'wc_rate_id' => '' ),
 								),
 							),
 							'pvz' => array(
@@ -620,11 +671,12 @@ final class SafeSettingsResolver {
 								'active'              => true,
 								'requires_address'    => false,
 								'visibility_scenarios'=> array( 'krasnoyarsk_delivery', 'other_city_delivery' ),
+								'wc_rate_id'          => '',
 								'tariffs'             => array(
-									'express'  => array( 'title' => 'Доставка до ПВЗ (экспресс)', 'price' => 360, 'eta' => '2 дней', 'active' => true ),
-									'standard' => array( 'title' => 'Доставка до ПВЗ (стандарт)', 'price' => 185, 'eta' => '2 дней', 'active' => true ),
-									'slot_1'   => array( 'title' => '', 'price' => 0, 'eta' => '', 'active' => false ),
-									'slot_2'   => array( 'title' => '', 'price' => 0, 'eta' => '', 'active' => false ),
+									'express'  => array( 'title' => 'Доставка до ПВЗ (экспресс)', 'price' => 360, 'eta' => '2 дней', 'active' => true, 'wc_rate_id' => '' ),
+									'standard' => array( 'title' => 'Доставка до ПВЗ (стандарт)', 'price' => 185, 'eta' => '2 дней', 'active' => true, 'wc_rate_id' => '' ),
+									'slot_1'   => array( 'title' => '', 'price' => 0, 'eta' => '', 'active' => false, 'wc_rate_id' => '' ),
+									'slot_2'   => array( 'title' => '', 'price' => 0, 'eta' => '', 'active' => false, 'wc_rate_id' => '' ),
 								),
 							),
 							'krasnoyarsk_delivery' => array(
@@ -635,6 +687,7 @@ final class SafeSettingsResolver {
 								'active'              => true,
 								'requires_address'    => true,
 								'visibility_scenarios'=> array( 'krasnoyarsk_delivery' ),
+								'wc_rate_id'          => '',
 							),
 							'pickup' => array(
 								'title'               => 'Самовывоз',
@@ -644,6 +697,7 @@ final class SafeSettingsResolver {
 								'active'              => true,
 								'requires_address'    => false,
 								'visibility_scenarios'=> array( 'pickup', 'krasnoyarsk_delivery', 'other_city_delivery' ),
+								'wc_rate_id'          => '',
 							),
 							'custom_1' => array(
 								'title'               => 'Пользовательский метод 1',
@@ -653,6 +707,7 @@ final class SafeSettingsResolver {
 								'active'              => false,
 								'requires_address'    => false,
 								'visibility_scenarios'=> array( 'pickup', 'krasnoyarsk_delivery', 'other_city_delivery' ),
+								'wc_rate_id'          => '',
 							),
 							'custom_2' => array(
 								'title'               => 'Пользовательский метод 2',
@@ -662,6 +717,7 @@ final class SafeSettingsResolver {
 								'active'              => false,
 								'requires_address'    => false,
 								'visibility_scenarios'=> array( 'pickup', 'krasnoyarsk_delivery', 'other_city_delivery' ),
+								'wc_rate_id'          => '',
 							),
 						),
 						'error_copy' => array(
@@ -681,6 +737,11 @@ final class SafeSettingsResolver {
 							'mock_tax'          => 160,
 						),
 					),
+					'pricing_mode'   => 'catalog',
+					'wc_integration' => array(
+						'respect_chosen_shipping_methods' => true,
+					),
+					'note'           => __( 'Сценарии доставки (город / другой регион) задаются в реестре шагов. Тарифы WooCommerce — в зонах доставки.', 'mp-custom-checkout' ),
 				);
 				continue;
 			}
@@ -767,6 +828,18 @@ final class SafeSettingsResolver {
 						'global_density' => 'comfortable',
 						'sidebar_behavior' => 'sticky',
 					),
+					'progress_step_index' => array(
+						'pending_bg'       => '#ffffff',
+						'pending_digit'    => '#666666',
+						'pending_border'   => '#e5e5e5',
+						'active_bg'        => '#2563eb',
+						'active_digit'     => '#ffffff',
+						'active_border'    => '#2563eb',
+						'complete_bg'      => '#15803d',
+						'complete_digit'   => '#ffffff',
+						'complete_border'  => '#15803d',
+						'border_width'     => '2px',
+					),
 					'note' => __( 'Глобальные CSS-переменные задаются в служебном разделе (design_tokens). Стили шагов — в настройках шагов 1–4.', 'mp-custom-checkout' ),
 				);
 				continue;
@@ -777,15 +850,6 @@ final class SafeSettingsResolver {
 						'enabled' => false,
 					),
 					'note' => __( 'Основная конфигурация полей находится на шаге 4. Здесь можно зафиксировать точечные переопределения для сущностных блоков.', 'mp-custom-checkout' ),
-				);
-				continue;
-			}
-			if ( OptionKeys::SECTION_DELIVERY === $section_key ) {
-				$tree[ $section_key ] = array(
-					'wc_integration' => array(
-						'respect_chosen_shipping_methods' => true,
-					),
-					'note' => __( 'Сценарии доставки (город / другой регион) задаются в реестре шагов. Тарифы WooCommerce — в зонах доставки.', 'mp-custom-checkout' ),
 				);
 				continue;
 			}
@@ -947,6 +1011,23 @@ final class SafeSettingsResolver {
 	}
 
 	/**
+	 * Удаляет устаревшие ключи `payment_block` (виртуальная строка «карта» больше не используется).
+	 *
+	 * @param array<string, mixed> $merged
+	 * @return array<string, mixed>
+	 */
+	private static function normalize_merged_step4_payment_block( array $merged ): array {
+		if ( ! isset( $merged[ OptionKeys::SECTION_STEP_4 ] ) || ! is_array( $merged[ OptionKeys::SECTION_STEP_4 ] ) ) {
+			return $merged;
+		}
+		$s4 = &$merged[ OptionKeys::SECTION_STEP_4 ];
+		if ( isset( $s4['payment_block'] ) && is_array( $s4['payment_block'] ) ) {
+			unset( $s4['payment_block']['card_row'] );
+		}
+		return $merged;
+	}
+
+	/**
 	 * Слияние сохранённых настроек с дефолтами (пользователь перекрывает дефолты).
 	 *
 	 * @return array<string, mixed>
@@ -964,6 +1045,7 @@ final class SafeSettingsResolver {
 		$defaults       = self::get_defaults_tree();
 		self::$merged_cache = array_replace_recursive( $defaults, $stored );
 		self::$merged_cache = self::normalize_merged_coupon_intro( self::$merged_cache );
+		self::$merged_cache = self::normalize_merged_step4_payment_block( self::$merged_cache );
 
 		return self::$merged_cache;
 	}

@@ -61,9 +61,73 @@ final class AdminMenuHooks {
 	public static function sanitize_settings( $value ): array {
 		$incoming = is_array( $value ) ? $value : array();
 		$defaults = SafeSettingsResolver::get_defaults_tree();
-		$sanitized = self::sanitize_by_shape( $incoming, $defaults, '' );
+		/*
+		 * Экран настроек отдаёт в POST только поля активной вкладки. sanitize_by_shape() иначе
+		 * подставляет дефолты из $defaults для каждого отсутствующего верхнего ключа — и при сохранении,
+		 * например, только шага 1 в БД перезаписывались бы step_4 (купон, контакты), delivery и т.д.
+		 */
+		$stored = get_option( OptionKeys::MAIN, array() );
+		$stored = is_array( $stored ) ? $stored : array();
+		$merged  = array_replace_recursive( $stored, $incoming );
+		$sanitized = self::sanitize_by_shape( $merged, $defaults, '' );
 		$sanitized = self::normalize_delivery_settings( $sanitized );
-		return self::normalize_motion_settings( $sanitized );
+		$sanitized = self::normalize_motion_settings( $sanitized );
+		return self::normalize_payment_gateway_titles( $sanitized, $merged );
+	}
+
+	/**
+	 * Сохраняет переопределения названий платёжных шлюзов: ключи неизвестные на момент дефолтов
+	 * (`gateway_id => string`) sanitize_by_shape отбрасывает (default = `array()`), поэтому
+	 * после нормализации возвращаем их обратно из исходного post-данного дерева.
+	 *
+	 * @param array<string, mixed> $settings Результат sanitize_by_shape.
+	 * @param array<string, mixed> $merged   Сырой merged-tree до sanitize.
+	 * @return array<string, mixed>
+	 */
+	private static function normalize_payment_gateway_titles( array $settings, array $merged ): array {
+		$titles_node = self::dig_path( $merged, array( OptionKeys::SECTION_STEP_4, 'payment_block', 'gateway_titles' ) );
+		$titles_out = array();
+		if ( is_array( $titles_node ) ) {
+			foreach ( $titles_node as $gid => $title ) {
+				$gid_clean = sanitize_key( (string) $gid );
+				if ( '' === $gid_clean ) {
+					continue;
+				}
+				$title_clean = trim( wp_strip_all_tags( (string) $title ) );
+				if ( '' === $title_clean ) {
+					continue;
+				}
+				$titles_out[ $gid_clean ] = $title_clean;
+			}
+		}
+		if ( ! isset( $settings[ OptionKeys::SECTION_STEP_4 ] ) || ! is_array( $settings[ OptionKeys::SECTION_STEP_4 ] ) ) {
+			$settings[ OptionKeys::SECTION_STEP_4 ] = array();
+		}
+		if ( ! isset( $settings[ OptionKeys::SECTION_STEP_4 ]['payment_block'] ) || ! is_array( $settings[ OptionKeys::SECTION_STEP_4 ]['payment_block'] ) ) {
+			$settings[ OptionKeys::SECTION_STEP_4 ]['payment_block'] = array();
+		}
+		$settings[ OptionKeys::SECTION_STEP_4 ]['payment_block']['gateway_titles'] = $titles_out;
+		// Иконки способов оплаты зашиты в плагин (PNG), из админки не настраиваются.
+		$settings[ OptionKeys::SECTION_STEP_4 ]['payment_block']['gateway_icons'] = array();
+		return $settings;
+	}
+
+	/**
+	 * Безопасно достаёт значение из вложенного дерева.
+	 *
+	 * @param array<string, mixed> $tree
+	 * @param array<int, string>   $path
+	 * @return mixed
+	 */
+	private static function dig_path( array $tree, array $path ) {
+		$node = $tree;
+		foreach ( $path as $segment ) {
+			if ( ! is_array( $node ) || ! isset( $node[ $segment ] ) ) {
+				return null;
+			}
+			$node = $node[ $segment ];
+		}
+		return $node;
 	}
 
 	/**
@@ -101,6 +165,9 @@ final class AdminMenuHooks {
 			}
 			$method['price'] = isset( $method['price'] ) ? max( 0, (int) $method['price'] ) : 0;
 			$method['eta']   = isset( $method['eta'] ) ? sanitize_text_field( (string) $method['eta'] ) : '';
+			if ( isset( $method['wc_rate_id'] ) ) {
+				$method['wc_rate_id'] = sanitize_text_field( (string) $method['wc_rate_id'] );
+			}
 			if ( isset( $method['tariffs'] ) && is_array( $method['tariffs'] ) ) {
 				foreach ( $method['tariffs'] as $tariff_id => $tariff ) {
 					if ( ! is_array( $tariff ) ) {
@@ -109,6 +176,9 @@ final class AdminMenuHooks {
 					}
 					$tariff['price'] = isset( $tariff['price'] ) ? max( 0, (int) $tariff['price'] ) : 0;
 					$tariff['eta']   = isset( $tariff['eta'] ) ? sanitize_text_field( (string) $tariff['eta'] ) : '';
+					if ( isset( $tariff['wc_rate_id'] ) ) {
+						$tariff['wc_rate_id'] = sanitize_text_field( (string) $tariff['wc_rate_id'] );
+					}
 					$method['tariffs'][ $tariff_id ] = $tariff;
 				}
 			}
@@ -131,8 +201,35 @@ final class AdminMenuHooks {
 		$catalog['methods'] = $methods;
 		$catalog['sort_order'] = $valid_sort;
 		$delivery['shipping_catalog'] = $catalog;
+
+		$allowed_modes = array( 'catalog', 'woocommerce', 'hybrid' );
+		$pricing_raw   = isset( $delivery['pricing_mode'] ) ? sanitize_key( (string) $delivery['pricing_mode'] ) : 'catalog';
+		$delivery['pricing_mode'] = in_array( $pricing_raw, $allowed_modes, true ) ? $pricing_raw : 'catalog';
+
+		$wc_int = isset( $delivery['wc_integration'] ) && is_array( $delivery['wc_integration'] ) ? $delivery['wc_integration'] : array();
+		$wc_int['respect_chosen_shipping_methods'] = ! empty( $wc_int['respect_chosen_shipping_methods'] );
+		$delivery['wc_integration']                 = $wc_int;
+
 		$settings[ OptionKeys::SECTION_DELIVERY ] = $delivery;
 		return $settings;
+	}
+
+	/**
+	 * Толщина рамки кружка шага: как на фронте (px/rem/em/vw/% или число → px).
+	 */
+	private static function sanitize_progress_step_index_border_width( string $raw, string $fallback ): string {
+		$v = trim( wp_strip_all_tags( $raw ) );
+		$v = str_replace( array( ';', '{', '}', "\n", "\r", "\t" ), '', $v );
+		if ( '' === $v ) {
+			return $fallback;
+		}
+		if ( preg_match( '/^\d+(?:\.\d+)?$/', $v ) ) {
+			return $v . 'px';
+		}
+		if ( preg_match( '/^\d+(?:\.\d+)?(px|rem|em|vw|%)$/', $v ) ) {
+			return $v;
+		}
+		return $fallback;
 	}
 
 	/**
@@ -212,6 +309,28 @@ final class AdminMenuHooks {
 			}
 			if ( false !== strpos( $node_path, 'accent_color' ) || false !== strpos( $node_path, '.ui_tokens.' ) ) {
 				$color = sanitize_hex_color( $string_raw );
+				$result[ $key ] = $color ? $color : (string) $default_value;
+				continue;
+			}
+			if ( false !== strpos( $node_path, 'styles.progress_step_index.border_width' ) ) {
+				$result[ $key ] = self::sanitize_progress_step_index_border_width( $string_raw, (string) $default_value );
+				continue;
+			}
+			if ( false !== strpos( $node_path, 'styles.progress_step_index.' ) ) {
+				$norm  = trim( $string_raw );
+				if ( '' !== $norm && '#' !== $norm[0] && ( preg_match( '/^[0-9a-fA-F]{3}$/', $norm ) || preg_match( '/^[0-9a-fA-F]{6}$/', $norm ) ) ) {
+					$norm = '#' . $norm;
+				}
+				$color = sanitize_hex_color( $norm );
+				$result[ $key ] = $color ? $color : (string) $default_value;
+				continue;
+			}
+			if ( false !== strpos( $node_path, 'step_4.payment_block.card_styles.gift_peer_seal_' ) ) {
+				$norm = trim( $string_raw );
+				if ( '' !== $norm && '#' !== $norm[0] && ( preg_match( '/^[0-9a-fA-F]{3}$/', $norm ) || preg_match( '/^[0-9a-fA-F]{6}$/', $norm ) ) ) {
+					$norm = '#' . $norm;
+				}
+				$color = sanitize_hex_color( $norm );
 				$result[ $key ] = $color ? $color : (string) $default_value;
 				continue;
 			}
@@ -562,6 +681,17 @@ final class AdminMenuHooks {
 		// На вкладке шага 4 скрываем эти блоки, чтобы не дублировать.
 		if ( OptionKeys::SECTION_STEP_4 === $tab_id ) {
 			unset( $section_value['contact_block'], $section_value['address_block'], $section_value['address_geo'] );
+			// gateway_titles рендерятся отдельным блоком (см. render_step_4_payment_gateway_titles_group).
+			if ( isset( $section_value['payment_block'] ) && is_array( $section_value['payment_block'] ) ) {
+				unset( $section_value['payment_block']['gateway_titles'], $section_value['payment_block']['gateway_icons'] );
+				unset( $section_value['payment_block']['card_row'] );
+				if ( isset( $section_value['payment_block']['discount_toggles'] ) && is_array( $section_value['payment_block']['discount_toggles'] ) ) {
+					unset(
+						$section_value['payment_block']['discount_toggles']['coupon_icon_url'],
+						$section_value['payment_block']['discount_toggles']['gift_card_icon_url']
+					);
+				}
+			}
 		}
 		$title = isset( AdminSectionsRegistry::sections()[ $tab_id ]['label'] ) ? (string) AdminSectionsRegistry::sections()[ $tab_id ]['label'] : $tab_id;
 		$description = isset( $tabs[ $tab_id ]['description'] ) ? (string) $tabs[ $tab_id ]['description'] : '';
@@ -702,6 +832,12 @@ final class AdminMenuHooks {
 	 * @param array<string, mixed> $settings
 	 */
 	private static function render_supplemental_groups_for_tab( string $tab_id, array $settings ): void {
+		if ( OptionKeys::SECTION_STEP_1 === $tab_id ) {
+			self::render_step_1_parcel_count_labels_group( $settings );
+		}
+		if ( OptionKeys::SECTION_STEP_4 === $tab_id || OptionKeys::SECTION_PAYMENT === $tab_id ) {
+			self::render_step_4_payment_gateway_titles_group( $settings );
+		}
 		if ( OptionKeys::SECTION_SERVICE === $tab_id ) {
 			self::render_config_io_block();
 			self::render_supplemental_group(
@@ -975,6 +1111,160 @@ final class AdminMenuHooks {
 	}
 
 	/**
+	 * Блок «Подпись количества посылок» на вкладке Шага 1.
+	 * Хранится в виртуальной секции `labels.step_1.parcel_count_*`.
+	 *
+	 * @param array<string, mixed> $settings
+	 */
+	private static function render_step_1_parcel_count_labels_group( array $settings ): void {
+		$labels_section = isset( $settings[ OptionKeys::KEY_LABELS ] ) && is_array( $settings[ OptionKeys::KEY_LABELS ] )
+			? $settings[ OptionKeys::KEY_LABELS ]
+			: array();
+		$step_labels = isset( $labels_section['step_1'] ) && is_array( $labels_section['step_1'] )
+			? $labels_section['step_1']
+			: array();
+		$defaults_tree    = SafeSettingsResolver::get_defaults_tree();
+		$labels_defaults  = isset( $defaults_tree[ OptionKeys::KEY_LABELS ]['step_1'] ) && is_array( $defaults_tree[ OptionKeys::KEY_LABELS ]['step_1'] )
+			? $defaults_tree[ OptionKeys::KEY_LABELS ]['step_1']
+			: array();
+
+		$keys = array(
+			'parcel_count_one'   => array(
+				'label' => __( 'Подпись «посылка» (1)', 'mp-custom-checkout' ),
+				'help'  => __( 'Используется при числе посылок, оканчивающемся на 1 (но не на 11). Пример: 1 посылка. Используйте плейсхолдер {n} для подстановки числа.', 'mp-custom-checkout' ),
+			),
+			'parcel_count_few'   => array(
+				'label' => __( 'Подпись «посылки» (2–4)', 'mp-custom-checkout' ),
+				'help'  => __( 'Используется при числе посылок 2–4 (но не 12–14). Пример: 3 посылки. Плейсхолдер {n} обязателен.', 'mp-custom-checkout' ),
+			),
+			'parcel_count_other' => array(
+				'label' => __( 'Подпись «посылок» (0, 5+, 11–14)', 'mp-custom-checkout' ),
+				'help'  => __( 'Используется во всех остальных случаях. Пример: 0 посылок, 5 посылок, 11 посылок. Плейсхолдер {n} обязателен.', 'mp-custom-checkout' ),
+			),
+		);
+
+		echo '<details class="mp-cc-admin-shell__fieldset" open>';
+		echo '<summary><span>' . esc_html__( 'Подпись количества посылок (заголовок страницы)', 'mp-custom-checkout' ) . '</span><em class="mp-cc-admin-shell__type-badge mp-cc-admin-shell__type-badge--content">' . esc_html( self::group_type_label( 'content' ) ) . '</em></summary>';
+		echo '<p class="description">' . esc_html__( 'Подписи под заголовком «Оформление заказа» с количеством посылок. Поддерживается русское склонение.', 'mp-custom-checkout' ) . '</p>';
+
+		foreach ( $keys as $key => $meta ) {
+			$value = isset( $step_labels[ $key ] ) ? (string) $step_labels[ $key ] : '';
+			if ( '' === $value && isset( $labels_defaults[ $key ] ) ) {
+				$value = (string) $labels_defaults[ $key ];
+			}
+			$name = OptionKeys::MAIN . '[' . OptionKeys::KEY_LABELS . '][step_1][' . $key . ']';
+			echo '<label class="mp-cc-admin-shell__field">';
+			echo '<span class="mp-cc-admin-shell__field-label">' . esc_html( $meta['label'] ) . '</span>';
+			echo '<input type="text" class="regular-text" name="' . esc_attr( $name ) . '" value="' . esc_attr( $value ) . '" />';
+			echo '<span class="description mp-cc-admin-shell__field-tooltip">' . esc_html( $meta['help'] ) . '</span>';
+			echo '</label>';
+		}
+
+		echo '</details>';
+	}
+
+	/**
+	 * Блок «Названия способов оплаты» на вкладке Шага 4.
+	 * Перечисляет все установленные шлюзы WooCommerce и позволяет переопределить заголовок.
+	 * Хранится в `step_4.payment_block.gateway_titles[<gateway_id>]`.
+	 *
+	 * @param array<string, mixed> $settings
+	 */
+	private static function render_step_4_payment_gateway_titles_group( array $settings ): void {
+		$step_four = isset( $settings[ OptionKeys::SECTION_STEP_4 ] ) && is_array( $settings[ OptionKeys::SECTION_STEP_4 ] )
+			? $settings[ OptionKeys::SECTION_STEP_4 ]
+			: array();
+		$payment_block = isset( $step_four['payment_block'] ) && is_array( $step_four['payment_block'] )
+			? $step_four['payment_block']
+			: array();
+		$titles = isset( $payment_block['gateway_titles'] ) && is_array( $payment_block['gateway_titles'] )
+			? $payment_block['gateway_titles']
+			: array();
+
+		echo '<details class="mp-cc-admin-shell__fieldset" open>';
+		echo '<summary><span>' . esc_html__( 'Названия способов оплаты', 'mp-custom-checkout' ) . '</span><em class="mp-cc-admin-shell__type-badge mp-cc-admin-shell__type-badge--content">' . esc_html( self::group_type_label( 'content' ) ) . '</em></summary>';
+		echo '<p class="description">' . esc_html__( 'Переопределите подпись для каждого шлюза (например, «СБП», «Сплит»). Если поле пустое — используется название из настроек WooCommerce. Маленькие иконки в строках оплаты подставляются автоматически из файлов плагина.', 'mp-custom-checkout' ) . '</p>';
+
+		$gateways = array();
+		if ( function_exists( 'WC' ) && WC() && WC()->payment_gateways() instanceof \WC_Payment_Gateways ) {
+			$all = WC()->payment_gateways()->payment_gateways();
+			if ( is_array( $all ) ) {
+				$gateways = $all;
+			}
+		}
+
+		if ( empty( $gateways ) ) {
+			echo '<p>' . esc_html__( 'WooCommerce не вернул ни одного шлюза. Откройте WooCommerce → Платежи и активируйте хотя бы один способ оплаты.', 'mp-custom-checkout' ) . '</p>';
+			echo '</details>';
+			return;
+		}
+
+		$known_ids = array();
+		foreach ( $gateways as $gateway ) {
+			if ( ! $gateway instanceof \WC_Payment_Gateway ) {
+				continue;
+			}
+			$gid = sanitize_key( (string) $gateway->id );
+			if ( '' === $gid ) {
+				continue;
+			}
+			$known_ids[ $gid ] = true;
+
+			$wc_title = wp_strip_all_tags( (string) $gateway->get_title() );
+			$wc_method_title = wp_strip_all_tags( (string) ( method_exists( $gateway, 'get_method_title' ) ? $gateway->get_method_title() : '' ) );
+			$is_enabled = isset( $gateway->enabled ) ? ( 'yes' === $gateway->enabled ) : true;
+			$override = isset( $titles[ $gid ] ) ? (string) $titles[ $gid ] : '';
+
+			$name_title = OptionKeys::MAIN . '[' . OptionKeys::SECTION_STEP_4 . '][payment_block][gateway_titles][' . $gid . ']';
+
+			$badge_html = $is_enabled
+				? '<em class="mp-cc-admin-shell__scenario-badge">' . esc_html__( 'включён', 'mp-custom-checkout' ) . '</em>'
+				: '<em class="mp-cc-admin-shell__scenario-badge is-risky">' . esc_html__( 'отключён', 'mp-custom-checkout' ) . '</em>';
+
+			$current_label = '' !== $override ? $override : $wc_title;
+
+			echo '<label class="mp-cc-admin-shell__field">';
+			echo '<span class="mp-cc-admin-shell__field-label">';
+			echo esc_html( '' !== $wc_method_title ? $wc_method_title : $gid );
+			echo ' <code style="font-weight:normal;opacity:.7">' . esc_html( $gid ) . '</code> ';
+			echo $badge_html; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- безопасный статический HTML.
+			echo '</span>';
+			echo '<input type="text" class="regular-text" name="' . esc_attr( $name_title ) . '" value="' . esc_attr( $override ) . '" placeholder="' . esc_attr( $wc_title ) . '" />';
+			echo '<span class="description mp-cc-admin-shell__field-tooltip">';
+			printf(
+				/* translators: 1: WC gateway title, 2: current label visible to customer. */
+				esc_html__( 'Название из WooCommerce: «%1$s». Сейчас покупатель видит: «%2$s». Очистите поле, чтобы вернуть исходное название WooCommerce.', 'mp-custom-checkout' ),
+				esc_html( '' !== $wc_title ? $wc_title : '—' ),
+				esc_html( '' !== $current_label ? $current_label : '—' )
+			);
+			echo '</span>';
+			echo '</label>';
+		}
+
+		// Если в БД остались переопределения для удалённых/недоступных шлюзов — рендерим их тоже,
+		// чтобы пользователь мог увидеть и сбросить значение, не трогая БД руками.
+		$orphan_keys = array_keys( $titles );
+		foreach ( $orphan_keys as $orphan_id ) {
+			$gid = sanitize_key( (string) $orphan_id );
+			if ( '' === $gid || isset( $known_ids[ $gid ] ) ) {
+				continue;
+			}
+			$orphan_title = isset( $titles[ $orphan_id ] ) ? (string) $titles[ $orphan_id ] : '';
+			$name_title = OptionKeys::MAIN . '[' . OptionKeys::SECTION_STEP_4 . '][payment_block][gateway_titles][' . $gid . ']';
+			echo '<label class="mp-cc-admin-shell__field">';
+			echo '<span class="mp-cc-admin-shell__field-label">';
+			echo esc_html( $gid );
+			echo ' <em class="mp-cc-admin-shell__scenario-badge is-risky">' . esc_html__( 'шлюз не найден в WooCommerce', 'mp-custom-checkout' ) . '</em>';
+			echo '</span>';
+			echo '<input type="text" class="regular-text" name="' . esc_attr( $name_title ) . '" value="' . esc_attr( $orphan_title ) . '" />';
+			echo '<span class="description mp-cc-admin-shell__field-tooltip">' . esc_html__( 'Шлюз больше не установлен в WooCommerce. Очистите поле, чтобы убрать сохранённое переопределение.', 'mp-custom-checkout' ) . '</span>';
+			echo '</label>';
+		}
+
+		echo '</details>';
+	}
+
+	/**
 	 * @param mixed $value
 	 */
 	private static function render_supplemental_group( string $title, string $name_prefix, $value, string $path, string $type ): void {
@@ -1016,6 +1306,14 @@ final class AdminMenuHooks {
 	 * @param mixed $value
 	 */
 	private static function render_leaf_input( string $name, $value, string $path ): void {
+		// Поля price у методов с тарифами (post_russia/pvz/courier) — служебные fallback для режима «catalog»;
+		// в режиме «woocommerce» они не используются и в UI лишние. Скрываем их в админке, но сохраняем значение
+		// через hidden input, чтобы случайно не обнулить уже настроенный fallback при сабмите формы.
+		if ( self::is_admin_field_hidden( $path ) ) {
+			$hidden_value = is_scalar( $value ) ? (string) $value : '';
+			echo '<input type="hidden" name="' . esc_attr( $name ) . '" value="' . esc_attr( $hidden_value ) . '" />';
+			return;
+		}
 		$label = self::localized_label_for_path( $path );
 		$filters = self::build_filters_for_path( $path );
 		$risky = self::is_risky_path( $path );
@@ -1056,13 +1354,33 @@ final class AdminMenuHooks {
 	 */
 	private static function localized_label_for_path( string $path ): string {
 		$leaf = basename( str_replace( '.', '/', $path ) );
+		if ( 'wc_rate_id' === $leaf && false !== strpos( $path, 'shipping_catalog.methods' ) && false === strpos( $path, '.tariffs.' ) ) {
+			return __( 'WC rate ID (метод без тарифов)', 'mp-custom-checkout' );
+		}
 		$map = array(
 			'general.checkout_layout.max_width'          => __( 'Максимальная ширина страницы checkout', 'mp-custom-checkout' ),
+			'general.checkout_layout.vertical_padding'   => __( 'Вертикальные отступы блока checkout (сверху и снизу)', 'mp-custom-checkout' ),
 			'step_1.address_form_style_preset'          => __( 'Пресет стиля формы адреса', 'mp-custom-checkout' ),
+			'step_1.labels.title'                       => __( 'Шаг 1: заголовок страницы корзины', 'mp-custom-checkout' ),
+			'step_1.labels.summary_title'               => __( 'Заголовок блока «Детали заказа» (боковая колонка)', 'mp-custom-checkout' ),
+			'step_1.labels.subtotal_label'              => __( 'Сводка: подпись «Подытог»', 'mp-custom-checkout' ),
+			'step_1.labels.shipping_label'              => __( 'Сводка: подпись «Доставка»', 'mp-custom-checkout' ),
+			'step_1.labels.discount_label'              => __( 'Сводка: подпись «Скидка»', 'mp-custom-checkout' ),
+			'step_1.labels.gift_card_label'             => __( 'Сводка: подпись «Подарочная карта»', 'mp-custom-checkout' ),
+			'step_1.labels.tax_label'                   => __( 'Сводка: подпись «Налоги»', 'mp-custom-checkout' ),
+			'step_1.labels.total_label'                 => __( 'Сводка: подпись «Итого»', 'mp-custom-checkout' ),
+			'step_1.labels.items_label'                 => __( 'Сводка: подпись «Позиций»', 'mp-custom-checkout' ),
+			'step_1.labels.continue_label'              => __( 'Кнопка «Продолжить оформление»', 'mp-custom-checkout' ),
+			'step_1.labels.return_label'                => __( 'Кнопка «Вернуться в магазин»', 'mp-custom-checkout' ),
+			'step_1.labels.empty_title'                 => __( 'Заголовок при пустой корзине', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.card_bg'        => __( 'Фон карточки', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.card_border'    => __( 'Рамка карточки', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.card_radius'    => __( 'Скругление карточки', 'mp-custom-checkout' ),
-			'step_1.address_form_styles.row_divider'    => __( 'Разделитель строк', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.form_border_width' => __( 'Толщина внешней рамки блока (населённый пункт / доставка)', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.row_divider'    => __( 'Цвет линий между строками', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.row_divider_width' => __( 'Толщина линий между строками', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.divider_after_city_width' => __( 'Линия под первой строкой (населённый пункт): толщина или пусто', 'mp-custom-checkout' ),
+			'step_1.address_form_styles.divider_after_method_width' => __( 'Линия под способом доставки: толщина или пусто', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.label_color'    => __( 'Цвет названий полей', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.label_size'     => __( 'Размер названий полей', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.value_color'    => __( 'Цвет значений', 'mp-custom-checkout' ),
@@ -1078,6 +1396,12 @@ final class AdminMenuHooks {
 			'step_1.address_form_styles.edit_btn_border'  => __( 'Рамка кнопки «другой»', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.edit_btn_color'   => __( 'Цвет текста кнопки «другой»', 'mp-custom-checkout' ),
 			'step_1.address_form_styles.edit_btn_radius'  => __( 'Скругление кнопки «другой»', 'mp-custom-checkout' ),
+			'step_1.step_panel_screen_styles.border_width' => __( 'Панель шага (.mp-cc-step-panel): толщина рамки', 'mp-custom-checkout' ),
+			'step_1.step_panel_screen_styles.border_color' => __( 'Панель шага: цвет рамки (пусто — как у темы)', 'mp-custom-checkout' ),
+			'step_1.step_panel_screen_styles.box_shadow'   => __( 'Панель шага: box-shadow (пусто — как у темы)', 'mp-custom-checkout' ),
+			'step_4.recipient_step_panel_styles.border_width' => __( 'Панель шага «Получатель» (recipient): толщина рамки', 'mp-custom-checkout' ),
+			'step_4.recipient_step_panel_styles.border_color' => __( 'Панель «Получатель»: цвет рамки (пусто — как у шага 1 / темы)', 'mp-custom-checkout' ),
+			'step_4.recipient_step_panel_styles.box_shadow'   => __( 'Панель «Получатель»: box-shadow (пусто — как у шага 1)', 'mp-custom-checkout' ),
 			'step_4.contact_block.layout.desktop_columns' => __( 'Контакты: колонки (desktop)', 'mp-custom-checkout' ),
 			'step_4.contact_block.layout.tablet_columns'  => __( 'Контакты: колонки (tablet)', 'mp-custom-checkout' ),
 			'step_4.contact_block.layout.mobile_columns'  => __( 'Контакты: колонки (mobile)', 'mp-custom-checkout' ),
@@ -1115,17 +1439,26 @@ final class AdminMenuHooks {
 			'step_4.recipient_styles.address_header_divider' => __( 'Шаг 2: разделитель заголовка адреса', 'mp-custom-checkout' ),
 			'step_4.recipient_styles.address_title_size'  => __( 'Шаг 2: размер заголовка адреса', 'mp-custom-checkout' ),
 			'step_4.recipient_styles.address_intro_size'  => __( 'Шаг 2: размер подзаголовка адреса', 'mp-custom-checkout' ),
+			'step_4.payment_block.two_up_show_card_description' => __( 'Оплата (две карточки): показывать описание под заголовком', 'mp-custom-checkout' ),
+			'step_4.payment_block.two_up_show_perk_tags'        => __( 'Оплата (две карточки): показывать теги под линией', 'mp-custom-checkout' ),
+			'step_4.payment_block.two_up_minimal_idle_chrome'   => __( 'Оплата (две карточки): без рамки и кружка до выбора', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.grid_gap'      => __( 'Оплата: расстояние между карточками', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.card_padding'  => __( 'Оплата: внутренние отступы карточки', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.card_radius'   => __( 'Оплата: скругление карточки', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.card_border'   => __( 'Оплата: цвет рамки карточки', 'mp-custom-checkout' ),
-			'step_4.payment_block.card_styles.card_shadow'   => __( 'Оплата: тень карточки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.card_shadow'   => __( 'Оплата: тень карточки-контейнера (two-up)', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.shell_shadow'  => __( 'Оплата: тень изображения/области карты (visual)', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.active_border' => __( 'Оплата: цвет рамки активной карточки', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.active_glow_outer' => __( 'Оплата: свечение активной карточки (внешнее)', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.active_glow_shadow' => __( 'Оплата: тень активной карточки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.selection_glow_color' => __( 'Оплата: цвет ореола при выборе (логотип, рамка two-up)', 'mp-custom-checkout' ),
+			'step_4.payment_block.bank_card_visual.glow_color' => __( 'Оплата: цвет свечения после клика по карте (bank card visual)', 'mp-custom-checkout' ),
+			'step_4.payment_block.bank_card_visual.glow_intensity' => __( 'Оплата: интенсивность свечения (soft | medium | strong)', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.radio_size'    => __( 'Оплата: размер радиокнопки', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.logo_height'   => __( 'Оплата: высота логотипа/картинки', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.logo_max_width'=> __( 'Оплата: максимальная ширина логотипа/картинки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.two_up_card_min_height'  => __( 'Оплата (two-up): минимальная высота всей карточки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.two_up_shell_min_height' => __( 'Оплата (two-up): минимальная высота блока с логотипом', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.title_size'    => __( 'Оплата: размер заголовка карточки', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.desc_size'     => __( 'Оплата: размер описания карточки', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.perk_font_size'=> __( 'Оплата: размер текста плашек преимуществ', 'mp-custom-checkout' ),
@@ -1143,6 +1476,39 @@ final class AdminMenuHooks {
 			'step_4.payment_block.card_styles.gift_bar_input_text' => __( 'Подарочная карта (нижний блок): цвет текста поля ввода', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.gift_bar_button_bg' => __( 'Подарочная карта (нижний блок): фон кнопки', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles.gift_bar_button_text' => __( 'Подарочная карта (нижний блок): цвет текста кнопки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_peer_seal_icon_color' => __( 'Подарочная карта (печать слева): цвет линий иконки', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_peer_seal_ring_inner' => __( 'Подарочная карта (печать слева): цвет внутреннего кольца', 'mp-custom-checkout' ),
+			'step_4.payment_block.card_styles.gift_peer_seal_ring_outer' => __( 'Подарочная карта (печать слева): цвет внешней обводки', 'mp-custom-checkout' ),
+			'step_4.payment_block.rows_layout' => __( 'Оплата: показывать способы оплаты строчками (вместо плиток)', 'mp-custom-checkout' ),
+			'step_4.payment_block.discount_toggles.coupon_in_step' => __( 'Промокод: показывать тоггл на шаге «Оплата»', 'mp-custom-checkout' ),
+			'step_4.payment_block.discount_toggles.gift_card_in_step' => __( 'Подарочная карта: показывать тоггл на шаге «Оплата»', 'mp-custom-checkout' ),
+			'step_4.payment_block.discount_toggles.coupon_in_summary' => __( 'Промокод: показывать форму ввода в правой сводке', 'mp-custom-checkout' ),
+			'step_4.payment_block.discount_toggles.gift_card_in_summary' => __( 'Подарочная карта: показывать форму ввода в правой сводке', 'mp-custom-checkout' ),
+			'step_4.coupon_block.styles.summary_glow_color' => __( 'Промокод: цвет свечения блока', 'mp-custom-checkout' ),
+			'step_4.coupon_block.styles.summary_bg' => __( 'Промокод: фон блока (градиент/цвет)', 'mp-custom-checkout' ),
+			'step_4.coupon_block.styles.summary_border' => __( 'Промокод: цвет рамки блока', 'mp-custom-checkout' ),
+			'step_4.coupon_block.styles.title_color' => __( 'Промокод: цвет заголовка', 'mp-custom-checkout' ),
+			'step_4.coupon_block.styles.text_color' => __( 'Промокод: цвет текста/подписей', 'mp-custom-checkout' ),
+			'step_4.coupon_block.styles.input_bg' => __( 'Промокод: фон поля ввода', 'mp-custom-checkout' ),
+			'step_4.coupon_block.styles.input_border' => __( 'Промокод: рамка поля ввода', 'mp-custom-checkout' ),
+			'step_4.coupon_block.styles.input_text' => __( 'Промокод: цвет текста поля ввода', 'mp-custom-checkout' ),
+			'step_4.coupon_block.styles.button_bg' => __( 'Промокод: фон кнопки «Применить»', 'mp-custom-checkout' ),
+			'step_4.coupon_block.styles.button_border' => __( 'Промокод: рамка кнопки «Применить»', 'mp-custom-checkout' ),
+			'step_4.coupon_block.styles.button_text' => __( 'Промокод: цвет текста кнопки «Применить»', 'mp-custom-checkout' ),
+			'step_4.coupon_block.styles.button_bg_hover' => __( 'Промокод: фон кнопки при наведении', 'mp-custom-checkout' ),
+			'step_4.coupon_block.styles.button_border_hover' => __( 'Промокод: рамка кнопки при наведении', 'mp-custom-checkout' ),
+			'delivery.pricing_mode' => __( 'Режим цен доставки', 'mp-custom-checkout' ),
+			'delivery.wc_integration.respect_chosen_shipping_methods' => __( 'WC: сохранять выбранные методы доставки в сессии', 'mp-custom-checkout' ),
+			'styles.progress_step_index.pending_bg'     => __( 'Шаги (кружок): фон — ещё не пройден', 'mp-custom-checkout' ),
+			'styles.progress_step_index.pending_digit'  => __( 'Шаги (кружок): цвет цифры — ещё не пройден', 'mp-custom-checkout' ),
+			'styles.progress_step_index.active_bg'      => __( 'Шаги (кружок): фон — текущий шаг', 'mp-custom-checkout' ),
+			'styles.progress_step_index.active_digit'   => __( 'Шаги (кружок): цвет цифры — текущий шаг', 'mp-custom-checkout' ),
+			'styles.progress_step_index.complete_bg'    => __( 'Шаги (кружок): фон — пройден', 'mp-custom-checkout' ),
+			'styles.progress_step_index.complete_digit' => __( 'Шаги (кружок): цвет цифры — пройден', 'mp-custom-checkout' ),
+			'styles.progress_step_index.pending_border'  => __( 'Шаги (кружок): цвет рамки — ещё не пройден', 'mp-custom-checkout' ),
+			'styles.progress_step_index.active_border'   => __( 'Шаги (кружок): цвет рамки — текущий шаг', 'mp-custom-checkout' ),
+			'styles.progress_step_index.complete_border' => __( 'Шаги (кружок): цвет рамки — пройден', 'mp-custom-checkout' ),
+			'styles.progress_step_index.border_width'    => __( 'Шаги (кружок): толщина рамки (все состояния)', 'mp-custom-checkout' ),
 		);
 		if ( isset( $map[ $path ] ) ) {
 			return (string) $map[ $path ];
@@ -1156,7 +1522,10 @@ final class AdminMenuHooks {
 	private static function localized_group_label_for_path( string $path, string $fallback_key ): string {
 		$map = array(
 			'general.checkout_layout'                    => __( 'Макет страницы checkout', 'mp-custom-checkout' ),
+			'styles.progress_step_index'                 => __( 'Кружки номеров шагов (вертикальный таймлайн)', 'mp-custom-checkout' ),
 			'step_1.address_form_styles'                 => __( 'Стили формы адреса и доставки (шаг 1)', 'mp-custom-checkout' ),
+			'step_1.step_panel_screen_styles'            => __( 'Рамка экрана шага (.mp-cc-step-panel.mp-cc-step-screen)', 'mp-custom-checkout' ),
+			'step_1.labels'                              => __( 'Тексты сводки заказа и кнопок (шаг 1)', 'mp-custom-checkout' ),
 			'step_4.contact_block'                       => __( 'Контактные данные (шаг 4)', 'mp-custom-checkout' ),
 			'step_4.contact_block.layout'                => __( 'Сетка полей контактов', 'mp-custom-checkout' ),
 			'step_4.contact_block.field_state_styles'    => __( 'Стили состояний полей контактов', 'mp-custom-checkout' ),
@@ -1171,7 +1540,9 @@ final class AdminMenuHooks {
 			'step_4.address_block.subfields_visible'     => __( 'Видимость полей адреса', 'mp-custom-checkout' ),
 			'step_4.address_block.subfields_order'       => __( 'Порядок полей адреса', 'mp-custom-checkout' ),
 			'step_4.recipient_styles'                    => __( 'Стили шага 2: Получатель', 'mp-custom-checkout' ),
+			'step_4.recipient_step_panel_styles'         => __( 'Рамка и тень панели шага «Получатель» (data-step-panel=recipient)', 'mp-custom-checkout' ),
 			'step_4.payment_block.card_styles'           => __( 'Стили карточек оплаты', 'mp-custom-checkout' ),
+			'step_4.payment_block.discount_toggles'      => __( 'Промокод и подарочная карта на шаге оплаты', 'mp-custom-checkout' ),
 		);
 		if ( isset( $map[ $path ] ) ) {
 			return (string) $map[ $path ];
@@ -1230,6 +1601,36 @@ final class AdminMenuHooks {
 
 	private static function tooltip_text_for_path( string $path ): string {
 		$p = strtolower( $path );
+		if ( false !== strpos( $p, 'checkout_layout.vertical_padding' ) ) {
+			return __( 'Одинаковый отступ сверху и снизу у всего блока #mp-cc-checkout (например 75px или 4rem). Только безопасные единицы: px, rem, em, vw, %.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'step_1.address_form_styles.form_border_width' ) || false !== strpos( $p, 'step_1.address_form_styles.row_divider_width' ) ) {
+			return __( 'CSS-размер: например 1px или 0 чтобы убрать линию. Допустимы px, rem.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'divider_after_city_width' ) || false !== strpos( $p, 'divider_after_method_width' ) ) {
+			return __( 'Переопределяет толщину линии только для указанной границы. Пусто — как у «Толщина линий между строками». 0 — без линии.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'step_1.step_panel_screen_styles.border_width' ) ) {
+			return __( 'Рамка вокруг панели текущего шага (v2). 0 или 0px — без рамки.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'step_1.step_panel_screen_styles.border_color' ) ) {
+			return __( 'Необязательно: цвет в формате #rrggbb. Пустое поле — цвет границы из темы checkout.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'step_1.step_panel_screen_styles.box_shadow' ) ) {
+			return __( 'CSS для box-shadow панели шага. Пусто — тень из токена темы (--mp-cc-shadow-card). none — без тени.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'step_4.recipient_step_panel_styles.border_width' ) || false !== strpos( $p, 'step_4.recipient_step_panel_styles.border_color' ) ) {
+			return __( 'Только для шага с контактами (recipient). Пусто — те же значения, что на шаге 1 в «Рамка экрана шага». 0 — без рамки.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'step_4.recipient_step_panel_styles.box_shadow' ) ) {
+			return __( 'Переопределяет тень только у панели recipient. Пусто — как у шага 1; none — без тени.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'payment_block.card_styles.selection_glow_color' ) ) {
+			return __( 'HEX цвет (например #c4a574): ореол за логотипом, фокус и подсветка выбранной карточки в сетке two-up. Дублирует смысл «glow» до клика; после клика см. bank_card_visual.glow_color.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'bank_card_visual.glow_color' ) ) {
+			return __( 'Цвет drop-shadow вокруг области логотипа после подтверждения выбора (если включён bank card visual).', 'mp-custom-checkout' );
+		}
 		if ( false !== strpos( $p, 'route_slug' ) ) {
 			return __( 'Изменяет URL маршрутов checkout/success. Требует проверки rewrite-правил.', 'mp-custom-checkout' );
 		}
@@ -1241,6 +1642,21 @@ final class AdminMenuHooks {
 		}
 		if ( false !== strpos( $p, 'field_order' ) ) {
 			return __( 'Определяет визуальный порядок полей в шаге.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'step_4.payment_block.two_up_show_card_description' ) ) {
+			return __( 'Только для раскладки с двумя крупными карточками (ЮKassa / Robokassa). Снимите галочку, чтобы убрать серый текст описания под названием способа.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'step_4.payment_block.two_up_show_perk_tags' ) ) {
+			return __( 'Только для двухкарточной раскладки. Снимите галочку, чтобы убрать блок с тегами («Без комиссии» и т. п.) и линию над ним.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'step_4.payment_block.two_up_minimal_idle_chrome' ) ) {
+			return __( 'Только для двух крупных карточек (ЮKassa + Robokassa). Включите: у не выбранной карточки скрыты серая рамка и декоративный кружок; после выбора активная карточка выглядит как сейчас (фиолетовая рамка и индикатор). Снимите галочку, чтобы снова показывать рамку и кружок всегда.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'payment_block.card_styles.two_up_card_min_height' ) ) {
+			return __( 'CSS min-height для карточки ЮKassa/Robokassa в двухколоночной раскладке (например 18rem). Пусто — встроенное значение по умолчанию (25rem).', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'payment_block.card_styles.two_up_shell_min_height' ) ) {
+			return __( 'CSS min-height верхней области с логотипом в two-up. Пусто — по умолчанию 8.8rem. Уменьшите вместе с «Высота логотипа», если карточка слишком высокая.', 'mp-custom-checkout' );
 		}
 		if ( false !== strpos( $p, 'payment_block' ) && false !== strpos( $p, 'card_surface' ) ) {
 			return __( 'Режим карточек: classic — радио-список WooCommerce; visual — карточки и поля шлюза под сеткой; in_card — поля шлюза внутри выбранной карточки (HTML из payment_fields(), без самодельных PAN).', 'mp-custom-checkout' );
@@ -1267,13 +1683,19 @@ final class AdminMenuHooks {
 			return __( 'Ограничение частоты второстепенных анимаций на слабых устройствах / при лавине событий.', 'mp-custom-checkout' );
 		}
 		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, 'tariffs' ) && false !== strpos( $p, '.price' ) ) {
-			return __( 'Цена тарифа в рублях (целое). Показывается покупателю в выборе способа доставки.', 'mp-custom-checkout' );
+			return __( 'Цена тарифа в каталоге (руб., целое). При режиме цен «woocommerce» и заполненном WC rate ID у тарифа сумма на витрине подменяется на расчёт WooCommerce (СДЭК/зоны и т.д.); это поле тогда резерв/подсказка и для подстраховки, если ставка WC не найдена.', 'mp-custom-checkout' );
 		}
 		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, '.price' ) ) {
-			return __( 'Базовая цена метода доставки в рублях (целое). Используется, если у метода нет тарифов.', 'mp-custom-checkout' );
+			return __( 'Цена метода без тарифов (руб., целое). Нужна в режиме «catalog» и как запасная, если в режиме «woocommerce» не удалось сопоставить WC rate. Если везде только тарифы СДЭК через WC — держите «woocommerce», задайте wc_rate_id у тарифов и не опирайтесь на это число.', 'mp-custom-checkout' );
 		}
 		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, '.eta' ) ) {
 			return __( 'Срок доставки (произвольный текст). Например: «2 дней», «в течение дня», пусто — не показывать.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, 'wc_rate_id' ) && false === strpos( $p, '.tariffs.' ) ) {
+			return __( 'Идентификатор ставки WooCommerce для метода без тарифов (как в нативном checkout: method_id:instance_id, например flat_rate:12). Нужен для режима цен «woocommerce» и синхронизации выбранного способа с сессией WC. Поле дублируется в блоке «Каталог доставки» вверху вкладки.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, 'tariffs' ) && false !== strpos( $p, 'wc_rate_id' ) ) {
+			return __( 'Идентификатор ставки WooCommerce (как в нативном checkout: shipping_method:instance). При режиме цен «woocommerce» цена тарифа в каталоге подменяется на расчёт WC по адресу. Пусто — остаётся цена из каталога.', 'mp-custom-checkout' );
 		}
 		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, '.title' ) ) {
 			return __( 'Название метода/тарифа, которое увидит покупатель на шаге «Адрес и доставка».', 'mp-custom-checkout' );
@@ -1284,11 +1706,29 @@ final class AdminMenuHooks {
 		if ( false !== strpos( $p, 'shipping_catalog.methods' ) && false !== strpos( $p, 'visibility_scenarios' ) ) {
 			return __( 'Сценарии, в которых метод доступен: pickup, krasnoyarsk_delivery, other_city_delivery.', 'mp-custom-checkout' );
 		}
+		if ( false !== strpos( $p, 'delivery.pricing_mode' ) ) {
+			return __( 'catalog — цены из каталога модуля и shipping_price в сессии. woocommerce — адрес синхронизируется с WC customer, пересчёт доставки как в нативном checkout (СДЭК и зоны); суммы в списке методов подставляются из WC, если у тарифа задан WC rate ID в каталоге. hybrid — зарезервировано.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'delivery.wc_integration.respect_chosen_shipping_methods' ) ) {
+			return __( 'Если в сессии WooCommerce уже выбран rate (method_id:instance_id), WC старается не сбрасывать его при пересчёте, пока он доступен. Для диагностики см. логи плагина при расхождении выбранного метода и списка rate’ов.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'styles.progress_step_index.border_width' ) ) {
+			return __( 'Толщина рамки кружка: например 2px, 1px, 0.15rem. Допустимы px, rem, em, vw, % или число без единицы (тогда px).', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'styles.progress_step_index.' ) ) {
+			return __( 'Цвет в формате #rrggbb. Для рамок — цвет обводки кружка в каждом состоянии; для фона и цифры — как раньше.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'payment_block.card_styles.gift_peer_seal_' ) ) {
+			return __( 'Только для раскладки «печать слева» (seal-inline) у блока подарочной карты. Формат #rrggbb или без решётки. Пустое поле при сохранении вернёт значение по умолчанию из схемы.', 'mp-custom-checkout' );
+		}
 		if ( false !== strpos( $p, 'pickup.points' ) && false !== strpos( $p, 'address' ) ) {
 			return __( 'Адрес пункта самовывоза одной строкой. Отображается в карточке метода «Самовывоз».', 'mp-custom-checkout' );
 		}
 		if ( false !== strpos( $p, 'step_1.labels.address_form' ) ) {
-			return __( 'Тексты полей формы «Адрес и доставка» на checkout (шаг 1): подписи строк, placeholder города, кнопка «другой», подпись к тарифам, строка адреса офиса.', 'mp-custom-checkout' );
+			return __( 'Тексты полей формы «Адрес и доставка» на checkout (шаг 1): подписи строк, placeholder города, кнопка «другой», подпись к тарифам.', 'mp-custom-checkout' );
+		}
+		if ( false !== strpos( $p, 'step_1.labels.summary_title' ) ) {
+			return __( 'Заголовок верхней карточки в правой/нижней колонке checkout — над списком товаров и итогом. По умолчанию «Детали заказа».', 'mp-custom-checkout' );
 		}
 		if ( false !== strpos( $p, 'phone_country_codes' ) ) {
 			return __( 'Список стран для выбора кода телефона на шаге «Получатель»: dial, ISO, national_digits (сколько цифр без кода страны), label (подпись в списке, обычно код ISO: RU, KZ, …). Флаги на сайте — эмодзи по ISO.', 'mp-custom-checkout' );
@@ -1302,6 +1742,38 @@ final class AdminMenuHooks {
 			|| false !== strpos( $p, 'step_order' )
 			|| false !== strpos( $p, 'step_definitions' )
 			|| false !== strpos( $p, 'checkout_testing_mode' );
+	}
+
+	/**
+	 * Поля настроек, которые сохраняем (значение пишется в hidden), но не показываем в UI админки.
+	 *
+	 * Сейчас сюда попадают `delivery.shipping_catalog.methods.{X}.price` для всех методов кроме
+	 * `pickup` и `krasnoyarsk_delivery` (у них цена реально берётся из админки), а также
+	 * `delivery.shipping_catalog.methods.{X}.tariffs.{Y}.price` — у тарифов цена всегда приходит
+	 * из WC rates через overlay, а это поле — просто источник «нулевой» подписи в UI checkout.
+	 */
+	private static function is_admin_field_hidden( string $path ): bool {
+		$p = (string) $path;
+		if ( false === strpos( $p, 'delivery.shipping_catalog.methods.' ) ) {
+			return false;
+		}
+		$is_price_leaf = ( '.price' === substr( $p, -6 ) );
+		if ( ! $is_price_leaf ) {
+			return false;
+		}
+		// Цены тарифов (path содержит .tariffs.) — всегда скрываем.
+		if ( false !== strpos( $p, '.tariffs.' ) ) {
+			return true;
+		}
+		// Цена самого метода: оставляем для pickup и krasnoyarsk_delivery, скрываем остальное.
+		if ( preg_match( '/delivery\.shipping_catalog\.methods\.([a-z0-9_\-]+)\.price$/i', $p, $matches ) ) {
+			$method_id = strtolower( (string) $matches[1] );
+			if ( 'pickup' === $method_id || 'krasnoyarsk_delivery' === $method_id ) {
+				return false;
+			}
+			return true;
+		}
+		return false;
 	}
 
 	private static function detect_group_type( string $key, string $path ): string {

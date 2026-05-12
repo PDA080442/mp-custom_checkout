@@ -51,10 +51,12 @@ final class FeatureFlagResolver {
 			DefaultFeatureFlagsRegistry::FLAG_CHECKOUT_UI_V2           => $all[ DefaultFeatureFlagsRegistry::FLAG_CHECKOUT_UI_V2 ],
 			DefaultFeatureFlagsRegistry::FLAG_MULTI_STEP_FLOW          => $all[ DefaultFeatureFlagsRegistry::FLAG_MULTI_STEP_FLOW ],
 			DefaultFeatureFlagsRegistry::FLAG_MULTI_PICKUP_POINTS      => $all[ DefaultFeatureFlagsRegistry::FLAG_MULTI_PICKUP_POINTS ],
+			DefaultFeatureFlagsRegistry::FLAG_PVZ_OFFICE_REQUIRED      => $all[ DefaultFeatureFlagsRegistry::FLAG_PVZ_OFFICE_REQUIRED ],
 			DefaultFeatureFlagsRegistry::FLAG_CONDITIONS_STEP          => $all[ DefaultFeatureFlagsRegistry::FLAG_CONDITIONS_STEP ],
 			DefaultFeatureFlagsRegistry::FLAG_DISCOUNT_BLOCK_PLACEMENT => $all[ DefaultFeatureFlagsRegistry::FLAG_DISCOUNT_BLOCK_PLACEMENT ],
 			DefaultFeatureFlagsRegistry::FLAG_CHECKOUT_TESTING_MODE    => $all[ DefaultFeatureFlagsRegistry::FLAG_CHECKOUT_TESTING_MODE ],
 			DefaultFeatureFlagsRegistry::FLAG_ADMIN_LIVE_PREVIEW       => $all[ DefaultFeatureFlagsRegistry::FLAG_ADMIN_LIVE_PREVIEW ],
+			DefaultFeatureFlagsRegistry::FLAG_CHECKOUT_PERF_V1         => $all[ DefaultFeatureFlagsRegistry::FLAG_CHECKOUT_PERF_V1 ],
 		);
 	}
 

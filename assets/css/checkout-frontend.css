@@ -11,6 +11,19 @@
 	--mp-cc-color-rail: #2563eb;
 	--mp-cc-color-error: #b91c1c;
 	--mp-cc-color-success: #15803d;
+	--mp-cc-progress-index-pending-bg: #ffffff;
+	--mp-cc-progress-index-pending-digit: #666666;
+	--mp-cc-progress-index-active-bg: #2563eb;
+	--mp-cc-progress-index-active-digit: #ffffff;
+	--mp-cc-progress-index-complete-bg: #15803d;
+	--mp-cc-progress-index-complete-digit: #ffffff;
+	--mp-cc-progress-index-pending-border: #e5e5e5;
+	--mp-cc-progress-index-active-border: #2563eb;
+	--mp-cc-progress-index-complete-border: #15803d;
+	--mp-cc-progress-index-border-width: 2px;
+	--mp-cc-pay-gift-seal-icon: #896a3a;
+	--mp-cc-pay-gift-seal-ring-inner: #caa36d;
+	--mp-cc-pay-gift-seal-ring-outer: #ceb284;
 	--mp-cc-font-family-base: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
 	--mp-cc-font-size-base: 16px;
 	--mp-cc-radius-sm: 6px;
@@ -37,11 +50,12 @@
 }
 
 #mp-cc-checkout {
-	color: var(--mp-cc-color-text);
-	background: var(--mp-cc-color-background);
-	font-family: var(--mp-cc-font-family-base);
-	font-size: var(--mp-cc-font-size-base);
+	color: var(--mp-cc-color-text, #1a1a1a);
+	background: var(--mp-cc-color-background, #ffffff);
+	font-family: var(--mp-cc-font-family-base, system-ui, -apple-system, Segoe UI, Roboto, sans-serif);
+	font-size: var(--mp-cc-font-size-base, 16px);
 	line-height: 1.45;
+	padding-block: var(--mp-cc-shell-padding-block, 75px);
 	--mp-cc-keyboard-inset: 0px;
 	scroll-padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px) + var(--mp-cc-keyboard-inset, 0px));
 }
@@ -173,15 +187,25 @@
 }
 
 .mp-cc-step-panel {
-	border: 1px solid var(--mp-cc-color-border);
+	border-width: var(--mp-cc-step-panel-border-width, 1px);
+	border-style: solid;
+	border-color: var(--mp-cc-step-panel-border-color, var(--mp-cc-color-border));
 	padding: 1rem;
 	border-radius: var(--mp-cc-radius-md);
-	box-shadow: var(--mp-cc-shadow-card);
+	box-shadow: var(--mp-cc-step-panel-box-shadow, var(--mp-cc-shadow-card));
 	background: var(--mp-cc-color-background);
 	opacity: 1;
 	transform: translateY(0);
 	transition: opacity 0.18s ease, transform 0.18s ease;
 	backdrop-filter: blur(0px);
+}
+
+/* Шаг «Получатель / контакты»: отдельные токены; пустые в админке → как у шага 1 (step_panel_screen_styles). */
+.mp-cc-step-panel[data-step-panel="recipient"] {
+	border-width: var(--mp-cc-step-panel-recipient-border-width, var(--mp-cc-step-panel-border-width, 1px));
+	border-style: solid;
+	border-color: var(--mp-cc-step-panel-recipient-border-color, var(--mp-cc-step-panel-border-color, var(--mp-cc-color-border)));
+	box-shadow: var(--mp-cc-step-panel-recipient-box-shadow, var(--mp-cc-step-panel-box-shadow, var(--mp-cc-shadow-card)));
 }
 
 .mp-cc-step-panel__meta {
@@ -197,6 +221,16 @@
 .mp-cc-step-panel__content {
 	margin-top: 1rem;
 	min-height: 8rem;
+}
+
+.mp-cc-step-panel__footer--v2-next {
+	margin-top: 1.25rem;
+	padding-top: 1rem;
+	border-top: 1px solid var(--mp-cc-color-border, rgba(15, 23, 42, 0.12));
+	display: flex;
+	justify-content: flex-start;
+	flex-wrap: wrap;
+	gap: 0.75rem;
 }
 
 .mp-cc-fulfillment {
@@ -848,6 +882,7 @@
 	margin: 0;
 	font-size: 0.88rem;
 	font-weight: 700;
+	color: var(--mp-cc-color-text);
 }
 
 .mp-cc-pickup-map__fallback-message {
@@ -1083,6 +1118,9 @@
 }
 
 .mp-cc-nav__btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
 	min-width: 8rem;
 	min-height: 2.75rem;
 	padding: 0.625rem 1rem;
@@ -1104,12 +1142,14 @@
 }
 
 .mp-cc-nav__btn--next {
-	background: var(--mp-cc-color-accent);
+	background: var(--mp-cc-color-accent, #111111);
 	color: #fff;
+	border-color: var(--mp-cc-color-accent, #111111);
 }
 
 .mp-cc-nav__btn--next:hover:not([disabled]) {
 	background: #2a2a2a;
+	color: #fff;
 }
 
 .mp-cc-nav__btn--review {
@@ -1217,6 +1257,24 @@
 	transform: translateY(-1px);
 }
 
+/*
+ * Подсветка цены доставки в сводке после автоматического пересчёта.
+ * Включается на 5 сек через JS (`flashShippingAmountInSummary`) сразу после снятия оверлея,
+ * чтобы пользователь увидел, что строка «Доставка» обновилась с новым тарифом.
+ * Используем .is-just-updated (отдельный от .is-updated, чтобы не конфликтовать
+ * с существующей точечной подсветкой, которая уже навешивается в других местах).
+ */
+.mp-cc-summary-card__amount--inline.is-just-updated,
+.mp-cc-summary-card__amount.is-just-updated {
+	color: var(--mp-cc-color-success);
+	background-color: rgba(46, 160, 67, 0.16);
+	border-radius: 4px;
+	padding: 0 4px;
+	transition:
+		color 0.4s var(--mp-cc-motion-ease-standard, ease),
+		background-color 0.4s var(--mp-cc-motion-ease-standard, ease);
+}
+
 .mp-cc-summary-card__placeholder {
 	height: 1.1rem;
 	width: 65%;
@@ -1253,6 +1311,12 @@
 
 .mp-cc-summary-card__scenario-meta {
 	color: var(--mp-cc-color-text-muted);
+}
+
+.mp-cc-summary-card__shipping-eta {
+	color: var(--mp-cc-color-text-muted);
+	font-weight: 400;
+	white-space: nowrap;
 }
 
 .mp-cc-summary-card__scenario--final-review {
@@ -1490,8 +1554,12 @@
 		background: var(--mp-cc-summary-receipt-bg, #f3f4f6);
 	}
 
-	/* На мобилке в липком блоке оставляем финансы + сводку промо + mini-review оплаты. */
-	.mp-cc-summary-card__scenario:not(.mp-cc-summary-card__scenario--final-review):not([data-summary-financials='1']):not([data-final-review-financials='1']):not([data-final-review-breakdown='1']) {
+	/* На мобилке в липком блоке скрываем промежуточные scenario-карточки нефинальных шагов,
+	   но НА ШАГЕ «Детали заказа» (confirm) показываем все блоки финального обзора:
+	   шапку-лид, контакты, mini-review оплаты, состав заказа, способ получения/ПВЗ и итоги.
+	   Раньше скрывались data-final-review-contact / -cart / -scenario, поэтому на телефоне
+	   пользователь видел только финансы и думал, что «не все детали заказа показаны». */
+	.mp-cc-summary-card__scenario:not(.mp-cc-summary-card__scenario--final-review):not([data-summary-financials='1']):not([data-final-review-block='1']):not([data-final-review-contact='1']):not([data-final-review-breakdown='1']):not([data-final-review-cart='1']):not([data-final-review-financials='1']):not([data-final-review-scenario='1']) {
 		display: none;
 	}
 
@@ -1517,6 +1585,28 @@
 		background:
 			radial-gradient(circle at 50% 0, transparent 5px, var(--mp-cc-summary-receipt-bg, #f3f4f6) 6px) 0 0 / 12px 100% repeat-x;
 		pointer-events: none;
+	}
+
+	/* Шаг «Детали заказа» (confirm): сводка раскрыта на финальный обзор и слишком высокая,
+	   чтобы держать её в липком блоке с внутренним скроллом — пользователь не может
+	   пролистать страницу вверх, потому что overscroll-behavior:contain «съедает» жест.
+	   На confirm на мобиле/планшете кладём сводку в обычный поток: страница скроллится
+	   единым полотном, видны все блоки (контакты, оплата, состав, ПВЗ, итоги), а отдельный
+	   внутренний скролл больше не блокирует «верх» страницы. */
+	.mp-cc-summary-card--confirm {
+		position: static;
+		bottom: auto;
+		max-height: none;
+		overflow: visible;
+		overscroll-behavior: auto;
+		box-shadow: none;
+		border-radius: var(--mp-cc-radius-md);
+	}
+
+	/* Зубчатого «чека» сверху на confirm тоже не нужно — там липкости нет, граница с
+	   контентом выше выглядит чище без отрицательного margin / маски. */
+	.mp-cc-summary-card--confirm.mp-cc-summary-card--mobile-receipt::before {
+		display: none;
 	}
 }
 
@@ -1553,6 +1643,68 @@
 .mp-cc-summary-card__btn--ghost:hover {
 	border-color: var(--mp-cc-color-accent);
 	background: #f7f7f7;
+}
+
+.mp-cc-summary-card__btn[disabled],
+.mp-cc-summary-card__btn[aria-busy='true'] {
+	opacity: 0.65;
+	cursor: wait;
+	pointer-events: none;
+}
+
+.mp-cc-summary-card__btn.is-loading {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.55rem;
+}
+
+.mp-cc-summary-card__btn.is-loading::before {
+	content: '';
+	width: 0.9rem;
+	height: 0.9rem;
+	border-radius: 50%;
+	border: 2px solid currentColor;
+	border-right-color: transparent;
+	animation: mp-cc-spin-rotate 0.8s linear infinite;
+	flex: 0 0 auto;
+}
+
+.mp-cc-summary-card__btn.mp-cc-summary-card__btn--ghost.is-loading::before {
+	border-color: rgba(17, 17, 17, 0.45);
+	border-right-color: transparent;
+}
+
+@keyframes mp-cc-spin-rotate {
+	from { transform: rotate(0deg); }
+	to { transform: rotate(360deg); }
+}
+
+#mp-cc-checkout.is-shipping-recalc-loading .mp-cc-layout__main {
+	position: relative;
+	opacity: 0.52;
+	filter: saturate(0.82);
+	pointer-events: none;
+	transition: opacity var(--mp-cc-transition-duration) ease, filter var(--mp-cc-transition-duration) ease;
+}
+
+#mp-cc-checkout.is-shipping-recalc-loading .mp-cc-layout__main::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	z-index: 3;
+	background: rgba(15, 23, 42, 0.12);
+	pointer-events: none;
+}
+
+.mp-cc-checkout__app.is-shipping-recalc-loading .mp-cc-step-card[data-step-id='address_delivery'],
+.mp-cc-checkout__app.is-shipping-recalc-loading .mp-cc-step-panel[data-step-panel='delivery_screen'],
+.mp-cc-checkout__app.is-shipping-recalc-loading .mp-cc-step-panel[data-step-panel='address_delivery'] {
+	opacity: 0.55;
+	filter: saturate(0.85);
+	pointer-events: none;
+	transition: opacity var(--mp-cc-transition-duration) ease, filter var(--mp-cc-transition-duration) ease;
 }
 
 .mp-cc-notice {
@@ -1730,6 +1882,10 @@
 		width: 100%;
 	}
 
+	.mp-cc-step-card__actions .mp-cc-nav__btn {
+		width: 100%;
+	}
+
 	.mp-cc-qty-btn,
 	.mp-cc-nav__btn,
 	.mp-cc-date-step__month-btn,
@@ -1896,17 +2052,8 @@
 		background: #1a1d22;
 	}
 
-	.mp-cc-nav__btn:hover:not([disabled]) {
-		background: #1b1e24;
-	}
-
-	.mp-cc-nav__btn--next {
-		color: #0f1115;
-	}
-
-	.mp-cc-nav__btn--next:hover:not([disabled]) {
-		background: #d8d8d8;
-	}
+	/* Не трогаем .mp-cc-nav_*: светлый checkout задаёт токены на #mp-cc-checkout, а тёмная ОС
+	 * иначе перекрашивает только текст кнопки «Далее» → тёмный на тёмном фоне до hover. */
 
 	.mp-cc-nojs {
 		background: #181a1f;
@@ -1964,32 +2111,35 @@
 	opacity: 0.72;
 }
 
-.mp-cc-step-card__index {
+/* Те же токены, что и «Кружки шагов» в админке: stacked-timeline рендерит шаги здесь, а не в .mp-cc-progress__index */
+#mp-cc-checkout .mp-cc-step-card__index {
 	width: 1.6rem;
 	height: 1.6rem;
 	border-radius: 999px;
-	border: 2px solid var(--mp-cc-color-border);
+	/* Shorthand + !important: сбросы темы на `button span { border: none }` иначе «съедают» только longhand border-color */
+	border: var(--mp-cc-progress-index-border-width, 2px) solid var(--mp-cc-progress-index-pending-border, var(--mp-cc-color-border, #e5e5e5)) !important;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
 	font-size: 0.72rem;
 	font-weight: 700;
-	background: #fff;
+	background: var(--mp-cc-progress-index-pending-bg, #ffffff) !important;
+	color: var(--mp-cc-progress-index-pending-digit, var(--mp-cc-color-text-muted, #666666)) !important;
 	position: absolute;
 	left: -2.5rem;
 	top: 0.38rem;
 }
 
-.mp-cc-step-card--active .mp-cc-step-card__index {
-	background: var(--mp-cc-color-accent);
-	border-color: var(--mp-cc-color-accent);
-	color: #fff;
+#mp-cc-checkout .mp-cc-step-card--active .mp-cc-step-card__index {
+	background: var(--mp-cc-progress-index-active-bg, var(--mp-cc-color-accent, #111111)) !important;
+	border: var(--mp-cc-progress-index-border-width, 2px) solid var(--mp-cc-progress-index-active-border, var(--mp-cc-progress-index-active-bg, var(--mp-cc-color-accent, #111111))) !important;
+	color: var(--mp-cc-progress-index-active-digit, #ffffff) !important;
 }
 
-.mp-cc-step-card--done .mp-cc-step-card__index {
-	background: var(--mp-cc-color-success);
-	border-color: var(--mp-cc-color-success);
-	color: #fff;
+#mp-cc-checkout .mp-cc-step-card--done .mp-cc-step-card__index {
+	background: var(--mp-cc-progress-index-complete-bg, var(--mp-cc-color-success, #15803d)) !important;
+	border: var(--mp-cc-progress-index-border-width, 2px) solid var(--mp-cc-progress-index-complete-border, var(--mp-cc-progress-index-complete-bg, var(--mp-cc-color-success, #15803d))) !important;
+	color: var(--mp-cc-progress-index-complete-digit, #ffffff) !important;
 }
 
 .mp-cc-step-card__title {
@@ -1998,7 +2148,14 @@
 }
 
 .mp-cc-step-card__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.75rem;
+	justify-content: flex-end;
+	align-items: center;
 	margin-top: 0.85rem;
+	width: 100%;
+	min-width: 0;
 }
 
 .mp-cc-layout--stacked-timeline .mp-cc-summary-card {
@@ -2247,6 +2404,18 @@
 
 .mp-cc-coupon--in-summary {
 	--mp-cc-coupon-summary-glow: #a78bfa;
+	--mp-cc-coupon-summary-bg: linear-gradient(180deg, color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 14%, #fff) 0%, #fff 100%);
+	--mp-cc-coupon-summary-border: color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 48%, #e9ddff);
+	--mp-cc-coupon-summary-title: #111111;
+	--mp-cc-coupon-summary-text: #4b5563;
+	--mp-cc-coupon-input-bg: rgba(255, 255, 255, 0.95);
+	--mp-cc-coupon-input-border: color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 35%, var(--mp-cc-color-border));
+	--mp-cc-coupon-input-text: var(--mp-cc-color-text, #111111);
+	--mp-cc-coupon-button-bg: linear-gradient(180deg, color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 40%, #232323) 0%, #191919 100%);
+	--mp-cc-coupon-button-border: color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 62%, #111);
+	--mp-cc-coupon-button-text: #ffffff;
+	--mp-cc-coupon-button-bg-hover: linear-gradient(180deg, color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 50%, #2f2f2f) 0%, #232323 100%);
+	--mp-cc-coupon-button-border-hover: color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 74%, #2f2f2f);
 	/* Presets: soft | intense(default) */
 	--mp-cc-coupon-glow-ring-alpha: 40%;
 	--mp-cc-coupon-glow-outer-alpha: 58%;
@@ -2256,8 +2425,8 @@
 	margin-bottom: 0.65rem;
 	padding: 0.75rem;
 	border-radius: 12px;
-	border: 1px solid color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 48%, #e9ddff);
-	background: linear-gradient(180deg, color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 14%, #fff) 0%, #fff 100%);
+	border: 1px solid var(--mp-cc-coupon-summary-border);
+	background: var(--mp-cc-coupon-summary-bg);
 	box-shadow:
 		0 0 0 1px color-mix(in srgb, var(--mp-cc-coupon-summary-glow) var(--mp-cc-coupon-glow-ring-alpha, 30%), transparent),
 		0 0 0 3px color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 14%, transparent),
@@ -2269,10 +2438,12 @@
 	margin-bottom: 0.2rem;
 	font-size: 0.86rem;
 	font-weight: 700;
+	color: var(--mp-cc-coupon-summary-title);
 }
 
 .mp-cc-coupon--in-summary .mp-cc-coupon__intro {
 	display: none;
+	color: var(--mp-cc-coupon-summary-text);
 }
 
 .mp-cc-coupon--in-summary .mp-cc-coupon__row {
@@ -2288,11 +2459,12 @@
 .mp-cc-coupon--in-summary .mp-cc-input {
 	min-height: 2.4rem;
 	border-radius: 9px;
-	border-color: color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 35%, var(--mp-cc-color-border));
-	background: rgba(255, 255, 255, 0.95);
+	border-color: var(--mp-cc-coupon-input-border);
+	background: var(--mp-cc-coupon-input-bg);
 	box-shadow:
 		inset 0 0 0 1px color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 16%, transparent),
 		inset 0 8px 18px color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 9%, #fff);
+	color: var(--mp-cc-coupon-input-text);
 	transition:
 		border-color var(--mp-cc-transition-duration) ease,
 		box-shadow var(--mp-cc-transition-duration) ease,
@@ -2314,19 +2486,17 @@
 	min-width: 7.2rem;
 	min-height: 2.4rem;
 	border-radius: 9px;
-	border: 1px solid color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 62%, #111);
-	background:
-		linear-gradient(180deg, color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 40%, #232323) 0%, #191919 100%);
-	color: #fff;
+	border: 1px solid var(--mp-cc-coupon-button-border);
+	background: var(--mp-cc-coupon-button-bg);
+	color: var(--mp-cc-coupon-button-text);
 	box-shadow:
 		inset 0 1px 0 rgba(255, 255, 255, 0.3),
 		0 10px 20px color-mix(in srgb, var(--mp-cc-coupon-summary-glow) var(--mp-cc-coupon-btn-glow-alpha, 30%), transparent);
 }
 
 .mp-cc-coupon--in-summary .mp-cc-coupon__apply:hover:not([disabled]) {
-	background:
-		linear-gradient(180deg, color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 50%, #2f2f2f) 0%, #232323 100%);
-	border-color: color-mix(in srgb, var(--mp-cc-coupon-summary-glow) 74%, #2f2f2f);
+	background: var(--mp-cc-coupon-button-bg-hover);
+	border-color: var(--mp-cc-coupon-button-border-hover);
 	box-shadow:
 		inset 0 1px 0 rgba(255, 255, 255, 0.34),
 		0 12px 26px color-mix(in srgb, var(--mp-cc-coupon-summary-glow) calc(var(--mp-cc-coupon-btn-glow-alpha, 30%) + 8%), transparent);
@@ -2408,6 +2578,13 @@
 	display: grid;
 	gap: 0.6rem;
 	padding-top: 0.35rem;
+	/* Ореол за логотипом / акцент выбора; задаётся из админки (selection_glow_color) через inline style секции */
+	--mp-cc-pay-glow: #a78bfa;
+	--mp-cc-pay-card-max: 100%;
+	--mp-cc-pay-glow-blur-strong: 28px;
+	--mp-cc-pay-glow-blur-soft: 10px;
+	--mp-cc-pay-glow-strong-alpha: 70%;
+	--mp-cc-pay-glow-soft-alpha: 55%;
 }
 
 .mp-cc-payment.is-loading {
@@ -2446,6 +2623,12 @@
 	display: grid;
 	grid-template-columns: repeat(2, minmax(0, 1fr));
 	gap: 0.6rem;
+}
+
+@media (max-width: 52rem) {
+	.mp-cc-payment-segment {
+		grid-template-columns: minmax(0, 1fr);
+	}
 }
 
 .mp-cc-payment-segment__tab {
@@ -2948,7 +3131,7 @@
 	min-height: 6.75rem;
 	aspect-ratio: 1.586 / 1;
 	max-height: 8.5rem;
-	box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
+	box-shadow: var(--mp-cc-pay-shell-shadow, 0 6px 18px rgba(15, 23, 42, 0.12));
 	transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
 
@@ -2988,12 +3171,6 @@
 
 /* Card label container (variant A glow). Stay on parent grid layout, just visual. */
 .mp-cc-payment-card--surface:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art) {
-	--mp-cc-pay-glow: #a78bfa;
-	--mp-cc-pay-card-max: 100%;
-	--mp-cc-pay-glow-blur-strong: 28px;
-	--mp-cc-pay-glow-blur-soft: 10px;
-	--mp-cc-pay-glow-strong-alpha: 70%;
-	--mp-cc-pay-glow-soft-alpha: 55%;
 	border: none;
 	background: transparent;
 	box-shadow: none;
@@ -3029,9 +3206,15 @@
 	gap: var(--mp-cc-pay-two-up-gap, 0.85rem);
 }
 
+@media (max-width: 52rem) {
+	.mp-cc-payment--layout-two-up .mp-cc-payment__grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
 .mp-cc-payment--layout-two-up .mp-cc-payment-card--brand-yookassa,
 .mp-cc-payment--layout-two-up .mp-cc-payment-card--brand-robokassa {
-	min-height: 25rem;
+	min-height: var(--mp-cc-pay-two-up-card-min-height, 25rem);
 }
 
 .mp-cc-payment--layout-two-up .mp-cc-payment-card--surface:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art) {
@@ -3059,17 +3242,29 @@
 	background: #fff;
 }
 
+/* Two-up: hide idle border + decorative radio until a card is selected (admin: two_up_minimal_idle_chrome). */
+.mp-cc-payment--layout-two-up.mp-cc-payment--two-up-minimal-idle .mp-cc-payment-card--surface:not(.is-active):is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art) {
+	border: 1px solid transparent;
+	box-shadow: none;
+}
+
+.mp-cc-payment--layout-two-up.mp-cc-payment--two-up-minimal-idle .mp-cc-payment-card--surface:not(.is-active):is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art)::before {
+	opacity: 0;
+	visibility: hidden;
+	pointer-events: none;
+}
+
 .mp-cc-payment--layout-two-up .mp-cc-payment-card--surface.is-active:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art) {
 	border-color: var(--mp-cc-pay-two-up-active-border, #b9a9ff);
 	box-shadow:
-		0 0 0 1px rgba(167, 139, 250, 0.36),
-		0 0 0 3px var(--mp-cc-pay-two-up-active-glow-outer, rgba(167, 139, 250, 0.12)),
-		var(--mp-cc-pay-two-up-active-glow-shadow, 0 8px 18px rgba(111, 76, 193, 0.08));
+		0 0 0 1px color-mix(in srgb, var(--mp-cc-pay-glow, #a78bfa) 36%, transparent),
+		0 0 0 3px var(--mp-cc-pay-two-up-active-glow-outer, color-mix(in srgb, var(--mp-cc-pay-glow, #a78bfa) 12%, transparent)),
+		var(--mp-cc-pay-two-up-active-glow-shadow, 0 8px 18px color-mix(in srgb, var(--mp-cc-pay-glow, #a78bfa) 14%, transparent));
 }
 
 .mp-cc-payment--layout-two-up .mp-cc-payment-card--surface.is-active:is(.mp-cc-payment-card--brand-bank, .mp-cc-payment-card--brand-robokassa, .mp-cc-payment-card--brand-yookassa):has(.mp-cc-payment-card__shell--has-art)::before {
-	border-color: #9e83f3;
-	box-shadow: inset 0 0 0 5px #a78bfa;
+	border-color: color-mix(in srgb, var(--mp-cc-pay-glow, #a78bfa) 72%, #6d28d9);
+	box-shadow: inset 0 0 0 5px var(--mp-cc-pay-glow, #a78bfa);
 }
 
 .mp-cc-payment--layout-two-up .mp-cc-payment-card__check-pill {
@@ -3083,7 +3278,7 @@
 	box-shadow: none;
 	aspect-ratio: auto;
 	max-height: none;
-	min-height: 8.8rem;
+	min-height: var(--mp-cc-pay-two-up-shell-min-height, 8.8rem);
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -3209,6 +3404,7 @@
 }
 
 .mp-cc-payment--gift-style-seal-inline .mp-cc-payment__deck-aside .mp-cc-gift-peer__shell {
+	position: relative;
 	display: grid;
 	grid-template-columns: 82px minmax(0, 1fr);
 	align-items: center;
@@ -3223,16 +3419,56 @@
 
 .mp-cc-payment--gift-style-seal-inline .mp-cc-payment__deck-aside .mp-cc-gift-peer__shell::before {
 	content: '';
+	position: absolute;
+	left: 0.95rem;
+	top: 50%;
 	width: 64px;
 	height: 64px;
+	box-sizing: border-box;
 	border-radius: 50%;
-	margin-left: 0.95rem;
-	border: 1px solid color-mix(in srgb, var(--mp-cc-pay-gift-bar-border, #ceb284) 84%, #a57d46);
-	background: center / 44px 44px no-repeat url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='52' height='52' viewBox='0 0 52 52' fill='none'><circle cx='26' cy='26' r='24.5' stroke='%23caa36d'/><path d='M17 21h18v17H17V21zm3-8h12v8H20v-8zm3.2 11l2.8 3.6 2.8-3.6' stroke='%23896a3a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+	transform: translateY(-50%);
+	pointer-events: none;
+	z-index: 0;
+	grid-column: 1;
+	grid-row: 1;
+	border: 1px solid
+		var(
+			--mp-cc-pay-gift-seal-ring-outer,
+			color-mix(in srgb, var(--mp-cc-pay-gift-bar-border, #ceb284) 84%, #a57d46)
+		);
+	box-shadow: inset 0 0 0 1px var(--mp-cc-pay-gift-seal-ring-inner, #caa36d);
+	background: transparent;
+}
+
+.mp-cc-payment--gift-style-seal-inline .mp-cc-payment__deck-aside .mp-cc-gift-peer__shell::after {
+	content: '';
+	position: absolute;
+	left: calc(0.95rem + 10px);
+	top: 50%;
+	width: 44px;
+	height: 44px;
+	transform: translateY(-50%);
+	pointer-events: none;
+	z-index: 0;
+	grid-column: 1;
+	grid-row: 1;
+	background-color: var(--mp-cc-pay-gift-seal-icon, #896a3a);
+	-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 52 52'%3E%3Cpath d='M17 21h18v17H17V21zm3-8h12v8H20v-8zm3.2 11l2.8 3.6 2.8-3.6' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+	mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 52 52'%3E%3Cpath d='M17 21h18v17H17V21zm3-8h12v8H20v-8zm3.2 11l2.8 3.6 2.8-3.6' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+	-webkit-mask-size: contain;
+	mask-size: contain;
+	-webkit-mask-repeat: no-repeat;
+	mask-repeat: no-repeat;
+	-webkit-mask-position: center;
+	mask-position: center;
 }
 
 .mp-cc-payment--gift-style-seal-inline .mp-cc-payment__deck-aside .mp-cc-gift-peer__shell-body {
+	position: relative;
+	z-index: 2;
 	padding: 0.56rem 0.85rem 0.5rem 0.35rem;
+	grid-column: 2;
+	grid-row: 1;
 }
 
 .mp-cc-payment--gift-style-seal-inline .mp-cc-payment__deck-aside .mp-cc-gift-peer__headline {
@@ -3556,7 +3792,7 @@
 	}
 
 	.mp-cc-payment__grid {
-		grid-template-columns: repeat(var(--mp-cc-payment-cols-tablet, 2), minmax(0, 1fr));
+		grid-template-columns: minmax(0, 1fr);
 	}
 }
 
@@ -3641,6 +3877,54 @@
 
 .mp-cc-address__field--postcode {
 	max-width: 14rem;
+}
+
+/*
+ * Состояние «проверяем индекс». Включается в момент schedulePostcodeShippingRecalc
+ * (debounce 400мс + AJAX-пересчёт WC). Цель — дать пользователю явный visual feedback,
+ * что после ввода 6 цифр мы ушли в фоновой пересчёт стоимости Почты России / СДЭК и
+ * сейчас обновим цены доставки. Без этого индикатора пользователь не видит причины,
+ * почему «Далее» вдруг блокируется (поле уже выглядит нормально, но AJAX ещё идёт).
+ */
+.mp-cc-postcode-input-wrap {
+	position: relative;
+	display: block;
+}
+
+.mp-cc-postcode-input-wrap .mp-cc-input {
+	width: 100%;
+}
+
+.mp-cc-postcode-spinner {
+	position: absolute;
+	top: 50%;
+	right: 0.85rem;
+	width: 0.95rem;
+	height: 0.95rem;
+	margin-top: -0.475rem;
+	border-radius: 50%;
+	border: 2px solid rgba(17, 17, 17, 0.22);
+	border-right-color: rgba(17, 17, 17, 0.85);
+	pointer-events: none;
+	opacity: 0;
+	transform: rotate(0deg);
+	transition: opacity 0.18s ease;
+}
+
+.mp-cc-address__field--postcode.is-checking .mp-cc-input {
+	padding-right: 2.4rem;
+}
+
+.mp-cc-address__field--postcode.is-checking .mp-cc-postcode-spinner {
+	opacity: 1;
+	animation: mp-cc-spin-rotate 0.8s linear infinite;
+}
+
+.mp-cc-postcode-checking-hint {
+	margin: 0.35rem 0 0;
+	font-size: 0.8rem;
+	color: rgba(17, 17, 17, 0.55);
+	line-height: 1.25;
 }
 
 @media (max-width: 52rem) {
@@ -3837,6 +4121,34 @@ body.mp-custom-checkout form.checkout.woocommerce-checkout {
 	font-size: 0.84rem;
 }
 
+.mp-cc-parcel-head__body {
+	display: flex;
+	flex-direction: column;
+	gap: 0.55rem;
+	min-width: 0;
+}
+
+.mp-cc-parcel-head__controls {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 0.4rem;
+}
+
+.mp-cc-parcel-head__qty-controls {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+}
+
+.mp-cc-qty-btn--remove {
+	font-size: 1.05rem;
+	padding: 0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+
 .mp-cc-layout__main {
 	grid-template-columns: minmax(8rem, 11rem) minmax(0, 1fr);
 	grid-template-areas:
@@ -3943,7 +4255,8 @@ body.mp-custom-checkout form.checkout.woocommerce-checkout {
 	animation: none;
 }
 
-.mp-cc-progress__index {
+/* !important: значения из админки (переменные на #mp-cc-checkout) должны перебивать стили темы на кнопке шага */
+#mp-cc-checkout .mp-cc-progress__index {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -3951,12 +4264,12 @@ body.mp-custom-checkout form.checkout.woocommerce-checkout {
 	height: 1.55rem;
 	min-width: 1.55rem;
 	min-height: 1.55rem;
-	background: #fff;
-	border: 2px solid var(--mp-cc-color-border);
+	background: var(--mp-cc-progress-index-pending-bg, #ffffff) !important;
+	border: var(--mp-cc-progress-index-border-width, 2px) solid var(--mp-cc-progress-index-pending-border, var(--mp-cc-color-border, #e5e5e5)) !important;
 	font-size: 0.62rem;
 	font-weight: 700;
 	line-height: 1;
-	color: var(--mp-cc-color-text-muted);
+	color: var(--mp-cc-progress-index-pending-digit, var(--mp-cc-color-text-muted, #666666)) !important;
 	flex-shrink: 0;
 	border-radius: 50%;
 }
@@ -3988,16 +4301,16 @@ body.mp-custom-checkout form.checkout.woocommerce-checkout {
 	opacity: 0.85;
 }
 
-.mp-cc-progress__item.is-active .mp-cc-progress__index {
-	border-color: var(--mp-cc-color-rail, #2563eb);
-	background: var(--mp-cc-color-rail, #2563eb);
-	color: #fff;
+#mp-cc-checkout .mp-cc-progress__item.is-active .mp-cc-progress__index {
+	border: var(--mp-cc-progress-index-border-width, 2px) solid var(--mp-cc-progress-index-active-border, var(--mp-cc-progress-index-active-bg, var(--mp-cc-color-rail, #2563eb))) !important;
+	background: var(--mp-cc-progress-index-active-bg, var(--mp-cc-color-rail, #2563eb)) !important;
+	color: var(--mp-cc-progress-index-active-digit, #ffffff) !important;
 }
 
-.mp-cc-progress__item.is-complete .mp-cc-progress__index {
-	border-color: var(--mp-cc-color-success);
-	background: var(--mp-cc-color-success);
-	color: #fff;
+#mp-cc-checkout .mp-cc-progress__item.is-complete .mp-cc-progress__index {
+	border: var(--mp-cc-progress-index-border-width, 2px) solid var(--mp-cc-progress-index-complete-border, var(--mp-cc-progress-index-complete-bg, var(--mp-cc-color-success, #15803d))) !important;
+	background: var(--mp-cc-progress-index-complete-bg, var(--mp-cc-color-success, #15803d)) !important;
+	color: var(--mp-cc-progress-index-complete-digit, #ffffff) !important;
 }
 
 .mp-cc-progress__item.is-active .mp-cc-progress__label {
@@ -4078,6 +4391,51 @@ body.mp-custom-checkout form.checkout.woocommerce-checkout {
 	margin: 0.4rem 0 0.7rem 0.8rem;
 	display: grid;
 	gap: 0.45rem;
+}
+
+/*
+ * Инфо-плашка под списком способов доставки. Появляется при выборе «Почты России»,
+ * пока цена доставки от RPAEFW не подтверждена (пустой или невалидный индекс, либо
+ * 6-значный индекс ещё не прошёл успешный пересчёт). Цель — заранее снять у пользователя
+ * вопрос «почему у Почты не отображается цена в карточке?» и подсветить, что нужно
+ * ввести индекс ниже в полях адреса.
+ */
+.mp-cc-shipping-catalog__notice {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.55rem;
+	margin: 0.75rem 0 0;
+	padding: 0.6rem 0.75rem;
+	border: 1px solid rgba(73, 104, 255, 0.22);
+	border-radius: 0.65rem;
+	background: rgba(73, 104, 255, 0.06);
+	font-size: 0.88rem;
+	line-height: 1.4;
+	color: rgba(17, 17, 17, 0.78);
+}
+
+.mp-cc-shipping-catalog__notice-icon {
+	flex: 0 0 1.15rem;
+	width: 1.15rem;
+	height: 1.15rem;
+	margin-top: 0.05rem;
+	border-radius: 50%;
+	background: #f8f8f8;
+	border: 1px solid #e8e8e8;
+	color: rgba(17, 17, 17, 0.65);
+	font-size: 0.72rem;
+	font-weight: 700;
+	font-style: italic;
+	font-family: Georgia, 'Times New Roman', serif;
+	line-height: 1.05rem;
+	text-align: center;
+	user-select: none;
+	box-sizing: border-box;
+}
+
+.mp-cc-shipping-catalog__notice-text {
+	flex: 1 1 auto;
+	min-width: 0;
 }
 
 @media (max-width: 767px) {
@@ -4245,7 +4603,9 @@ body.mp-custom-checkout form.checkout.woocommerce-checkout {
 .mp-cc-address-form {
 	display: grid;
 	row-gap: 0;
-	border: 1px solid var(--mp-cc-address-card-border, #e5e7eb);
+	border-width: var(--mp-cc-address-form-border-width, 1px);
+	border-style: solid;
+	border-color: var(--mp-cc-address-card-border, #e5e7eb);
 	border-radius: var(--mp-cc-address-card-radius, 14px);
 	background: var(--mp-cc-address-card-bg, #ffffff);
 	overflow: hidden;
@@ -4260,7 +4620,21 @@ body.mp-custom-checkout form.checkout.woocommerce-checkout {
 }
 
 .mp-cc-address-form__row + .mp-cc-address-form__row {
-	border-top: 1px solid var(--mp-cc-address-row-divider, #e5e7eb);
+	border-top-width: var(--mp-cc-address-row-divider-width, 1px);
+	border-top-style: solid;
+	border-top-color: var(--mp-cc-address-row-divider, #e5e7eb);
+}
+
+.mp-cc-address-form__row[data-row="method"] {
+	border-top-width: var(--mp-cc-address-row-divider-after-city, var(--mp-cc-address-row-divider-width, 1px));
+	border-top-style: solid;
+	border-top-color: var(--mp-cc-address-row-divider, #e5e7eb);
+}
+
+.mp-cc-address-form__row[data-row="pvz"] {
+	border-top-width: var(--mp-cc-address-row-divider-after-method, var(--mp-cc-address-row-divider-width, 1px));
+	border-top-style: solid;
+	border-top-color: var(--mp-cc-address-row-divider, #e5e7eb);
 }
 
 .mp-cc-address-form__label {
@@ -4445,4 +4819,479 @@ body.mp-custom-checkout form.checkout.woocommerce-checkout {
 		min-width: 0;
 		width: 100%;
 	}
+}
+
+/* §29.2 — CDEK map / PVZ picker modal */
+.mp-cc-pvz-card {
+	margin-bottom: 0.35rem;
+}
+
+/* Лоадер на кнопке «Выбрать пункт на карте», пока инициализируется виджет СДЭК. */
+.mp-cc-address-form__edit[aria-busy='true'],
+.mp-cc-address-form__edit[data-loading='1'],
+.mp-cc-pvz-card__map[aria-busy='true'],
+.mp-cc-pvz-card__map[data-loading='1'] {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.5rem;
+	opacity: 0.78;
+	cursor: wait;
+	pointer-events: none;
+}
+
+.mp-cc-address-form__edit[aria-busy='true']::before,
+.mp-cc-address-form__edit[data-loading='1']::before,
+.mp-cc-pvz-card__map[aria-busy='true']::before,
+.mp-cc-pvz-card__map[data-loading='1']::before {
+	content: '';
+	width: 0.85rem;
+	height: 0.85rem;
+	border-radius: 50%;
+	border: 2px solid currentColor;
+	border-right-color: transparent;
+	flex: 0 0 auto;
+	animation: mp-cc-spin-rotate 0.8s linear infinite;
+}
+
+/* Полу-прозрачный оверлей со спиннером «Загружаем карту…» — пока виджет инициализируется. */
+.mp-cc-cdek-loading-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 100040;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 1rem;
+	box-sizing: border-box;
+	background: rgba(15, 15, 20, 0.45);
+}
+
+.mp-cc-cdek-loading-overlay__panel {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.7rem;
+	padding: 0.85rem 1.15rem;
+	background: var(--mp-cc-color-background, #ffffff);
+	color: var(--mp-cc-color-text, #1a1a1a);
+	border-radius: 12px;
+	box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
+	font-size: 0.98rem;
+	font-weight: 500;
+	max-width: calc(100vw - 2rem);
+}
+
+.mp-cc-cdek-loading-overlay__spinner {
+	width: 1.1rem;
+	height: 1.1rem;
+	border-radius: 50%;
+	border: 2px solid rgba(17, 17, 17, 0.18);
+	border-right-color: var(--mp-cc-color-text, #111111);
+	flex: 0 0 auto;
+	animation: mp-cc-spin-rotate 0.8s linear infinite;
+}
+
+.mp-cc-cdek-loading-overlay__text {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.mp-cc-pvz-card__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem 0.75rem;
+	margin-top: 0.45rem;
+}
+
+body.mp-cc-cdek-modal-open {
+	overflow: hidden;
+}
+
+.mp-cc-cdek-modal {
+	position: fixed;
+	inset: 0;
+	z-index: 100050;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 1rem;
+	background: rgba(15, 15, 20, 0.55);
+	box-sizing: border-box;
+}
+
+.mp-cc-cdek-modal__panel {
+	width: min(960px, 100%);
+	max-height: min(90vh, 880px);
+	display: flex;
+	flex-direction: column;
+	background: var(--mp-cc-color-background, #fff);
+	color: var(--mp-cc-color-text, #1a1a1a);
+	border-radius: var(--mp-cc-radius-md, 10px);
+	box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+	overflow: hidden;
+}
+
+.mp-cc-cdek-modal__title {
+	margin: 0;
+	font-size: 1.05rem;
+	font-weight: 600;
+}
+
+.mp-cc-cdek-modal__live {
+	padding: 0.35rem 0.85rem;
+	font-size: 0.92rem;
+	color: var(--mp-cc-color-error, #b91c1c);
+	min-height: 1.25rem;
+}
+
+.mp-cc-cdek-modal__list {
+	padding: 0.75rem 1rem 0.25rem;
+	overflow: auto;
+	max-height: 45vh;
+	display: grid;
+	row-gap: 0.45rem;
+}
+
+.mp-cc-cdek-modal__item {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.55rem;
+	font-size: 0.96rem;
+	cursor: pointer;
+}
+
+.mp-cc-cdek-modal__empty {
+	margin: 0.5rem 1rem;
+	font-size: 0.95rem;
+	color: var(--mp-cc-color-text-muted, #666);
+}
+
+.mp-cc-cdek-modal__actions {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	gap: 0.5rem;
+	padding: 0.75rem 1rem 1rem;
+	border-top: 1px solid var(--mp-cc-color-border, #e5e5e5);
+}
+
+.mp-cc-cdek-modal__btn {
+	min-height: 2.5rem;
+	padding: 0.45rem 1rem;
+	font: inherit;
+	border-radius: var(--mp-cc-radius-sm, 6px);
+	border: 1px solid var(--mp-cc-color-border, #e5e5e5);
+	background: #fff;
+	cursor: pointer;
+}
+
+.mp-cc-cdek-modal__btn--primary {
+	background: var(--mp-cc-color-accent, #111);
+	color: #fff;
+	border-color: var(--mp-cc-color-accent, #111);
+}
+
+@media (max-width: 720px) {
+	.mp-cc-cdek-modal {
+		align-items: stretch;
+		padding: 0;
+	}
+
+	.mp-cc-cdek-modal__panel {
+		width: 100%;
+		max-height: 100vh;
+		height: 100%;
+		border-radius: 0;
+	}
+}
+
+/* ==========================================================================
+   Payment rows layout (step 4)
+   ========================================================================== */
+
+.mp-cc-payment--rows .mp-cc-payment__rows {
+	display: flex;
+	flex-direction: column;
+}
+
+.mp-cc-payment-row {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 0.95rem 0.25rem;
+	cursor: pointer;
+	transition: background-color 0.15s ease;
+}
+
+.mp-cc-payment-row:hover {
+	background-color: rgba(0, 0, 0, 0.02);
+}
+
+.mp-cc-payment-row__radio {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	white-space: nowrap;
+}
+
+.mp-cc-payment-row__radio-mark {
+	flex: 0 0 auto;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	border: 1.5px solid var(--mp-cc-color-text, #1a1a1a);
+	background: transparent;
+	position: relative;
+	transition: border-color 0.15s ease;
+}
+
+.mp-cc-payment-row__radio-mark::before {
+	content: "";
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background-color: var(--mp-cc-color-text, #1a1a1a);
+	transform: translate(-50%, -50%) scale(0);
+	transition: transform 0.15s ease;
+}
+
+.mp-cc-payment-row.is-active .mp-cc-payment-row__radio-mark::before,
+.mp-cc-payment-row__radio:checked + .mp-cc-payment-row__radio-mark::before {
+	transform: translate(-50%, -50%) scale(1);
+}
+
+.mp-cc-payment-row__radio:focus-visible + .mp-cc-payment-row__radio-mark {
+	outline: 2px solid var(--mp-cc-color-rail, #2563eb);
+	outline-offset: 2px;
+}
+
+.mp-cc-payment-row__title {
+	flex: 1 1 auto;
+	font-size: 1rem;
+	font-weight: 500;
+	color: var(--mp-cc-color-text, #1a1a1a);
+}
+
+.mp-cc-payment-row__icon {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+	justify-content: flex-end;
+	min-width: 56px;
+	height: 24px;
+}
+
+.mp-cc-payment-row__icon img {
+	max-height: 24px;
+	max-width: 80px;
+	object-fit: contain;
+}
+
+.mp-cc-payment-row__icon--empty {
+	min-width: 0;
+}
+
+.mp-cc-payment-row__radio.is-invalid + .mp-cc-payment-row__radio-mark {
+	border-color: var(--mp-cc-color-error, #b91c1c);
+}
+
+/* Visual divider between payment methods and discount toggles */
+.mp-cc-payment-divider {
+	height: 1.25rem;
+}
+
+/* Discount toggles (Промокод, Подарочная карта) */
+.mp-cc-discount-toggles {
+	display: flex;
+	flex-direction: column;
+}
+
+.mp-cc-toggle-row__head {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 0.95rem 0.25rem;
+	cursor: pointer;
+}
+
+.mp-cc-toggle-row__title {
+	flex: 1 1 auto;
+	font-size: 1rem;
+	font-weight: 500;
+	color: var(--mp-cc-color-text, #1a1a1a);
+}
+
+.mp-cc-toggle-row__icon {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	height: 24px;
+	min-width: 24px;
+}
+
+.mp-cc-toggle-row__icon img {
+	max-height: 24px;
+	max-width: 56px;
+	object-fit: contain;
+}
+
+.mp-cc-toggle__input {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	white-space: nowrap;
+}
+
+.mp-cc-toggle {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+}
+
+.mp-cc-toggle__track {
+	display: inline-flex;
+	align-items: center;
+	width: 38px;
+	height: 22px;
+	border-radius: 11px;
+	background: #e5e5e5;
+	border: 1px solid var(--mp-cc-color-border, #e5e5e5);
+	transition: background-color 0.15s ease, border-color 0.15s ease;
+	position: relative;
+}
+
+.mp-cc-toggle__thumb {
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	background: #fff;
+	border: 1px solid var(--mp-cc-color-text, #1a1a1a);
+	transform: translateX(1px);
+	transition: transform 0.18s ease, background-color 0.15s ease;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.mp-cc-toggle__input:checked + .mp-cc-toggle .mp-cc-toggle__track,
+.mp-cc-toggle-row.is-open .mp-cc-toggle__track {
+	background: var(--mp-cc-color-text, #1a1a1a);
+	border-color: var(--mp-cc-color-text, #1a1a1a);
+}
+
+.mp-cc-toggle__input:checked + .mp-cc-toggle .mp-cc-toggle__thumb,
+.mp-cc-toggle-row.is-open .mp-cc-toggle__thumb {
+	transform: translateX(16px);
+	background: #fff;
+	border-color: #fff;
+}
+
+.mp-cc-toggle__input:focus-visible + .mp-cc-toggle .mp-cc-toggle__track {
+	outline: 2px solid var(--mp-cc-color-rail, #2563eb);
+	outline-offset: 2px;
+}
+
+.mp-cc-toggle-row__body {
+	padding: 0.4rem 0 1rem;
+}
+
+.mp-cc-toggle-row__body[hidden] {
+	display: none;
+}
+
+.mp-cc-toggle-row__form,
+.mp-cc-toggle-row__chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.6rem;
+	align-items: center;
+}
+
+.mp-cc-toggle-row__form input[type="text"] {
+	flex: 1 1 200px;
+	padding: 0.55rem 0.7rem;
+	border: 1px solid var(--mp-cc-color-border, #e5e5e5);
+	border-radius: 8px;
+}
+
+.mp-cc-toggle-row__chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	padding: 0.25rem 0.55rem;
+	border-radius: 999px;
+	background: rgba(0, 0, 0, 0.05);
+	font-size: 0.9rem;
+}
+
+.mp-cc-toggle-row__chip-remove {
+	border: none;
+	background: transparent;
+	cursor: pointer;
+	font-size: 1rem;
+	line-height: 1;
+	color: var(--mp-cc-color-text-muted, #666);
+	padding: 0 0.15rem;
+}
+
+.mp-cc-toggle-row__chip-remove:hover {
+	color: var(--mp-cc-color-text, #1a1a1a);
+}
+
+.mp-cc-toggle-row__hint {
+	margin: 0.45rem 0 0;
+	font-size: 0.88rem;
+	color: var(--mp-cc-color-text-muted, #666);
+}
+
+.mp-cc-toggle-row__hint--error {
+	color: var(--mp-cc-color-error, #b91c1c);
+}
+
+.mp-cc-toggle-row__hint--success {
+	color: var(--mp-cc-color-success, #15803d);
+}
+
+.mp-cc-toggle-row__notice {
+	margin: 0;
+	font-size: 0.88rem;
+	color: var(--mp-cc-color-text-muted, #666);
+}
+
+/* Промокод в тоггле шага оплаты — тот же «лёгкий» блок, что и подарочная карта (без рамки-карточки). */
+.mp-cc-coupon--payment-toggle {
+	border: none;
+	padding: 0;
+	background: transparent;
+	box-shadow: none;
+	margin: 0;
+}
+
+.mp-cc-coupon--payment-toggle.mp-cc-coupon--success,
+.mp-cc-coupon--payment-toggle.mp-cc-coupon--error,
+.mp-cc-coupon--payment-toggle.mp-cc-coupon--default {
+	border-color: transparent;
+}
+
+.mp-cc-coupon--payment-toggle .mp-cc-toggle-row__chips {
+	margin-top: 0.5rem;
+}
+
+.mp-cc-coupon--payment-toggle .mp-cc-toggle-row__chips--nested-gift {
+	margin-top: 0.35rem;
+}
+
+/* Summary chips-only coupon block (when form is moved to payment step). */
+.mp-cc-coupon--chips-only .mp-cc-coupon__title,
+.mp-cc-coupon--chips-only .mp-cc-coupon__intro,
+.mp-cc-coupon--chips-only .mp-cc-coupon__row {
+	display: none;
 }
