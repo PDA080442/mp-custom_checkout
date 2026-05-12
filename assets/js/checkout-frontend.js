@@ -4797,13 +4797,21 @@
 		var appliedGiftCards = Array.isArray(cartSummary.applied_gift_cards) ? cartSummary.applied_gift_cards : [];
 		// In summary mode without form: also avoid duplicate gift card chips — they will be rendered by their own gift-card block.
 		var hideGiftInCoupon = shouldHideGiftChipsInCouponBlock(state, opts) || (inSummary && hideInputRow);
+		// В правой панели «Итоги» (inSummary) намеренно НЕ дублируем чип уже
+		// применённого купона — он рендерится в блоке «Промокод» на шаге 4,
+		// в сводке оставляем только финансовые строки (Скидка, Итого и т.п.).
+		// Подарочную карту это не затрагивает: peer-блок управляется отдельным
+		// `buildGiftCardPeerCardHtml`, а вторичные gift-чипы здесь и так
+		// прикрыты `hideGiftInCoupon`.
+		var hideAppliedCouponChips = inSummary;
 		var allowGiftRm = isGiftCardRemoveAllowed();
 		var allowCouponRm = isCouponRemoveAllowed();
 		var code = String(rt.code || '');
 		var runtimeState = String(rt.state || 'empty');
 		var msg = trimNonEmpty(rt.message);
-		// In summary mode without form: if no applied coupons → nothing to show.
-		if (inSummary && hideInputRow && !appliedCoupons.length) {
+		// In summary mode without form: if no applied coupons (или их чипы
+		// скрыты по флагу выше) и нет gift-чипов для рендера — ничего не выводим.
+		if (inSummary && hideInputRow && (hideAppliedCouponChips || !appliedCoupons.length) && (hideGiftInCoupon || !appliedGiftCards.length)) {
 			return '';
 		}
 		var html = '';
@@ -4846,7 +4854,7 @@
 				}
 			}
 		}
-		if (appliedCoupons.length) {
+		if (appliedCoupons.length && !hideAppliedCouponChips) {
 			if (usePaymentToggleFieldUi) {
 				html += '<div class="mp-cc-toggle-row__chips" data-coupon-list="1">';
 				for (var i = 0; i < appliedCoupons.length; i += 1) {
