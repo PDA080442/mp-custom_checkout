@@ -234,11 +234,18 @@ final class CheckoutRouteContext {
 		// бы итог. Используем отдельный fallback-источник для строки summary.shipping
 		// и для условия «WC реально посчитал доставку».
 		$wc_first_positive_rate_cost = 0.0;
+		$post_russia_rate_failed    = false;
 		if ( $cart->needs_shipping() ) {
 			$wc_rates_for_fallback = self::collect_wc_shipping_rates_snapshot();
 			if ( ! empty( $wc_rates_for_fallback ) && is_array( $wc_rates_for_fallback ) ) {
 				foreach ( $wc_rates_for_fallback as $row ) {
 					if ( ! is_array( $row ) ) {
+						continue;
+					}
+					$method_id_lower = isset( $row['method_id'] ) ? strtolower( (string) $row['method_id'] ) : '';
+					$rate_id_lower   = isset( $row['id'] ) ? strtolower( (string) $row['id'] ) : '';
+					if ( ! empty( $row['is_error'] ) && ( 0 === strpos( $method_id_lower, 'rpaefw' ) || 0 === strpos( $rate_id_lower, 'rpaefw' ) ) ) {
+						$post_russia_rate_failed = true;
 						continue;
 					}
 					$c = isset( $row['cost'] ) ? (float) $row['cost'] : 0.0;
@@ -248,6 +255,16 @@ final class CheckoutRouteContext {
 					}
 				}
 			}
+		}
+		$chosen_method_id_for_summary = isset( $delivery_answers['shipping_method_id'] )
+			? sanitize_key( (string) $delivery_answers['shipping_method_id'] )
+			: '';
+		// Если пользователь выбрал «Почту России», а RPAEFW отдал ошибку (cost=0 + label
+		// с диагностикой), нельзя подставлять в строку «Доставка» цену чужой ставки (СДЭК и т.п.)
+		// — это вводит в заблуждение. Глушим fallback и заставляем фронт показать заглушку
+		// «Стоимость рассчитается после ввода корректного индекса».
+		if ( $post_russia_rate_failed && 'post_russia' === $chosen_method_id_for_summary ) {
+			$wc_first_positive_rate_cost = 0.0;
 		}
 		$wc_has_positive_shipping = ScenarioStepRegistry::SCENARIO_PICKUP !== $scenario_for_shipping
 			&& ( $cart_shipping_total > 0.0 || $wc_first_positive_rate_cost > 0.0 );
@@ -710,17 +727,38 @@ final class CheckoutRouteContext {
 				foreach ( (array) $rate->get_taxes() as $tax_amt ) {
 					$cost += (float) $tax_amt;
 				}
-				$decimals   = function_exists( 'wc_get_price_decimals' ) ? (int) wc_get_price_decimals() : 2;
-				$method_id  = is_callable( array( $rate, 'get_method_id' ) ) ? (string) $rate->get_method_id() : '';
-				$meta_clean = self::wc_shipping_rate_meta_for_snapshot( $rate );
-				$eta_days   = self::extract_wc_shipping_rate_eta_days( $meta_clean, $rate, $method_id );
-				$row        = array(
-					'id'         => $id,
-					'label'      => wp_strip_all_tags( (string) $rate->get_label() ),
-					'cost'       => (float) wc_format_decimal( max( 0.0, $cost ), $decimals ),
-					'method_id'  => $method_id,
-					'meta'       => $meta_clean,
-					'eta_days'   => $eta_days,
+				$decimals    = function_exists( 'wc_get_price_decimals' ) ? (int) wc_get_price_decimals() : 2;
+				$method_id   = is_callable( array( $rate, 'get_method_id' ) ) ? (string) $rate->get_method_id() : '';
+				$meta_clean  = self::wc_shipping_rate_meta_for_snapshot( $rate );
+				$eta_days    = self::extract_wc_shipping_rate_eta_days( $meta_clean, $rate, $method_id );
+				// Плагин «Russian Post Auto-Estimate From Weight» (RPAEFW) при ошибке API возвращает
+				// ставку с cost=0 и встраивает в label сырой ответ Почты России — например
+				// «Почта России, посылка стандарт - Ошибка запроса для "price": CODE: 400, ...».
+				// Этот текст НЕЛЬЗЯ показывать клиенту: он раскрывает внутренние подробности и
+				// сбивает с толку. Кроме того, на основе такой ставки нельзя считать сумму
+				// доставки (cost = 0 — это «не посчитано», а не «бесплатно»). Помечаем такие
+				// ставки `is_error = true`, чистим публичный label и передаём оригинальный текст
+				// в `error_message` для логов/диагностики на фронте.
+				$raw_label     = wp_strip_all_tags( (string) $rate->get_label() );
+				$is_error_rate = false;
+				$error_message = '';
+				$public_label  = $raw_label;
+				if ( 0 === strpos( strtolower( $method_id ), 'rpaefw' ) || 0 === strpos( strtolower( (string) $id ), 'rpaefw' ) ) {
+					if ( preg_match( '/Ошибк[ауи]\s+запроса|CODE\s*:\s*\d{3}|Объект\s+с\s+индексом|Indexes/iu', $raw_label ) ) {
+						$is_error_rate = true;
+						$error_message = $raw_label;
+						$public_label  = __( 'Почта России', 'mp-custom-checkout' );
+					}
+				}
+				$row = array(
+					'id'            => $id,
+					'label'         => $public_label,
+					'cost'          => (float) wc_format_decimal( max( 0.0, $cost ), $decimals ),
+					'method_id'     => $method_id,
+					'meta'          => $meta_clean,
+					'eta_days'      => $eta_days,
+					'is_error'      => $is_error_rate,
+					'error_message' => $error_message,
 				);
 				/**
 				 * Одна ставка в снимке (расширение под конкретный плагин СДЭК / другое).

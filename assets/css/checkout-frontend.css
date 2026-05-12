@@ -3879,6 +3879,54 @@
 	max-width: 14rem;
 }
 
+/*
+ * Состояние «проверяем индекс». Включается в момент schedulePostcodeShippingRecalc
+ * (debounce 400мс + AJAX-пересчёт WC). Цель — дать пользователю явный visual feedback,
+ * что после ввода 6 цифр мы ушли в фоновой пересчёт стоимости Почты России / СДЭК и
+ * сейчас обновим цены доставки. Без этого индикатора пользователь не видит причины,
+ * почему «Далее» вдруг блокируется (поле уже выглядит нормально, но AJAX ещё идёт).
+ */
+.mp-cc-postcode-input-wrap {
+	position: relative;
+	display: block;
+}
+
+.mp-cc-postcode-input-wrap .mp-cc-input {
+	width: 100%;
+}
+
+.mp-cc-postcode-spinner {
+	position: absolute;
+	top: 50%;
+	right: 0.85rem;
+	width: 0.95rem;
+	height: 0.95rem;
+	margin-top: -0.475rem;
+	border-radius: 50%;
+	border: 2px solid rgba(17, 17, 17, 0.22);
+	border-right-color: rgba(17, 17, 17, 0.85);
+	pointer-events: none;
+	opacity: 0;
+	transform: rotate(0deg);
+	transition: opacity 0.18s ease;
+}
+
+.mp-cc-address__field--postcode.is-checking .mp-cc-input {
+	padding-right: 2.4rem;
+}
+
+.mp-cc-address__field--postcode.is-checking .mp-cc-postcode-spinner {
+	opacity: 1;
+	animation: mp-cc-spin-rotate 0.8s linear infinite;
+}
+
+.mp-cc-postcode-checking-hint {
+	margin: 0.35rem 0 0;
+	font-size: 0.8rem;
+	color: rgba(17, 17, 17, 0.55);
+	line-height: 1.25;
+}
+
 @media (max-width: 52rem) {
 	.mp-cc-address__grid {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4343,6 +4391,51 @@ body.mp-custom-checkout form.checkout.woocommerce-checkout {
 	margin: 0.4rem 0 0.7rem 0.8rem;
 	display: grid;
 	gap: 0.45rem;
+}
+
+/*
+ * Инфо-плашка под списком способов доставки. Появляется при выборе «Почты России»,
+ * пока цена доставки от RPAEFW не подтверждена (пустой или невалидный индекс, либо
+ * 6-значный индекс ещё не прошёл успешный пересчёт). Цель — заранее снять у пользователя
+ * вопрос «почему у Почты не отображается цена в карточке?» и подсветить, что нужно
+ * ввести индекс ниже в полях адреса.
+ */
+.mp-cc-shipping-catalog__notice {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.55rem;
+	margin: 0.75rem 0 0;
+	padding: 0.6rem 0.75rem;
+	border: 1px solid rgba(73, 104, 255, 0.22);
+	border-radius: 0.65rem;
+	background: rgba(73, 104, 255, 0.06);
+	font-size: 0.88rem;
+	line-height: 1.4;
+	color: rgba(17, 17, 17, 0.78);
+}
+
+.mp-cc-shipping-catalog__notice-icon {
+	flex: 0 0 1.15rem;
+	width: 1.15rem;
+	height: 1.15rem;
+	margin-top: 0.05rem;
+	border-radius: 50%;
+	background: #f8f8f8;
+	border: 1px solid #e8e8e8;
+	color: rgba(17, 17, 17, 0.65);
+	font-size: 0.72rem;
+	font-weight: 700;
+	font-style: italic;
+	font-family: Georgia, 'Times New Roman', serif;
+	line-height: 1.05rem;
+	text-align: center;
+	user-select: none;
+	box-sizing: border-box;
+}
+
+.mp-cc-shipping-catalog__notice-text {
+	flex: 1 1 auto;
+	min-width: 0;
 }
 
 @media (max-width: 767px) {

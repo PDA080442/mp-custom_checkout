@@ -31,6 +31,22 @@
 	var draftSaveTimer = null;
 	/** Debounce session_get_state после правок адреса (иначе на каждый символ — отдельный AJAX). */
 	var addressRatesSyncTimer = null;
+	/**
+	 * Debounce пересчёта WC-ставок по индексу на шаге «Адрес и доставка». Запускается отдельно,
+	 * минуя guard `address_delivery` в `scheduleAddressRatesBackendSync`: индекс — единственное
+	 * поле адреса, от которого реально зависит стоимость Почты России / СДЭК, и без пересчёта
+	 * фронт не сможет узнать, что индекс невалиден (RPAEFW отдаёт cost=0 + ошибочный label).
+	 */
+	var postcodeRecalcTimer = null;
+	var lastPostcodeRecalculated = '';
+	var postcodeRecalcInFlight = false;
+	/**
+	 * Какой индекс мы уже подсветили красным «недоступно по индексу X». Нужно, чтобы не
+	 * крутить notify на каждый session_get_state, пока пользователь смотрит на эту ошибку
+	 * и ещё не правил поле. Сбрасывается при изменении индекса, способа доставки или при
+	 * успешном пересчёте.
+	 */
+	var lastPostcodeNotifiedAsInvalid = '';
 	var isClientErrorLoggingBound = false;
 	var stepTransitionTimer = 0;
 	var qtyInputDebounceTimers = {};
@@ -615,6 +631,8 @@
 					address_region: '',
 					address_city: '',
 					address_postcode: '',
+					address_postcode_format: '',
+					address_postcode_unavailable: '',
 					step_blocked: '',
 					conditions_required: ''
 				},
@@ -4652,18 +4670,46 @@
 				continue;
 			}
 			if (key === 'postcode') {
-				var pcMsg = err === 'postcode'
-					? (trimNonEmpty(vm.address_postcode) || getUiText('step_4.address_error_postcode', 'Слишком длинный индекс.'))
-					: (trimNonEmpty(vm.address_required) || getUiText('step_4.address_error_required', 'Заполните это поле.'));
-				html += '<div class="mp-cc-address__field mp-cc-address__field--postcode">';
+				var pcMsg;
+				if (err === 'rpaefw_unavailable') {
+					pcMsg = trimNonEmpty(vm.address_postcode_unavailable)
+						|| getUiText(
+							'step_4.address_error_postcode_unavailable',
+							'Доставка Почтой России по этому индексу недоступна. Проверьте индекс или выберите другой способ доставки.'
+						);
+				} else if (err === 'format' || err === 'postcode') {
+					pcMsg = trimNonEmpty(vm.address_postcode_format)
+						|| trimNonEmpty(vm.address_postcode)
+						|| getUiText(
+							'step_4.address_error_postcode_format',
+							'Введите 6 цифр почтового индекса.'
+						);
+				} else {
+					pcMsg = trimNonEmpty(vm.address_required)
+						|| getUiText('step_4.address_error_required', 'Заполните это поле.');
+				}
+				var pcRuntime = state.frontendStore && state.frontendStore.runtime ? state.frontendStore.runtime : {};
+				var pcChecking = pcRuntime.postcode_checking === true;
+				var pcFieldClass = 'mp-cc-address__field mp-cc-address__field--postcode' + (pcChecking ? ' is-checking' : '');
+				html += '<div class="' + pcFieldClass + '">';
 				html += '<label class="mp-cc-field-label" for="mp-cc-address-postcode">' + escapeHtml(getAddressLabel('postcode')) + '</label>';
-				html += '<input type="text" class="mp-cc-input' + (err ? ' is-invalid' : '') + '" id="mp-cc-address-postcode" name="postcode" autocomplete="postal-code" inputmode="text" ';
+				html += '<div class="mp-cc-postcode-input-wrap">';
+				// Принудительно цифровая клавиатура на мобильных, ограничение 6 символов на уровне браузера,
+				// pattern для нативной валидации и подсказок autofill. Сам ввод дополнительно фильтруется
+				// в обработчике [data-contact-field] (см. ниже) — strip non-digits.
+				html += '<input type="text" class="mp-cc-input' + (err ? ' is-invalid' : '') + '" id="mp-cc-address-postcode" name="postcode" autocomplete="postal-code" inputmode="numeric" maxlength="6" pattern="\\d{6}" ';
 				html += 'value="' + escapeHtml(String(contact.postcode || '')) + '" ';
 				html += 'data-contact-field="postcode" aria-required="true"';
 				html += err ? ' aria-invalid="true"' : '';
 				html += '/>';
+				html += '<span class="mp-cc-postcode-spinner" aria-hidden="true"></span>';
+				html += '</div>';
 				if (err) {
 					html += '<p class="mp-cc-field-error" id="mp-cc-address-postcode-err" role="alert">' + escapeHtml(pcMsg) + '</p>';
+				}
+				if (pcChecking) {
+					var pcHintText = getUiText('step_4.postcode_checking_hint', 'Проверяем индекс…');
+					html += '<p class="mp-cc-postcode-checking-hint" role="status" aria-live="polite">' + escapeHtml(pcHintText) + '</p>';
 				}
 				html += '</div>';
 				continue;
@@ -5911,7 +5957,8 @@
 				dirty: false,
 				lastSyncAt: Date.now(),
 				summaryHydrated: false,
-				paymentSubmitting: false
+				paymentSubmitting: false,
+				postcode_checking: false
 			},
 			meta: {
 				contextId: flow.context_id || '',
@@ -6512,7 +6559,39 @@
 			flushContactFormFromDom(state, $app);
 			ensureContactDefaults(state);
 		}
+		// После каждого пересчёта проверяем: вернула ли Почта России (RPAEFW) ошибку расчёта
+		// по введённому индексу. Если да — ставим штамп на поле postcode, чтобы render показал
+		// инлайн-сообщение и блокировал переход на следующий шаг.
+		refreshPostcodeShippingErrorMarker(state);
+		var contactErrAfterRecalc = state.frontendStore && state.frontendStore.form && state.frontendStore.form.errors
+			? (state.frontendStore.form.errors.contact || {})
+			: {};
+		var currentPcAfterRecalc = state.frontendStore && state.frontendStore.form
+			? String((state.frontendStore.form.contact || {}).postcode || '').trim()
+			: '';
+		var shouldFlashRpaefwError = (
+			contactErrAfterRecalc.postcode === 'rpaefw_unavailable'
+			&& currentPcAfterRecalc
+			&& currentPcAfterRecalc !== lastPostcodeNotifiedAsInvalid
+		);
+		if (contactErrAfterRecalc.postcode !== 'rpaefw_unavailable') {
+			// Индекс исправили/сменили способ — забываем «уже уведомлённый».
+			lastPostcodeNotifiedAsInvalid = '';
+		}
 		render(state, $app);
+		if (shouldFlashRpaefwError) {
+			lastPostcodeNotifiedAsInvalid = currentPcAfterRecalc;
+			setStepInvalidState(state, 'address_delivery', true);
+			setV2StepInvalidState(state, 'delivery_screen', true);
+			notify(
+				getUiText(
+					'step_4.address_error_postcode_unavailable',
+					'Доставка Почтой России по этому индексу недоступна. Проверьте индекс или выберите другой способ доставки.'
+				),
+				'error'
+			);
+			scrollToFirstInvalidField($app);
+		}
 	}
 
 	function syncStoreWithBackend(state, $app, opts) {
@@ -7111,6 +7190,137 @@
 	}
 
 	/**
+	 * Пересчёт ставок WC по изменению почтового индекса.
+	 *
+	 * Существующий `scheduleAddressRatesBackendSync` намеренно пропускает шаг `address_delivery`,
+	 * чтобы при наборе адреса не дёргать корзину на каждый input. Но для индекса это правило
+	 * нам не подходит: RPAEFW (Почта России) и СДЭК считают цену именно по индексу, и пока
+	 * пересчёт не произойдёт, фронт не узнает, валидный ли индекс на стороне Почты.
+	 *
+	 * Стратегия гибридного триггера (см. согласованный план):
+	 *  1. На `input` с валидным `^\d{6}$` → дебаунс 400мс (даём допечатать все 6 цифр и снять руку).
+	 *  2. На `blur` / `paste` / `Enter` → мгновенный запуск, без паузы.
+	 *
+	 * Защита от лишних запросов:
+	 *  - Не запускаем для индекса, не прошедшего regex `^\d{6}$` (короткие/обрывочные числа).
+	 *  - Если индекс не менялся с прошлого успешного пересчёта — skip.
+	 *  - Если есть in-flight пересчёт — не запускаем второй (он добьёт state в .always()).
+	 *  - Перед самим запуском повторно сверяем актуальный `contact.postcode` со снимком на
+	 *    момент schedule: если пользователь успел дописать/удалить цифру за debounce — отменяем
+	 *    запуск, новое значение пришлёт следующий schedule.
+	 */
+	function cancelPostcodeShippingRecalc() {
+		if (postcodeRecalcTimer) {
+			window.clearTimeout(postcodeRecalcTimer);
+			postcodeRecalcTimer = null;
+		}
+	}
+
+	/**
+	 * Обновляет визуальное состояние «индекс проверяется»: спиннер внутри поля + подсказка
+	 * «Проверяем индекс…». Делаем без полного render() — иначе на каждом нажатии цифры будет
+	 * мерцать вся форма. Полный render всё равно случится после AJAX-ответа (рисует свежие
+	 * цены доставки), а на это время класс перерисуется в `buildAddressBlockHtml` через
+	 * `runtime.postcode_checking`. Включается также во время debounce (400 мс), чтобы дать
+	 * мгновенный визуальный отклик «мы знаем, что ты ввёл, ждём ещё цифру».
+	 */
+	function refreshPostcodeCheckingUi(state, $app) {
+		// «Проверка идёт» ON в любой из ситуаций:
+		//  - запланирован debounce-таймер пересчёта;
+		//  - сейчас летит AJAX-пересчёт;
+		//  - в поле уже что-то введено, но это значение ещё не прошло успешный пересчёт
+		//    (партиальный ввод 1–5 цифр или новые цифры после уже верифицированных).
+		// Этот хелпер вызывается из schedulePostcodeShippingRecalc, cancelPostcodeShippingRecalc
+		// и из самих хендлеров ввода, поэтому отражает реальное «висит ли pending-проверка».
+		var pcNow = state && state.frontendStore && state.frontendStore.form
+			? String((state.frontendStore.form.contact || {}).postcode || '').trim()
+			: '';
+		var verifiedForCurrent = !!pcNow && /^\d{6}$/.test(pcNow) && pcNow === lastPostcodeRecalculated && !postcodeRecalcInFlight && !postcodeRecalcTimer;
+		var active = !!postcodeRecalcTimer || !!postcodeRecalcInFlight || (pcNow.length > 0 && !verifiedForCurrent);
+		setRuntimeFlag(state, 'postcode_checking', active);
+		var $scope = ($app && $app.length) ? $app : $(selectors.app);
+		if (!$scope || !$scope.length) {
+			return;
+		}
+		var $field = $scope.find('.mp-cc-address__field--postcode');
+		if (!$field.length) {
+			return;
+		}
+		$field.toggleClass('is-checking', active);
+		var $hint = $field.find('.mp-cc-postcode-checking-hint');
+		if (active) {
+			if (!$hint.length) {
+				var hintText = getUiText('step_4.postcode_checking_hint', 'Проверяем индекс…');
+				$field.append('<p class="mp-cc-postcode-checking-hint" role="status" aria-live="polite">' + escapeHtml(hintText) + '</p>');
+			}
+			// На случай, если поле было отрендерено в старой структуре (без обёртки), добавим
+			// спиннер-span налету. После следующего полного render структура нормализуется
+			// через buildAddressBlockHtml.
+			if (!$field.find('.mp-cc-postcode-spinner').length) {
+				var $inp = $field.find('#mp-cc-address-postcode');
+				if ($inp.length && !$inp.parent().is('.mp-cc-postcode-input-wrap')) {
+					$inp.wrap('<div class="mp-cc-postcode-input-wrap"></div>');
+					$inp.after('<span class="mp-cc-postcode-spinner" aria-hidden="true"></span>');
+				}
+			}
+		} else {
+			$hint.remove();
+		}
+	}
+
+	function schedulePostcodeShippingRecalc(state, $app, opts) {
+		opts = opts && typeof opts === 'object' ? opts : {};
+		var immediate = opts.immediate === true;
+		if (!state || !state.frontendStore || !state.frontendStore.form) {
+			return;
+		}
+		var contact = state.frontendStore.form.contact || {};
+		var pc = String(contact.postcode || '').trim();
+		if (!/^\d{6}$/.test(pc)) {
+			cancelPostcodeShippingRecalc();
+			refreshPostcodeCheckingUi(state, $app);
+			return;
+		}
+		if (pc === lastPostcodeRecalculated && !immediate && !postcodeRecalcInFlight) {
+			refreshPostcodeCheckingUi(state, $app);
+			return;
+		}
+		cancelPostcodeShippingRecalc();
+		var run = function () {
+			postcodeRecalcTimer = null;
+			if (postcodeRecalcInFlight) {
+				refreshPostcodeCheckingUi(state, $app);
+				return;
+			}
+			var fresh = state.frontendStore && state.frontendStore.form
+				? String((state.frontendStore.form.contact || {}).postcode || '').trim()
+				: '';
+			if (fresh !== pc) {
+				refreshPostcodeCheckingUi(state, $app);
+				return;
+			}
+			postcodeRecalcInFlight = true;
+			refreshPostcodeCheckingUi(state, $app);
+			$.when(syncStoreWithBackend(state, $app, { force: true }))
+				.done(function () {
+					// Маркируем «верифицировано» только при успешном ответе.
+					// На failure следующий schedule отработает заново и снова покажет спиннер.
+					lastPostcodeRecalculated = pc;
+				})
+				.always(function () {
+					postcodeRecalcInFlight = false;
+					refreshPostcodeCheckingUi(state, $app);
+				});
+		};
+		if (immediate) {
+			run();
+		} else {
+			postcodeRecalcTimer = window.setTimeout(run, 400);
+			refreshPostcodeCheckingUi(state, $app);
+		}
+	}
+
+	/**
 	 * Принудительный пересчёт ставок WC после смены city/region/country на шаге «Адрес и доставка».
 	 *
 	 * Обычный sync на этом шаге не идёт (см. `syncStoreWithBackend` guard), иначе любая правка адреса
@@ -7492,6 +7702,70 @@
 	 * Возвращает map { fieldKey: 'required' } по пустым обязательным полям.
 	 * Поле `address_2` (квартира/корпус) не считаем обязательным — оно в любом случае опционально.
 	 */
+	/**
+	 * Ищет в `wc_shipping_rates` ставку с пометкой `is_error` от RPAEFW (плагина «Почта России»).
+	 * Бэк ставит её, если запрос в API Почты России вернул ошибку (например, индекс не существует
+	 * в их справочнике). Если такая ставка есть — фронт не должен показывать её цену в сводке
+	 * и не должен пропускать пользователя дальше с выбранным методом `post_russia`.
+	 *
+	 * @return {object|null}
+	 */
+	function getRpaefwUnavailableRate(state) {
+		var rates = state && state.frontendStore && state.frontendStore.cart
+			? state.frontendStore.cart.wc_shipping_rates
+			: null;
+		if (!Array.isArray(rates) || !rates.length) {
+			return null;
+		}
+		var i;
+		for (i = 0; i < rates.length; i += 1) {
+			var r = rates[i] || {};
+			if (r.is_error !== true) {
+				continue;
+			}
+			var mid = String(r.method_id || '').toLowerCase();
+			var rid = String(r.id || '').toLowerCase();
+			if (mid.indexOf('rpaefw') === 0 || rid.indexOf('rpaefw') === 0) {
+				return r;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Помечает / очищает поле postcode маркером 'rpaefw_unavailable' в зависимости от того,
+	 * вернула ли последняя пересчитанная корзина ошибку RPAEFW для текущего индекса.
+	 * Помечаем только если пользователь выбрал именно `post_russia` — для других методов
+	 * (СДЭК, курьер, ПВЗ) ошибка RPAEFW не имеет значения и не должна мешать переходу.
+	 */
+	function refreshPostcodeShippingErrorMarker(state) {
+		if (!state || !state.frontendStore) {
+			return;
+		}
+		state.frontendStore.form = state.frontendStore.form || {};
+		state.frontendStore.form.errors = state.frontendStore.form.errors || {};
+		state.frontendStore.form.errors.contact = state.frontendStore.form.errors.contact || {};
+		var contactErrors = state.frontendStore.form.errors.contact;
+		var prevMark = contactErrors.postcode;
+		var dateBox = state.frontendStore.fulfillment && state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+			? state.frontendStore.fulfillment.date
+			: {};
+		var selectedMethodId = String(dateBox.shipping_method_id || '');
+		var contact = state.frontendStore.form.contact || {};
+		var pc = String(contact.postcode || '').trim();
+		var hasValidPostcode = /^\d{6}$/.test(pc);
+		var errRate = getRpaefwUnavailableRate(state);
+		if (selectedMethodId === 'post_russia' && hasValidPostcode && errRate) {
+			contactErrors.postcode = 'rpaefw_unavailable';
+			return;
+		}
+		// Снимаем штамп при любом из условий: пользователь сменил способ доставки, исправил индекс,
+		// или RPAEFW вернул положительную ставку. Чужие маркеры (format / required) не трогаем.
+		if (prevMark === 'rpaefw_unavailable') {
+			delete contactErrors.postcode;
+		}
+	}
+
 	function validateStepOneAddressFields(state) {
 		var contact = state && state.frontendStore && state.frontendStore.form
 			? (state.frontendStore.form.contact || {})
@@ -7515,8 +7789,15 @@
 			if (!shouldRenderAddressSubfield(key, contact)) {
 				continue;
 			}
-			if (!trimNonEmpty(contact[key])) {
+			var rawVal = trimNonEmpty(contact[key]);
+			if (!rawVal) {
 				errors[key] = 'required';
+				continue;
+			}
+			// Российский почтовый индекс — ровно 6 цифр. Маска ввода уже фильтрует non-digits,
+			// но валидация нужна для случая, когда пользователь начал и ушёл с поля (3-5 цифр).
+			if (key === 'postcode' && !/^\d{6}$/.test(rawVal)) {
+				errors[key] = 'format';
 			}
 		}
 		return errors;
@@ -7571,10 +7852,41 @@
 			state.frontendStore.form.errors.contact = $.extend({}, prevContactErrors, addressErrors);
 			setStepInvalidState(state, 'address_delivery', true);
 			setV2StepInvalidState(state, 'delivery_screen', true);
-			notify(getStepOneAddressMissingMessage(), 'error');
+			var addrErrMsg = getStepOneAddressMissingMessage();
+			if (addressErrors.postcode === 'format' && addressErrorKeys.length === 1) {
+				addrErrMsg = getUiText('step_4.address_error_postcode_format', 'Введите 6 цифр почтового индекса.');
+			}
+			notify(addrErrMsg, 'error');
 			render(state, $app);
 			scrollToFirstInvalidField($app);
 			return true;
+		}
+		// Почта России: если по введённому индексу плагин RPAEFW вернул ошибку расчёта,
+		// сумма доставки неизвестна — нельзя пропускать пользователя на шаг «Дата».
+		// Маркер `rpaefw_unavailable` уже выставлен в applySessionGetStateResponse через
+		// refreshPostcodeShippingErrorMarker; здесь мы только подсвечиваем поле и notify.
+		var dateBoxForGuard = state && state.frontendStore && state.frontendStore.fulfillment && state.frontendStore.fulfillment.date && typeof state.frontendStore.fulfillment.date === 'object'
+			? state.frontendStore.fulfillment.date
+			: {};
+		if (String(dateBoxForGuard.shipping_method_id || '') === 'post_russia') {
+			refreshPostcodeShippingErrorMarker(state);
+			var contactErrsGuard = state.frontendStore && state.frontendStore.form && state.frontendStore.form.errors
+				? (state.frontendStore.form.errors.contact || {})
+				: {};
+			if (contactErrsGuard.postcode === 'rpaefw_unavailable') {
+				setStepInvalidState(state, 'address_delivery', true);
+				setV2StepInvalidState(state, 'delivery_screen', true);
+				notify(
+					getUiText(
+						'step_4.address_error_postcode_unavailable',
+						'Доставка Почтой России по этому индексу недоступна. Проверьте индекс или выберите другой способ доставки.'
+					),
+					'error'
+				);
+				render(state, $app);
+				scrollToFirstInvalidField($app);
+				return true;
+			}
 		}
 		return false;
 	}
@@ -7737,6 +8049,19 @@
 			html += '</div>';
 		}
 		html += '</div>';
+		// Информационная плашка для Почты России: показывается всегда, пока выбран этот способ.
+		// Снимает у пользователя ожидание «увидеть цену сразу в карточке» — фактическая стоимость
+		// зависит от индекса и подтянется RPAEFW в строке «Доставка» сводки после ввода адреса.
+		if (selectedMethodId === 'post_russia') {
+			var postRussiaNoticeText = getUiText(
+				'step_4.post_russia_price_notice',
+				'Точная цена доставки Почтой России рассчитается после ввода почтового индекса в полях адреса ниже.'
+			);
+			html += '<p class="mp-cc-shipping-catalog__notice" role="note">';
+			html += '<span class="mp-cc-shipping-catalog__notice-icon" aria-hidden="true">i</span>';
+			html += '<span class="mp-cc-shipping-catalog__notice-text">' + escapeHtml(postRussiaNoticeText) + '</span>';
+			html += '</p>';
+		}
 		html += '</div>';
 
 		if (showPvzRow) {
@@ -10097,6 +10422,15 @@
 					$(this).val(val);
 				}
 			}
+			if (key === 'postcode') {
+				// Маска индекса: только цифры, максимум 6. Это страхует от paste «660000 г. Красноярск»,
+				// раскладок с буквами и тач-клавиатур, которые игнорируют inputmode=numeric.
+				var cleaned = String(val == null ? '' : val).replace(/\D+/g, '').slice(0, 6);
+				if (cleaned !== val) {
+					val = cleaned;
+					$(this).val(cleaned);
+				}
+			}
 			contact[key] = val;
 			state.frontendStore.form.contact = contact;
 			if (state.frontendStore.form.errors && state.frontendStore.form.errors.contact) {
@@ -10109,11 +10443,40 @@
 				$app.find('[data-order-notes-counter="1"]').text('Осталось символов: ' + String(remain));
 			}
 			invalidateV2DownstreamFrom(state, 1);
-			scheduleCurrentStepDraftSave(state, function () {
-				notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
-			});
+			if (key === 'postcode' && state.frontendStore && state.frontendStore.form && state.frontendStore.form.errors && state.frontendStore.form.errors.contact) {
+				// При любом ручном изменении индекса сбрасываем «штамп» о недоступной Почте России —
+				// иначе сообщение «индекс невалиден» висит, пока не дождёмся ответа пересчёта.
+				// Реальный новый статус подставит applySessionGetStateResponse после schedulePostcodeShippingRecalc.
+				if (state.frontendStore.form.errors.contact.postcode === 'rpaefw_unavailable') {
+					delete state.frontendStore.form.errors.contact.postcode;
+				}
+			}
+			// Оптимизация: для поля «Индекс» НЕ запускаем общий draft-save через 260мс.
+			// Причина: scheduleCurrentStepDraftSave → session_set_answers, а на бэке этот вызов
+			// триггерит WC->calculate_totals, который для каждого partial-индекса делает HTTP-запрос
+			// в API Почты России через плагин RPAEFW (5–10 секунд). Сразу следом отстреливается ещё
+			// один пересчёт (schedulePostcodeShippingRecalc → syncStoreWithBackend с preflight saveCurrentStepDraft),
+			// который тоже зовёт RPAEFW. PHP-локи сессии сериализуют эти AJAX → пользователь ждёт
+			// 15+ секунд два раза подряд. Пускаем только второй (с уже валидным 6-значным
+			// индексом) и тем самым ускоряем общую проверку вдвое.
+			if (key !== 'postcode') {
+				scheduleCurrentStepDraftSave(state, function () {
+					notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
+				});
+			} else {
+				// Если уже стоит таймер от предыдущего поля — оставляем, он не про индекс.
+				// Но если пользователь только что менял индекс и до этого ничего другого —
+				// явно отменим draft-save, который мог быть запланирован blur/paste-обработчиком.
+				if (draftSaveTimer) {
+					window.clearTimeout(draftSaveTimer);
+					draftSaveTimer = null;
+				}
+			}
 			if (key === 'country' || key === 'state' || key === 'city' || key === 'address_1' || key === 'address_2' || key === 'postcode') {
 				scheduleAddressRatesBackendSync(state, $app);
+			}
+			if (key === 'postcode') {
+				schedulePostcodeShippingRecalc(state, $app);
 			}
 		}).on('blur', function () {
 			var blurKey = String($(this).data('contact-field') || '');
@@ -10122,13 +10485,48 @@
 				cancelAddressRatesBackendSync();
 			}
 			ensureContactDefaults(state);
-			saveCurrentStepDraft(state).fail(function () {
-				notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
-			}).always(function () {
-				if (addrBlur && state.currentStepId !== 'address_delivery') {
-					syncStoreWithBackend(state, $app);
+			if (blurKey === 'postcode') {
+				// Та же оптимизация, что в input-обработчике: НЕ запускаем здесь
+				// saveCurrentStepDraft, иначе на бэке отстрелит лишний RPAEFW-вызов параллельно
+				// с тем, что сделает schedulePostcodeShippingRecalc({immediate:true}). На медленном
+				// API Почты России каждый лишний вызов добавляет ~5–10с к ожиданию.
+				schedulePostcodeShippingRecalc(state, $app, { immediate: true });
+			} else {
+				saveCurrentStepDraft(state).fail(function () {
+					notify(getStepFourAjaxMessage('draft_save_failed', 'step_4.contact_ajax_draft_save_failed', 'Не удалось сохранить данные.'), 'error');
+				}).always(function () {
+					if (addrBlur && state.currentStepId !== 'address_delivery') {
+						syncStoreWithBackend(state, $app);
+					}
+				});
+			}
+		}).on('paste.mpccPostcode', function () {
+			var pasteKey = String($(this).data('contact-field') || '');
+			if (pasteKey !== 'postcode') {
+				return;
+			}
+			// Paste-листенер не получает уже отфильтрованное значение — браузер только что вставил
+			// сырой текст из буфера. Отложим на следующий tick, чтобы input-листенер успел
+			// прогнать его через strip non-digits + clamp(6).
+			var $inp = $(this);
+			window.setTimeout(function () {
+				var raw = String($inp.val() || '');
+				var cleaned = raw.replace(/\D+/g, '').slice(0, 6);
+				if (cleaned !== raw) {
+					$inp.val(cleaned);
+					state.frontendStore.form.contact = state.frontendStore.form.contact || {};
+					state.frontendStore.form.contact.postcode = cleaned;
 				}
-			});
+				schedulePostcodeShippingRecalc(state, $app, { immediate: true });
+			}, 0);
+		}).on('keydown.mpccPostcode', function (ev) {
+			var kd = String($(this).data('contact-field') || '');
+			if (kd !== 'postcode') {
+				return;
+			}
+			if (ev && (ev.key === 'Enter' || ev.keyCode === 13)) {
+				schedulePostcodeShippingRecalc(state, $app, { immediate: true });
+			}
 		});
 
 		$app.find('[data-contact-phone-national]').off('input change blur').on('input change', function () {

@@ -1484,6 +1484,8 @@
 		cfg.contact.validationMessages.address_region = readFormValue(p + '[validation_messages][address_region]', cfg.contact.validationMessages.address_region || 'Выберите корректный регион.');
 		cfg.contact.validationMessages.address_city = readFormValue(p + '[validation_messages][address_city]', cfg.contact.validationMessages.address_city || 'Выберите населённый пункт из списка.');
 		cfg.contact.validationMessages.address_postcode = readFormValue(p + '[validation_messages][address_postcode]', cfg.contact.validationMessages.address_postcode || 'Слишком длинный индекс.');
+		cfg.contact.validationMessages.address_postcode_format = readFormValue(p + '[validation_messages][address_postcode_format]', cfg.contact.validationMessages.address_postcode_format || 'Введите 6 цифр почтового индекса.');
+		cfg.contact.validationMessages.address_postcode_unavailable = readFormValue(p + '[validation_messages][address_postcode_unavailable]', cfg.contact.validationMessages.address_postcode_unavailable || 'Доставка Почтой России по этому индексу недоступна. Проверьте индекс или выберите другой способ доставки.');
 		cfg.contact.validationMessages.step_blocked = readFormValue(p + '[validation_messages][step_blocked]', cfg.contact.validationMessages.step_blocked || 'Заполните обязательные поля текущего шага.');
 		cfg.contact.validationMessages.conditions_required = readFormValue(p + '[validation_messages][conditions_required]', cfg.contact.validationMessages.conditions_required || 'Подтвердите ознакомление с условиями, чтобы продолжить.');
 		cfg.contact.constraints.birthdate_min_age = Number(readFormValue(p + '[validation_constraints][birthdate_min_age]', cfg.contact.constraints.birthdate_min_age || 0));
